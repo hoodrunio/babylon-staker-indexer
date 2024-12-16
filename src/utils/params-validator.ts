@@ -30,6 +30,7 @@ interface GlobalParams {
 }
 
 let cachedParams: GlobalParams | null = null;
+const dbInstance = Database.getInstance();
 
 async function loadParams(): Promise<GlobalParams> {
   if (cachedParams) {
@@ -47,15 +48,15 @@ async function loadParams(): Promise<GlobalParams> {
 }
 
 async function checkPhaseCondition(phase: PhaseConfig): Promise<boolean> {
-  const db = new Database();
+  await dbInstance.connect();
   
   switch (phase.endCondition.type) {
     case 'total_stake':
-      const stats = await db.getGlobalStats();
+      const stats = await dbInstance.getGlobalStats();
       return (stats.totalStakeBTC * 100000000) >= phase.endCondition.value;
       
     case 'block_height':
-      const lastBlock = await db.getLastProcessedBlock();
+      const lastBlock = await dbInstance.getLastProcessedBlock();
       return lastBlock >= phase.endCondition.value;
       
     default:
@@ -63,55 +64,23 @@ async function checkPhaseCondition(phase: PhaseConfig): Promise<boolean> {
   }
 }
 
-export async function getParamsForHeight(height: number, txVersion?: number): Promise<VersionParams | null> {
+export async function getParamsForHeight(height: number): Promise<VersionParams | null> {
   try {
     const params = await loadParams();
     
-    // console.log(`\nLooking for parameters at height ${height} (tx version: ${txVersion})`);
-    
-    // Get current phase configuration
-    const currentPhase = getPhaseForHeight(height);
-    if (!currentPhase) {
-      console.log(`No active phase found for height ${height}`);
+    // Find the version parameters that match the height only
+    const versionParams = params.versions.find(v => {
+      return height >= v.activation_height && (!v.cap_height || height <= v.cap_height);
+    });
+
+    if (!versionParams) {
       return null;
     }
-    
-    // If tx_version is provided, first try to find matching version
-    if (txVersion !== undefined) {
-      for (const version of params.versions) {
-        if (version.version === txVersion && version.activation_height <= height) {
-          // Check if phase is still active
-          const phaseEnded = await checkPhaseCondition(currentPhase);
-          if (phaseEnded) {
-            console.log(`Phase ${currentPhase.phase} conditions have been met`);
-            continue;
-          }
-          
-          console.log(`Found matching version ${version.version} for tx`);
-          return version;
-        }
-      }
-    }
-    
-    // If no matching version found, find latest applicable version
-    for (const version of [...params.versions].reverse()) {
-      if (version.activation_height <= height) {
-        // Check if phase is still active
-        const phaseEnded = await checkPhaseCondition(currentPhase);
-        if (phaseEnded) {
-          continue;
-        }
-        
-        console.log(`Using version ${version.version}`);
-        return version;
-      }
-    }
-    
-    console.log("No valid parameters found");
-    return null;
-    
-  } catch (e) {
-    console.error(`Error loading parameters:`, e);
+
+    // Return version parameters as is - no special handling needed
+    return versionParams;
+  } catch (error) {
+    console.error('Error getting parameters for height:', error);
     return null;
   }
 }

@@ -55,7 +55,7 @@ function getPhase2Config(): PhaseConfig {
     startHeight: getEnvNumber('PHASE2_START_HEIGHT', 864790),
     endCondition: {
       type: 'block_height',
-      value: getEnvNumber('PHASE2_END_HEIGHT', 864799)
+      value: getEnvNumber('PHASE2_END_HEIGHT', 874087) // End right before Phase 3 starts
     }
   };
 }

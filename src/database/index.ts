@@ -18,28 +18,34 @@ interface QueryWithTimestamp {
 }
 
 export class Database {
+  private static instance: Database | null = null;
+  private isConnected: boolean = false;
+
   constructor() {
-    this.connect();
+    // Constructor is now public but we still maintain singleton through getInstance
   }
 
-  private async connect() {
+  static getInstance(): Database {
+    if (!Database.instance) {
+      Database.instance = new Database();
+    }
+    return Database.instance;
+  }
+
+  async connect() {
+    if (this.isConnected) {
+      return;
+    }
+
     try {
-      if (!process.env.MONGODB_URI) {
-        throw new Error('MONGODB_URI environment variable is not defined');
+      await mongoose.connect(process.env.MONGODB_URI!);
+      this.isConnected = true;
+      if (process.env.LOG_LEVEL === 'debug') {
+        console.log('Connected to MongoDB successfully');
       }
-
-      await mongoose.connect(process.env.MONGODB_URI, {
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
-      });
-
-      // Bağlantıyı test et
-      await mongoose.connection.db?.admin().ping();
-      console.log('Connected to MongoDB successfully');
-
     } catch (error) {
       console.error('MongoDB connection error:', error);
-      process.exit(1);
+      throw error;
     }
   }
 
@@ -341,17 +347,20 @@ export class Database {
       },
       {
         $project: {
-          _id: 0,
-          version: '$_id',
-          transactionCount: 1,
-          totalStakeBTC: { $divide: ['$totalStake', 100000000] },
-          uniqueStakers: { $size: '$uniqueStakers' },
-          uniqueFPs: { $size: '$uniqueFPs' },
-          uniqueBlocks: { $size: '$uniqueBlocks' },
+          _id: 1,
+          version: 1,
+          totalStake: 1,
+          totalTransactions: 1,
+          uniqueStakers: 1,
           timeRange: {
             firstTimestamp: '$firstSeen',
             lastTimestamp: '$lastSeen',
-            durationSeconds: { $subtract: ['$lastSeen', '$firstSeen'] }
+            durationSeconds: {
+              $subtract: [
+                '$lastSeen',
+                '$firstSeen'
+              ]
+            }
           }
         }
       }
@@ -600,18 +609,22 @@ export class Database {
         throw new Error(`Phase ${phase} stats not found`);
       }
 
-      const updateData: any = {
-        currentHeight: height,
-        lastUpdateTime: new Date()
-      };
-
       if (transaction) {
-        // Update using atomic $inc operator for stake amount and transaction count
+        // Convert stake amount to BTC with high precision
+        const stakeBTC = Number((transaction.stakeAmount / 100000000).toFixed(8));
+        
+        if (process.env.LOG_LEVEL === 'debug') {
+          console.log(`Updating phase ${phase} stats:`);
+          console.log(`Adding stake amount: ${transaction.stakeAmount} satoshi (${stakeBTC} BTC)`);
+          console.log(`Current total stake: ${stats.totalStakeBTC} BTC`);
+        }
+
+        // Use atomic updates to prevent race conditions
         await PhaseStats.updateOne(
           { phase },
           {
             $inc: {
-              totalStakeBTC: transaction.stakeAmount / 100000000,
+              totalStakeBTC: stakeBTC,
               totalTransactions: 1
             },
             $set: {
@@ -635,11 +648,21 @@ export class Database {
             }
           }
         );
+
+        if (process.env.LOG_LEVEL === 'debug') {
+          const updatedStats = await PhaseStats.findOne({ phase });
+          console.log(`New total stake: ${updatedStats?.totalStakeBTC} BTC`);
+        }
       } else {
         // If no transaction, just update height and timestamp
         await PhaseStats.updateOne(
           { phase },
-          { $set: updateData }
+          {
+            $set: {
+              currentHeight: height,
+              lastUpdateTime: new Date()
+            }
+          }
         );
       }
     } catch (error) {
