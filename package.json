@@ -1,0 +1,37 @@
+{
+  "name": "babylon-indexer",
+  "version": "1.0.0",
+  "description": "Babylon Protocol Transaction Indexer",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "jest",
+    "lint": "eslint . --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "db:setup": "ts-node src/database/setup.ts",
+    "db:migrate": "ts-node src/database/setup.ts",
+    "db:reset": "ts-node src/database/setup.ts --reset"
+  },
+  "dependencies": {
+    "axios": "^1.6.7",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "mongodb": "^6.3.0",
+    "mongoose": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.11.16",
+    "@types/mongodb": "^4.0.7",
+    "@typescript-eslint/eslint-plugin": "^6.20.0",
+    "@typescript-eslint/parser": "^6.20.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+} 
