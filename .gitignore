@@ -4,3 +4,4 @@ babylon-stake-analysis.json
 phase2-transactions.json
 btc.py
 tx_desc.md
+indexer_full.log

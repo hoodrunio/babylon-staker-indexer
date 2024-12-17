@@ -27,7 +27,6 @@ export class BabylonIndexer {
         const phaseStartOverride = process.env.PHASE_START_OVERRIDE ? parseInt(process.env.PHASE_START_OVERRIDE) : null;
         const phaseEndOverride = process.env.PHASE_END_OVERRIDE ? parseInt(process.env.PHASE_END_OVERRIDE) : null;
         
-        // Get phase configuration
         const { getPhaseConfig } = await import('../config/phase-config');
         const phaseConfig = getPhaseConfig();
         targetPhase = phaseConfig.phases.find(p => p.phase === phaseToIndex);
@@ -36,7 +35,6 @@ export class BabylonIndexer {
           throw new Error(`Phase ${phaseToIndex} not found in configuration`);
         }
 
-        // Override start and end heights if specified
         actualStartHeight = phaseStartOverride || targetPhase.startHeight;
         
         if (phaseEndOverride) {
@@ -47,14 +45,12 @@ export class BabylonIndexer {
           actualEndHeight = targetPhase.timeoutHeight;
         }
 
-        // Validate block height range
         if (actualStartHeight < 800000 || actualEndHeight < 800000) {
           throw new Error(`Invalid block height range: ${actualStartHeight} - ${actualEndHeight}. Expected heights around 864xxx.`);
         }
 
         console.log(`Indexing Phase ${phaseToIndex} from block ${actualStartHeight} to ${actualEndHeight}`);
         
-        // Initialize phase stats
         try {
           await this.db.initPhaseStats(targetPhase.phase, targetPhase.startHeight);
           console.log(`Initialized stats for phase ${targetPhase.phase}`);
@@ -69,57 +65,100 @@ export class BabylonIndexer {
       let validStakes = 0;
       let savedTransactions = 0;
 
-      // Get phase configuration and helpers
       const { getPhaseForHeight, checkPhaseCondition, getPhaseConfig } = await import('../config/phase-config');
       const phaseConfig = getPhaseConfig();
 
+      // Pre-load and cache parameters for the entire range
+      const paramsCache = new Map<number, any>();
+      const uniqueHeights = new Set<number>();
       for (let height = actualStartHeight; height <= actualEndHeight; height++) {
+        const params = await getParamsForHeight(height);
+        if (params) {
+          if (!uniqueHeights.has(params.activation_height)) {
+            uniqueHeights.add(params.activation_height);
+            paramsCache.set(params.activation_height, params);
+          }
+        }
+      }
+
+      // Process blocks in batches
+      const BATCH_SIZE = 5; // Reduced from 10 to 5 to stay within rate limits
+      for (let batchStart = actualStartHeight; batchStart <= actualEndHeight; batchStart += BATCH_SIZE) {
+        const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, actualEndHeight);
+        const progress = ((batchStart - actualStartHeight) / (actualEndHeight - actualStartHeight)) * 100;
+        console.log(`Progress: ${progress.toFixed(1)}% | Processing blocks ${batchStart} to ${batchEnd}`);
+
         try {
-          const progress = ((height - actualStartHeight) / (actualEndHeight - actualStartHeight)) * 100;
-          
-          // Get current phase
-          const currentPhase = targetPhase || getPhaseForHeight(height);
-          if (!currentPhase) {
-            console.log(`No active phase for height ${height}, skipping...`);
-            continue;
+          // Fetch blocks in parallel with built-in rate limiting
+          const blockPromises = [];
+          for (let height = batchStart; height <= batchEnd; height++) {
+            blockPromises.push(this.rpc.getBlock(height));
           }
           
-          console.log(`Progress: ${progress.toFixed(1)}% | Block: ${height} | Phase: ${currentPhase.phase}`);
+          const blocks = await Promise.all(blockPromises);
 
-          const block = await this.rpc.getBlock(height);
-          const transactions = await this.processBlock(block);
-          
-          totalTransactions += block.tx.length;
-          babylonPrefix += transactions.filter(tx => tx.hasBabylonPrefix).length;
-          validStakes += transactions.filter(tx => tx.isValid).length;
+          // Process blocks and collect transactions
+          const batchTransactions: Array<StakeTransaction & { isValid: boolean; hasBabylonPrefix: boolean }> = [];
+          const blockStats = new Map<number, { phase: number; validTxCount: number }>();
 
-          // Save valid transactions and update phase stats
-          for (const tx of transactions) {
-            if (tx.isValid) {
-              try {
-                await this.db.saveTransaction(tx);
-                await this.db.updatePhaseStats(currentPhase.phase, height, tx);
-                savedTransactions++;
-              } catch (error) {
-                console.error(`Error saving transaction ${tx.txid}:`, error);
+          for (let i = 0; i < blocks.length; i++) {
+            const block = blocks[i];
+            const height = batchStart + i;
+            
+            const currentPhase = targetPhase || getPhaseForHeight(height);
+            if (!currentPhase) {
+              console.log(`No active phase for height ${height}, skipping...`);
+              continue;
+            }
+
+            // Get cached parameters
+            const params = this.getParamsFromCache(height, paramsCache);
+            const transactions = await this.processBlockWithParams(block, params);
+            
+            totalTransactions += block.tx.length;
+            const validTxCount = transactions.filter(tx => tx.isValid).length;
+            babylonPrefix += transactions.filter(tx => tx.hasBabylonPrefix).length;
+            validStakes += validTxCount;
+
+            blockStats.set(height, { phase: currentPhase.phase, validTxCount });
+            batchTransactions.push(...transactions);
+          }
+
+          // Batch save transactions and update stats
+          if (batchTransactions.length > 0) {
+            const validTransactions = batchTransactions.filter(tx => tx.isValid);
+            if (validTransactions.length > 0) {
+              await this.db.saveTransactionBatch(validTransactions);
+              savedTransactions += validTransactions.length;
+            }
+          }
+
+          // Update block processing state and phase stats
+          for (const [height, stats] of blockStats) {
+            await this.db.updateLastProcessedBlock(height);
+            if (stats.validTxCount > 0) {
+              const transactions = batchTransactions.filter(tx => 
+                tx.isValid && tx.blockHeight === height
+              );
+              await this.db.updatePhaseStatsBatch(stats.phase, height, transactions);
+            }
+
+            // Check phase conditions
+            if (!targetPhase) {
+              const currentPhase = getPhaseForHeight(height);
+              if (currentPhase) {
+                const phaseEnded = await checkPhaseCondition(currentPhase, height);
+                if (phaseEnded) {
+                  console.log(`Phase ${currentPhase.phase} conditions have been met at height ${height}`);
+                }
               }
             }
           }
 
-          await this.db.updateLastProcessedBlock(height);
-          console.log(`Block ${height} processed. Valid stakes in this block: ${transactions.filter(tx => tx.isValid).length}`);
-
-          // Check if phase conditions are met
-          if (!targetPhase) {  // Only check phase conditions if not in specific phase mode
-            const phaseEnded = await checkPhaseCondition(currentPhase, height);
-            if (phaseEnded) {
-              console.log(`Phase ${currentPhase.phase} conditions have been met at height ${height}`);
-              await this.db.completePhase(currentPhase.phase, height, 'target_reached');
-            }
-          }
-
+          // Add a small delay between batches to help prevent rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
-          console.error(`Error processing block ${height}:`, error);
+          console.error(`Error processing batch ${batchStart}-${batchEnd}:`, error);
           continue;
         }
       }
@@ -136,29 +175,35 @@ export class BabylonIndexer {
     }
   }
 
-  async processBlock(block: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
+  private getParamsFromCache(height: number, paramsCache: Map<number, any>): any {
+    // Find the most recent parameters for this height
+    let params = null;
+    let maxActivationHeight = 0;
+    
+    for (const [activationHeight, cachedParams] of paramsCache.entries()) {
+      if (height >= activationHeight && activationHeight > maxActivationHeight) {
+        maxActivationHeight = activationHeight;
+        params = cachedParams;
+      }
+    }
+    
+    return params;
+  }
+
+  private async processBlockWithParams(block: any, params: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
     const transactions: Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}> = [];
 
     for (const tx of block.tx) {
       if (tx.vout.length !== 3) continue;
 
-      // First output must be Taproot
       const stakeOutput = tx.vout[0];
       if (stakeOutput.scriptPubKey.type !== 'witness_v1_taproot') {
         continue;
       }
 
-      // Store original BTC value and convert to satoshi only once
       const stakeAmountBTC = stakeOutput.value;
       const stakeAmountSatoshi = Math.round(stakeAmountBTC * 100000000);
 
-      if (process.env.LOG_LEVEL === 'debug') {
-        console.log(`\nAnalyzing transaction: ${tx.txid}`);
-        console.log(`Original stake amount: ${stakeAmountBTC} BTC`);
-        console.log(`Converted to satoshi: ${stakeAmountSatoshi} satoshi`);
-      }
-
-      // Check for OP_RETURN
       const opReturn = tx.vout[1]?.scriptPubKey?.hex;
       if (!opReturn) continue;
 
@@ -167,8 +212,6 @@ export class BabylonIndexer {
       
       if (!parsed) continue;
 
-      // Get parameters for this height
-      const params = await getParamsForHeight(block.height);
       if (!params) {
         console.log(`Skip: No parameters found for height ${block.height}`);
         transactions.push({
@@ -181,9 +224,6 @@ export class BabylonIndexer {
 
       // Validate stake amount
       if (stakeAmountSatoshi < params.min_staking_amount) {
-        if (process.env.LOG_LEVEL === 'debug') {
-          console.log(`Skip: Stake amount too low (${stakeAmountSatoshi} < ${params.min_staking_amount} satoshi)`);
-        }
         transactions.push({
           ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
           isValid: false,
@@ -192,15 +232,11 @@ export class BabylonIndexer {
         continue;
       }
 
-      // Phase-specific max stake validation
       const maxStakeAmount = block.height >= 864790 
         ? 50000000000  // 500 BTC for Phase 2 and 3
         : params.max_staking_amount;  // Use version params for Phase 1
 
       if (stakeAmountSatoshi > maxStakeAmount) {
-        if (process.env.LOG_LEVEL === 'debug') {
-          console.log(`Skip: Stake amount too high (${stakeAmountSatoshi} > ${maxStakeAmount} satoshi)`);
-        }
         transactions.push({
           ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
           isValid: false,
@@ -209,9 +245,7 @@ export class BabylonIndexer {
         continue;
       }
 
-      // Validate staking time
-      if (parsed.staking_time < params.min_staking_time) {
-        console.log(`Skip: Staking time too low`);
+      if (parsed.staking_time < params.min_staking_time || parsed.staking_time > params.max_staking_time) {
         transactions.push({
           ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
           isValid: false,
@@ -220,32 +254,12 @@ export class BabylonIndexer {
         continue;
       }
 
-      if (parsed.staking_time > params.max_staking_time) {
-        console.log(`Skip: Staking time too high`);
-        transactions.push({
-          ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
-          isValid: false,
-          hasBabylonPrefix
-        });
-        continue;
-      }
-
-      // All validations passed
-      if (process.env.LOG_LEVEL === 'debug') {
-        console.log(`Transaction is valid Babylon stake!`);
-        console.log(`Final stake amount: ${stakeAmountSatoshi} satoshi (${stakeAmountBTC} BTC)`);
-      }
-      
       const stakeTransaction = this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi);
       transactions.push({
         ...stakeTransaction,
         isValid: true,
         hasBabylonPrefix
       });
-
-/*    console.log(`\nStake transaction found: ${tx.txid}`);
-      console.log(`Block: ${block.height}`);
-      console.log(`Amount: ${(stakeAmountSatoshi / 100000000).toFixed(8)} BTC`); */
     }
 
     return transactions;

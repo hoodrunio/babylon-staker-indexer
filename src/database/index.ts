@@ -115,6 +115,110 @@ export class Database {
     }
   }
 
+  async saveTransactionBatch(transactions: Array<StakeTransaction & { isValid: boolean }>): Promise<void> {
+    try {
+      const validTransactions = transactions.filter(tx => tx.isValid);
+      if (validTransactions.length === 0) return;
+
+      // Find existing transactions to avoid duplicates
+      const txids = validTransactions.map(tx => tx.txid);
+      const existingTxs = await Transaction.find({ txid: { $in: txids } }, { txid: 1 });
+      const existingTxIds = new Set(existingTxs.map(tx => tx.txid));
+
+      // Filter out existing transactions
+      const newTransactions = validTransactions.filter(tx => !existingTxIds.has(tx.txid));
+      if (newTransactions.length === 0) {
+        console.log('All transactions already exist in database, skipping batch...');
+        return;
+      }
+
+      // Group transactions by finality provider and staker
+      const fpTransactions = new Map<string, Array<StakeTransaction>>();
+      const stakerTransactions = new Map<string, Array<StakeTransaction>>();
+      
+      for (const tx of newTransactions) {
+        // Group by finality provider
+        if (!fpTransactions.has(tx.finalityProvider)) {
+          fpTransactions.set(tx.finalityProvider, []);
+        }
+        fpTransactions.get(tx.finalityProvider)!.push(tx);
+
+        // Group by staker
+        if (!stakerTransactions.has(tx.stakerAddress)) {
+          stakerTransactions.set(tx.stakerAddress, []);
+        }
+        stakerTransactions.get(tx.stakerAddress)!.push(tx);
+      }
+
+      // 1. Save new transactions
+      if (newTransactions.length > 0) {
+        await Transaction.insertMany(newTransactions, { ordered: false }).catch(err => {
+          if (err.code !== 11000) { // Ignore duplicate key errors
+            throw err;
+          }
+        });
+      }
+
+      // 2. Update finality providers
+      const fpUpdates = Array.from(fpTransactions.entries()).map(([fpAddress, txs]) => {
+        const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
+        const uniqueStakers = [...new Set(txs.map(tx => tx.stakerAddress))];
+        const versions = [...new Set(txs.map(tx => tx.version))];
+        const timestamps = txs.map(tx => tx.timestamp);
+
+        return FinalityProvider.updateOne(
+          { address: fpAddress },
+          {
+            $inc: { 
+              totalStake: totalStake,
+              transactionCount: txs.length
+            },
+            $addToSet: { 
+              uniqueStakers: { $each: uniqueStakers },
+              versionsUsed: { $each: versions }
+            },
+            $min: { firstSeen: Math.min(...timestamps) },
+            $max: { lastSeen: Math.max(...timestamps) }
+          },
+          { upsert: true }
+        );
+      });
+
+      // 3. Update stakers
+      const stakerUpdates = Array.from(stakerTransactions.entries()).map(([stakerAddress, txs]) => {
+        const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
+        const uniqueFPs = [...new Set(txs.map(tx => tx.finalityProvider))];
+        const timestamps = txs.map(tx => tx.timestamp);
+
+        return Staker.updateOne(
+          { address: stakerAddress },
+          {
+            $inc: { 
+              totalStake: totalStake,
+              transactionCount: txs.length,
+              activeStakes: txs.length
+            },
+            $addToSet: { 
+              finalityProviders: { $each: uniqueFPs }
+            },
+            $min: { firstSeen: Math.min(...timestamps) },
+            $max: { lastSeen: Math.max(...timestamps) }
+          },
+          { upsert: true }
+        );
+      });
+
+      // Execute all updates in parallel
+      await Promise.all([...fpUpdates, ...stakerUpdates]);
+      
+      console.log(`Successfully saved ${newTransactions.length} new transactions`);
+
+    } catch (error) {
+      console.error('Error in batch save:', error);
+      throw error;
+    }
+  }
+
   async getFPStats(address: string, timeRange?: TimeRange): Promise<FinalityProviderStats> {
     const query: QueryWithTimestamp = { address };
     if (timeRange) {
@@ -667,6 +771,46 @@ export class Database {
       }
     } catch (error) {
       console.error('Error updating phase stats:', error);
+      throw error;
+    }
+  }
+
+  async updatePhaseStatsBatch(phase: number, height: number, transactions: StakeTransaction[]): Promise<void> {
+    try {
+      const stats = await PhaseStats.findOne({ phase });
+      if (!stats) {
+        throw new Error(`Phase ${phase} stats not found`);
+      }
+
+      // Calculate aggregated stats
+      const totalStakeBTC = transactions.reduce((sum, tx) => {
+        return sum + Number((tx.stakeAmount / 100000000).toFixed(8));
+      }, 0);
+
+      // Get unique stakers for this phase up to current height
+      const uniqueStakers = await Transaction.distinct('stakerAddress', {
+        blockHeight: { $gte: stats.startHeight, $lte: height }
+      });
+
+      // Update phase stats atomically
+      await PhaseStats.updateOne(
+        { phase },
+        {
+          $inc: {
+            totalStakeBTC: totalStakeBTC,
+            totalTransactions: transactions.length
+          },
+          $set: {
+            currentHeight: height,
+            lastStakeHeight: height,
+            lastUpdateTime: new Date(),
+            uniqueStakers: uniqueStakers.length
+          }
+        }
+      );
+
+    } catch (error) {
+      console.error('Error updating phase stats batch:', error);
       throw error;
     }
   }
