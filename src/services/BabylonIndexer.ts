@@ -70,14 +70,10 @@ export class BabylonIndexer {
 
       // Pre-load and cache parameters for the entire range
       const paramsCache = new Map<number, any>();
-      const uniqueHeights = new Set<number>();
       for (let height = actualStartHeight; height <= actualEndHeight; height++) {
         const params = await getParamsForHeight(height);
         if (params) {
-          if (!uniqueHeights.has(params.activation_height)) {
-            uniqueHeights.add(params.activation_height);
-            paramsCache.set(params.activation_height, params);
-          }
+          paramsCache.set(height, params);
         }
       }
 
@@ -176,18 +172,7 @@ export class BabylonIndexer {
   }
 
   private getParamsFromCache(height: number, paramsCache: Map<number, any>): any {
-    // Find the most recent parameters for this height
-    let params = null;
-    let maxActivationHeight = 0;
-    
-    for (const [activationHeight, cachedParams] of paramsCache.entries()) {
-      if (height >= activationHeight && activationHeight > maxActivationHeight) {
-        maxActivationHeight = activationHeight;
-        params = cachedParams;
-      }
-    }
-    
-    return params;
+    return paramsCache.get(height);
   }
 
   private async processBlockWithParams(block: any, params: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
@@ -232,11 +217,8 @@ export class BabylonIndexer {
         continue;
       }
 
-      const maxStakeAmount = block.height >= 864790 
-        ? 50000000000  // 500 BTC for Phase 2 and 3
-        : params.max_staking_amount;  // Use version params for Phase 1
-
-      if (stakeAmountSatoshi > maxStakeAmount) {
+      // Use the max_staking_amount from the current phase's parameters
+      if (stakeAmountSatoshi > params.max_staking_amount) {
         transactions.push({
           ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
           isValid: false,
