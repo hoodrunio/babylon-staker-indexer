@@ -3,6 +3,7 @@ import { BitcoinRPC } from '../utils/bitcoin-rpc';
 import { Database } from '../database';
 import { parseOpReturn } from '../utils/op-return-parser';
 import { getParamsForHeight } from '../utils/params-validator';
+import { validateStakeTransaction } from '../utils/stake-validator';
 
 export class BabylonIndexer {
   private rpc: BitcoinRPC;
@@ -94,7 +95,7 @@ export class BabylonIndexer {
           const blocks = await Promise.all(blockPromises);
 
           // Process blocks and collect transactions
-          const batchTransactions: Array<StakeTransaction & { isValid: boolean; hasBabylonPrefix: boolean }> = [];
+          const batchTransactions: Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}> = [];
           const blockStats = new Map<number, { phase: number; validTxCount: number }>();
 
           for (let i = 0; i < blocks.length; i++) {
@@ -175,96 +176,137 @@ export class BabylonIndexer {
     return paramsCache.get(height);
   }
 
-  private async processBlockWithParams(block: any, params: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
-    const transactions: Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}> = [];
+  private isTaprootOutput(output: any): boolean {
+    // Handle both RPC format and our custom format
+    const script = output.scriptPubKey?.hex;
+    const type = output.scriptPubKey?.type;
+    return (script && script.startsWith('5120') && script.length === 68) || // Raw script format
+           (type === 'witness_v1_taproot'); // RPC format
+  }
 
-    for (const tx of block.tx) {
-      if (tx.vout.length !== 3) continue;
+  private findStakingAmount(tx: any, validationResult: any): number {
+    // Get input addresses from vin
+    const inputAddresses = tx.vin?.map((input: any) => {
+        // For RPC format, we need to look at the witness_v1_taproot address
+        const scriptPubKey = input.prevout?.scriptPubKey || {};
+        return scriptPubKey.address || null;
+    }).filter(Boolean) || [];
 
-      const stakeOutput = tx.vout[0];
-      if (stakeOutput.scriptPubKey.type !== 'witness_v1_taproot') {
-        continue;
-      }
+    // Find Taproot output that goes to a new address
+    const stakingOutput = tx.vout?.find((out: any) => 
+      this.isTaprootOutput(out) && 
+      out.scriptPubKey?.type === 'witness_v1_taproot' && 
+      !inputAddresses.includes(out.scriptPubKey?.address)
+    );
 
-      const stakeAmountBTC = stakeOutput.value;
-      const stakeAmountSatoshi = Math.round(stakeAmountBTC * 100000000);
-
-      const opReturn = tx.vout[1]?.scriptPubKey?.hex;
-      if (!opReturn) continue;
-
-      const parsed = parseOpReturn(opReturn);
-      const hasBabylonPrefix = Boolean(parsed);
-      
-      if (!parsed) continue;
-
-      if (!params) {
-        console.log(`Skip: No parameters found for height ${block.height}`);
-        transactions.push({
-          ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
-          isValid: false,
-          hasBabylonPrefix
-        });
-        continue;
-      }
-
-      // Validate stake amount
-      if (stakeAmountSatoshi < params.min_staking_amount) {
-        transactions.push({
-          ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
-          isValid: false,
-          hasBabylonPrefix
-        });
-        continue;
-      }
-
-      // Use the max_staking_amount from the current phase's parameters
-      if (stakeAmountSatoshi > params.max_staking_amount) {
-        transactions.push({
-          ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
-          isValid: false,
-          hasBabylonPrefix
-        });
-        continue;
-      }
-
-      if (parsed.staking_time < params.min_staking_time || parsed.staking_time > params.max_staking_time) {
-        transactions.push({
-          ...this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi),
-          isValid: false,
-          hasBabylonPrefix
-        });
-        continue;
-      }
-
-      const stakeTransaction = this.createStakeTransaction(tx, parsed, block, stakeAmountSatoshi);
-      transactions.push({
-        ...stakeTransaction,
-        isValid: true,
-        hasBabylonPrefix
-      });
-    }
-
-    return transactions;
+    return stakingOutput ? stakingOutput.value * 100000000 : 0; // Convert to satoshis
   }
 
   private createStakeTransaction(
-    tx: any, 
-    parsed: any, 
+    tx: any,
+    parsed: any,
     block: any,
     stakeAmountSatoshi: number
-  ): StakeTransaction {
+  ): StakeTransaction | null {
+    // Get staker address from input - try different formats
+    let stakerAddress: string | undefined;
+    const firstInput = tx.vin?.[0];
+    
+    if (firstInput?.prevout?.scriptPubKey?.address) {
+      // Full RPC format with prevout info
+      stakerAddress = firstInput.prevout.scriptPubKey.address;
+    } else if (firstInput?.address) {
+      // Simplified format
+      stakerAddress = firstInput.address;
+    } else if (firstInput?.scriptPubKey?.address) {
+      // Alternative format
+      stakerAddress = firstInput.scriptPubKey.address;
+    }
+
+    if (!stakerAddress) {
+      console.warn(`Warning: Could not find staker address for tx ${tx.txid}`);
+      return null;
+    }
+
+    // Find Taproot output that goes to a new address (still needed for validation)
+    const taprootOutput = tx.vout?.find((out: any) => 
+      this.isTaprootOutput(out) && 
+      out.scriptPubKey?.type === 'witness_v1_taproot' && 
+      out.scriptPubKey?.address !== stakerAddress
+    );
+    
+    if (!taprootOutput) {
+      console.warn(`Warning: Could not find taproot output for tx ${tx.txid}`);
+      return null;
+    }
+    
     return {
       txid: tx.txid,
       blockHeight: block.height,
       timestamp: block.time,
-      stakeAmount: stakeAmountSatoshi, // Use the pre-converted satoshi value
-      stakerAddress: tx.vout[2].scriptPubKey.address,
+      stakeAmount: stakeAmountSatoshi,
+      stakerAddress: stakerAddress,
       stakerPublicKey: parsed.staker_public_key,
       finalityProvider: parsed.finality_provider,
       stakingTime: parsed.staking_time,
       version: parsed.version,
       paramsVersion: parsed.version
     };
+  }
+
+  private async processBlockWithParams(block: any, params: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
+    const transactions: Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}> = [];
+
+    for (const tx of block.tx) {
+      // Skip if no parameters available
+      if (!params) {
+        console.log(`Skip: No parameters found for height ${block.height}`);
+        continue;
+      }
+
+      // Validate the transaction
+      const validationResult = validateStakeTransaction(tx, params, block.height);
+      
+      // Always process transactions with Babylon prefix, even if invalid
+      if (!validationResult.hasBabylonPrefix) continue;
+
+      // Create stake transaction with adjusted amount if overflow
+      const stakeAmountSatoshi = this.findStakingAmount(tx, validationResult);
+      const stakeTransaction = this.createStakeTransaction(
+        tx,
+        validationResult.parsedOpReturn,
+        block,
+        stakeAmountSatoshi
+      );
+
+      if (stakeTransaction) {
+        transactions.push({
+          ...stakeTransaction,
+          isValid: validationResult.isValid,
+          hasBabylonPrefix: true
+        });
+      }
+
+      // Log validation details
+      if (validationResult.errors.length > 0) {
+        const logData = {
+          txid: tx.txid,
+          height: block.height,
+          errors: validationResult.errors,
+          stake: {
+            total: tx.vout.find((out: any) => this.isTaprootOutput(out))?.value || 0,
+            adjusted: stakeAmountSatoshi / 100000000,
+            overflow: validationResult.overflowAmount ? validationResult.overflowAmount / 100000000 : 0
+          },
+          isOverflow: validationResult.isOverflow,
+          invalidReasons: validationResult.invalidReasons
+        };
+        
+        console.log(`Validation issues for tx ${tx.txid}:`, JSON.stringify(logData, null, 2));
+      }
+    }
+
+    return transactions;
   }
 
   async getAllFinalityProviders(): Promise<FinalityProviderStats[]> {

@@ -6,4 +6,7 @@ btc.py
 tx_desc.md
 indexer_full.log
 analyze.log
+logs
 docs
+src/scripts/
+src/tests/

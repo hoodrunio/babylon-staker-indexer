@@ -6,7 +6,7 @@ interface PhaseEndCondition {
   value: number;
 }
 
-interface VersionParams {
+export interface VersionParams {
   version: number;
   phase: number;
   activation_height: number;

@@ -71,6 +71,6 @@ export class BitcoinRPC {
 
   async getBlock(height: number): Promise<any> {
     const hash = await this.call('getblockhash', [height]);
-    return this.call('getblock', [hash, 2]);
+    return this.call('getblock', [hash, 3]); // Use verbosity 3 to get prevout info
   }
 } 
