@@ -265,13 +265,13 @@ export class BabylonIndexer {
     return stakingOutput ? stakingOutput.value * 100000000 : 0; // Convert to satoshis
   }
 
-  private createStakeTransaction(
+  private async createStakeTransaction(
     tx: any,
     parsed: any,
     block: any,
     stakeAmountSatoshi: number,
     validationResult: any
-  ): StakeTransaction | null {
+  ): Promise<StakeTransaction | null> {
     // Get staker address from input - try different formats
     let stakerAddress: string | undefined;
     const firstInput = tx.vin?.[0];
@@ -304,6 +304,15 @@ export class BabylonIndexer {
       return null;
     }
     
+    // Get phase configuration for this block height
+    const { getPhaseForHeight } = await import('../config/phase-config');
+    const phase = getPhaseForHeight(block.height);
+    
+    if (!phase) {
+      console.warn(`Warning: No valid phase found for block height ${block.height}`);
+      return null;
+    }
+    
     return {
       txid: tx.txid,
       blockHeight: block.height,
@@ -314,7 +323,7 @@ export class BabylonIndexer {
       finalityProvider: parsed.finality_provider,
       stakingTime: parsed.staking_time,
       version: parsed.version,
-      paramsVersion: parsed.version,
+      paramsVersion: phase.phase - 1, // Convert phase number (1,2,3) to paramsVersion (0,1,2)
       isOverflow: validationResult.isOverflow || false,
       overflowAmount: validationResult.overflowAmount || 0
     };
@@ -399,102 +408,82 @@ export class BabylonIndexer {
       if (!validationResult.hasBabylonPrefix) continue;
 
       // Skip invalid transactions
-      if (validationResult.errors.length > 0) {
+      if (!validationResult.isValid) {
         transactions.push({
-          ...this.createStakeTransaction(tx, validationResult.parsedOpReturn, block, validationResult.adjustedAmount, validationResult)!,
+          txid: tx.txid,
+          blockHeight: block.height,
+          timestamp: block.time,
+          stakeAmount: 0,
+          stakerAddress: '',
+          stakerPublicKey: '',
+          finalityProvider: '',
+          stakingTime: 0,
+          version: 0,
+          paramsVersion: 0,
+          isOverflow: false,
+          overflowAmount: 0,
           isValid: false,
           hasBabylonPrefix: true
         });
         continue;
       }
 
-      // Collect valid transactions with their timestamps
-      const stakeAmountSatoshi = Math.floor(this.findStakingAmount(tx, validationResult));
-      validTransactions.push({
-        tx,
-        amount: stakeAmountSatoshi,
-        timestamp: tx.time || block.time
-      });
+      const stakeAmountSatoshi = this.findStakingAmount(tx, validationResult);
+      validTransactions.push({ tx, amount: stakeAmountSatoshi, timestamp: block.time });
     }
 
-    // Sort transactions by timestamp (FCFS)
-    validTransactions.sort((a, b) => a.timestamp - b.timestamp);
+    // Sort by timestamp and amount (highest first) within the same block
+    validTransactions.sort((a, b) => {
+      if (a.timestamp === b.timestamp) {
+        return b.amount - a.amount;
+      }
+      return a.timestamp - b.timestamp;
+    });
 
-    // Get running total for Phase 1 cap check
-    const stats = await this.db.getGlobalStats();
-    let runningTotal = Math.floor(stats.activeStakeBTC * 100000000); // Convert to satoshis
+    // Second pass: Process transactions with proper overflow checking
+    let currentActiveStake = 0;
+    for (const { tx, amount } of validTransactions) {
+      // Re-validate with current active stake
+      const validationResult = await validateStakeTransaction(tx, params, block.height, currentActiveStake);
+      
+      // Parse OP_RETURN data
+      const opReturnOutput = tx.vout?.find((out: any) => 
+        out.scriptPubKey?.type === 'nulldata' || 
+        (out.scriptPubKey?.hex && out.scriptPubKey.hex.startsWith('6a'))
+      );
 
-    // Second pass: Process transactions
-    for (const {tx, amount, timestamp} of validTransactions) {
-      // Determine phase and overflow status
-      const { phase, isOverflow: initialOverflow, shouldProcess } = this.determinePhaseAndOverflow(block.height, tx, params);
-
-      // Skip if we shouldn't process this transaction
-      if (!shouldProcess) continue;
-
-      // For Phase 1, we need to check running total
-      let isOverflow = initialOverflow;
-      if (phase === 1 && !initialOverflow) {
-        const newTotal = BigInt(Math.floor(runningTotal)) + BigInt(Math.floor(amount));
-        const stakingCapSats = BigInt(Math.floor(params.staking_cap!));
-        isOverflow = newTotal > stakingCapSats;
-        
-        if (!isOverflow) {
-          runningTotal = Math.floor(Number(newTotal));
-        }
+      if (!opReturnOutput?.scriptPubKey?.hex) {
+        console.warn(`Warning: No OP_RETURN data found in transaction ${tx.txid}`);
+        continue;
       }
 
-      // Create transaction with overflow status
-      const validationResult = {
-        isValid: true,
-        hasBabylonPrefix: true,
-        errors: [],
-        isOverflow,
-        overflowAmount: isOverflow ? amount : 0,
-        adjustedAmount: amount
-      };
+      const parsed = parseOpReturn(opReturnOutput.scriptPubKey.hex);
+      if (!parsed) {
+        console.warn(`Warning: Failed to parse OP_RETURN data for transaction ${tx.txid}`);
+        continue;
+      }
 
-      const stakeTransaction = this.createStakeTransaction(
+      // Create stake transaction
+      const stakeTransaction = await this.createStakeTransaction(
         tx,
-        parseOpReturn(tx.vout.find((v: any) => v.scriptPubKey.hex?.startsWith('6a47')).scriptPubKey.hex),
+        parsed,
         block,
         amount,
         validationResult
       );
 
       if (stakeTransaction) {
-        if (!isOverflow) {
-          console.log(`Accepted tx ${tx.txid} (phase ${phase}):`, {
-            amount: amount / 100000000,
-            blockHeight: block.height,
-            timestamp: new Date(timestamp * 1000).toISOString()
-          });
-        } else {
-          console.log(`Overflow tx ${tx.txid} (phase ${phase}):`, {
-            amount: amount / 100000000,
-            blockHeight: block.height,
-            timestamp: new Date(timestamp * 1000).toISOString(),
-            reason: phase === 1 ? 'exceeds_cap' : 'invalid_height'
-          });
-        }
-
         transactions.push({
           ...stakeTransaction,
-          isValid: true,
-          hasBabylonPrefix: true,
-          isOverflow: validationResult.isOverflow,
-          overflowAmount: validationResult.overflowAmount
+          isValid: validationResult.isValid,
+          hasBabylonPrefix: true
         });
+
+        if (validationResult.isValid && !validationResult.isOverflow) {
+          currentActiveStake += amount;
+        }
       }
     }
-
-    // Log final state
-    console.log(`Finished block ${block.height}:`, {
-      processedTxs: transactions.length,
-      activeAccepted: transactions.filter(tx => !tx.isOverflow).length,
-      overflowTxs: transactions.filter(tx => tx.isOverflow).length,
-      phase1Total: runningTotal / 100000000
-    });
 
     return transactions;
   }

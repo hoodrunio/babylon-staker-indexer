@@ -22,7 +22,7 @@ export interface TimeRange {
 export interface StakeMetrics {
   totalStakeBTC: number;
   transactionCount: number;
-  uniqueStakers: number;
+  uniqueStakers?: number;
   uniqueBlocks: number;
   timeRange: TimeRange;
 }

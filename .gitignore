@@ -5,10 +5,10 @@ btc.py
 indexer_full.log
 analyze.log
 logs
-docs
 dist
 package-lock.json
 src/scripts/
 src/tests/
 scripts
 .env
+docs

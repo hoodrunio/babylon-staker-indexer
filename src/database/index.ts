@@ -387,7 +387,6 @@ export class Database {
       return {
         totalStakeBTC: staker.totalStake / 100000000,
         transactionCount: staker.transactionCount,
-        uniqueStakers: staker.uniqueStakers?.length || 0,
         uniqueBlocks: uniqueBlocks.length,
         timeRange: timeRange || {
           firstTimestamp: staker.firstSeen,
@@ -416,7 +415,6 @@ export class Database {
       return {
         totalStakeBTC: staker.totalStake / 100000000,
         transactionCount: staker.transactionCount,
-        uniqueStakers: staker.uniqueStakers?.length || 0,
         uniqueBlocks: uniqueBlocks.length,
         timeRange: {
           firstTimestamp: staker.firstSeen,
