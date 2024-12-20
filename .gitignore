@@ -10,3 +10,5 @@ logs
 docs
 src/scripts/
 src/tests/
+package-lock.json
+scripts/debug_sample_txs.py

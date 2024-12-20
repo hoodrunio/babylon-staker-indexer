@@ -46,6 +46,12 @@ const transactionSchema = new mongoose.Schema({
   paramsVersion: { 
     type: Number, 
     required: true 
+  },
+  is_overflow: {
+    type: Boolean,
+    required: true,
+    default: false,
+    index: true
   }
 }, {
   timestamps: true

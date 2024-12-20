@@ -69,7 +69,9 @@ export class Database {
           {
             $inc: { 
               totalStake: tx.stakeAmount,
-              transactionCount: 1
+              transactionCount: 1,
+              overflowCount: tx.is_overflow ? 1 : 0,
+              overflowStakeBTC: tx.is_overflow ? tx.stakeAmount / 100000000 : 0
             },
             $addToSet: { 
               uniqueStakers: tx.stakerAddress,
@@ -89,7 +91,9 @@ export class Database {
             $inc: { 
               totalStake: tx.stakeAmount,
               transactionCount: 1,
-              activeStakes: 1
+              activeStakes: 1,
+              overflowCount: tx.is_overflow ? 1 : 0,
+              overflowStakeBTC: tx.is_overflow ? tx.stakeAmount / 100000000 : 0
             },
             $addToSet: { finalityProviders: tx.finalityProvider },
             $min: { firstSeen: tx.timestamp },
@@ -165,13 +169,17 @@ export class Database {
         const uniqueStakers = [...new Set(txs.map(tx => tx.stakerAddress))];
         const versions = [...new Set(txs.map(tx => tx.version))];
         const timestamps = txs.map(tx => tx.timestamp);
+        const overflowCount = txs.reduce((sum, tx) => sum + (tx.is_overflow ? 1 : 0), 0);
+        const overflowStake = txs.reduce((sum, tx) => sum + (tx.is_overflow ? tx.stakeAmount : 0), 0);
 
         return FinalityProvider.updateOne(
           { address: fpAddress },
           {
             $inc: { 
               totalStake: totalStake,
-              transactionCount: txs.length
+              transactionCount: txs.length,
+              overflowCount: overflowCount,
+              overflowStakeBTC: overflowStake / 100000000
             },
             $addToSet: { 
               uniqueStakers: { $each: uniqueStakers },
@@ -189,6 +197,8 @@ export class Database {
         const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
         const uniqueFPs = [...new Set(txs.map(tx => tx.finalityProvider))];
         const timestamps = txs.map(tx => tx.timestamp);
+        const overflowCount = txs.reduce((sum, tx) => sum + (tx.is_overflow ? 1 : 0), 0);
+        const overflowStake = txs.reduce((sum, tx) => sum + (tx.is_overflow ? tx.stakeAmount : 0), 0);
 
         return Staker.updateOne(
           { address: stakerAddress },
@@ -196,7 +206,9 @@ export class Database {
             $inc: { 
               totalStake: totalStake,
               transactionCount: txs.length,
-              activeStakes: txs.length
+              activeStakes: txs.length,
+              overflowCount: overflowCount,
+              overflowStakeBTC: overflowStake / 100000000
             },
             $addToSet: { 
               finalityProviders: { $each: uniqueFPs }
@@ -274,7 +286,9 @@ export class Database {
       },
       averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
       versionsUsed: fp.versionsUsed,
-      stakerAddresses
+      stakerAddresses,
+      overflowCount: fp.overflowCount,
+      overflowStakeBTC: fp.overflowStakeBTC / 100000000
     };
   }
 
@@ -307,7 +321,9 @@ export class Database {
         },
         averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
         versionsUsed: fp.versionsUsed,
-        stakerAddresses
+        stakerAddresses,
+        overflowCount: fp.overflowCount,
+        overflowStakeBTC: fp.overflowStakeBTC / 100000000
       };
     }));
   }
@@ -343,7 +359,9 @@ export class Database {
         averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
         versionsUsed: fp.versionsUsed,
         rank: index + 1,
-        stakingShare: (fp.totalStake / totalStakeAmount) * 100
+        stakingShare: (fp.totalStake / totalStakeAmount) * 100,
+        overflowCount: fp.overflowCount,
+        overflowStakeBTC: fp.overflowStakeBTC / 100000000
       };
     }));
 
@@ -390,7 +408,9 @@ export class Database {
           durationSeconds: staker.lastSeen - staker.firstSeen
         },
         finalityProviders: staker.finalityProviders,
-        activeStakes: staker.activeStakes
+        activeStakes: staker.activeStakes,
+        overflowCount: staker.overflowCount,
+        overflowStakeBTC: staker.overflowStakeBTC / 100000000
       };
     } catch (error) {
       console.error('Error in getStakerStats:', error);
@@ -419,7 +439,9 @@ export class Database {
           durationSeconds: staker.lastSeen - staker.firstSeen
         },
         finalityProviders: staker.finalityProviders,
-        activeStakes: staker.activeStakes
+        activeStakes: staker.activeStakes,
+        overflowCount: staker.overflowCount,
+        overflowStakeBTC: staker.overflowStakeBTC / 100000000
       };
     }));
 
@@ -446,14 +468,16 @@ export class Database {
           uniqueFPs: { $addToSet: '$finalityProvider' },
           uniqueBlocks: { $addToSet: '$blockHeight' },
           firstSeen: { $min: '$timestamp' },
-          lastSeen: { $max: '$timestamp' }
+          lastSeen: { $max: '$timestamp' },
+          overflowCount: { $sum: { $cond: ['$is_overflow', 1, 0] } },
+          overflowStakeBTC: { $sum: { $cond: ['$is_overflow', '$stakeAmount', 0] } }
         }
       },
       {
         $project: {
           _id: 1,
           version: 1,
-          totalStake: 1,
+          totalStakeBTC: { $divide: ['$totalStake', 100000000] },
           totalTransactions: 1,
           uniqueStakers: 1,
           timeRange: {
@@ -465,7 +489,9 @@ export class Database {
                 '$firstSeen'
               ]
             }
-          }
+          },
+          overflowCount: 1,
+          overflowStakeBTC: { $divide: ['$overflowStakeBTC', 100000000] }
         }
       }
     ]);
@@ -481,7 +507,9 @@ export class Database {
         firstTimestamp: 0,
         lastTimestamp: 0,
         durationSeconds: 0
-      }
+      },
+      overflowCount: 0,
+      overflowStakeBTC: 0
     };
   }
 
@@ -492,6 +520,8 @@ export class Database {
     uniqueFPs: number;
     uniqueBlocks: number;
     timeRange: TimeRange;
+    overflowCount: number;
+    overflowStakeBTC: number;
   }> {
     const [stats] = await Transaction.aggregate([
       {
@@ -505,7 +535,9 @@ export class Database {
                 uniqueFPs: { $addToSet: '$finalityProvider' },
                 uniqueBlocks: { $addToSet: '$blockHeight' },
                 firstSeen: { $min: '$timestamp' },
-                lastSeen: { $max: '$timestamp' }
+                lastSeen: { $max: '$timestamp' },
+                overflowCount: { $sum: { $cond: ['$is_overflow', 1, 0] } },
+                overflowStakeBTC: { $sum: { $cond: ['$is_overflow', '$stakeAmount', 0] } }
               }
             }
           ],
@@ -571,6 +603,20 @@ export class Database {
                 durationSeconds: 0
               }
             }
+          },
+          overflowCount: {
+            $cond: {
+              if: { $gt: [{ $size: '$stats' }, 0] },
+              then: { $first: '$stats.overflowCount' },
+              else: 0
+            }
+          },
+          overflowStakeBTC: {
+            $cond: {
+              if: { $gt: [{ $size: '$stats' }, 0] },
+              then: { $divide: [{ $first: '$stats.overflowStakeBTC' }, 100000000] },
+              else: 0
+            }
           }
         }
       }
@@ -586,7 +632,9 @@ export class Database {
         firstTimestamp: 0,
         lastTimestamp: 0,
         durationSeconds: 0
-      }
+      },
+      overflowCount: 0,
+      overflowStakeBTC: 0
     };
   }
 
@@ -618,7 +666,9 @@ export class Database {
             $inc: { 
               totalStake: tx.stakeAmount,
               transactionCount: 1,
-              activeStakes: 1
+              activeStakes: 1,
+              overflowCount: tx.is_overflow ? 1 : 0,
+              overflowStakeBTC: tx.is_overflow ? tx.stakeAmount / 100000000 : 0
             },
             $addToSet: { finalityProviders: tx.finalityProvider },
             $min: { firstSeen: tx.timestamp },
@@ -729,7 +779,9 @@ export class Database {
           {
             $inc: {
               totalStakeBTC: stakeBTC,
-              totalTransactions: 1
+              totalTransactions: 1,
+              overflowCount: transaction.is_overflow ? 1 : 0,
+              overflowStakeBTC: transaction.is_overflow ? stakeBTC : 0
             },
             $set: {
               currentHeight: height,
@@ -798,7 +850,9 @@ export class Database {
         {
           $inc: {
             totalStakeBTC: totalStakeBTC,
-            totalTransactions: transactions.length
+            totalTransactions: transactions.length,
+            overflowCount: transactions.reduce((sum, tx) => sum + (tx.is_overflow ? 1 : 0), 0),
+            overflowStakeBTC: transactions.reduce((sum, tx) => sum + (tx.is_overflow ? Number((tx.stakeAmount / 100000000).toFixed(8)) : 0), 0)
           },
           $set: {
             currentHeight: height,

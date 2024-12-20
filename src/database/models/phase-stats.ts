@@ -12,6 +12,8 @@ export interface PhaseStats extends Document {
   lastUpdateTime: Date;
   status: 'active' | 'completed';
   completionReason?: 'target_reached' | 'timeout' | 'inactivity' | 'block_height';
+  overflowCount: number;
+  overflowStakeBTC: number;
 }
 
 const PhaseStatsSchema = new Schema<PhaseStats>({
@@ -25,7 +27,9 @@ const PhaseStatsSchema = new Schema<PhaseStats>({
   lastStakeHeight: { type: Number, required: true },
   lastUpdateTime: { type: Date, required: true },
   status: { type: String, required: true, enum: ['active', 'completed'] },
-  completionReason: { type: String, enum: ['target_reached', 'timeout', 'inactivity', 'block_height'] }
+  completionReason: { type: String, enum: ['target_reached', 'timeout', 'inactivity', 'block_height'] },
+  overflowCount: { type: Number, required: true, default: 0 },
+  overflowStakeBTC: { type: Number, required: true, default: 0 }
 }, {
   timestamps: true,
   collection: 'phasestats'

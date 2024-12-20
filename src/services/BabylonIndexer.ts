@@ -250,7 +250,8 @@ export class BabylonIndexer {
       finalityProvider: parsed.finality_provider,
       stakingTime: parsed.staking_time,
       version: parsed.version,
-      paramsVersion: parsed.version
+      paramsVersion: parsed.version,
+      is_overflow: parsed.isOverflow || false
     };
   }
 
