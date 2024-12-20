@@ -98,11 +98,12 @@ function findBabylonTaprootOutput(tx: any): { output: any, index: number } | nul
     return null;
 }
 
-export function validateStakeTransaction(
+export async function validateStakeTransaction(
     tx: any,
     params: VersionParams,
-    height: number
-): StakeValidationResult {
+    height: number,
+    currentActiveStake: number
+): Promise<StakeValidationResult> {
     const result: StakeValidationResult = {
         isValid: false,
         hasBabylonPrefix: false,
@@ -154,18 +155,26 @@ export function validateStakeTransaction(
         return result;
     }
 
-    // Validate staking amount
-    const stakeAmount = stakingOutput.output.value * 100000000; // Convert to satoshis
-    result.adjustedAmount = stakeAmount;
+    // Validate staking amount (use BigInt for precise calculations)
+    const stakeAmount = BigInt(Math.floor(stakingOutput.output.value * 100000000)); // Convert to satoshis
+    result.adjustedAmount = Number(stakeAmount);
 
-    if (stakeAmount < params.min_staking_amount) {
+    // Check if amount is below minimum
+    if (stakeAmount < BigInt(params.min_staking_amount)) {
         result.errors.push('INSUFFICIENT_STAKE');
         result.invalidReasons.invalidAmount = true;
-    } else if (stakeAmount > params.max_staking_amount) {
-        result.isOverflow = true;
-        result.overflowAmount = stakeAmount - params.max_staking_amount;
-        result.adjustedAmount = params.max_staking_amount;
+        return result;
     }
+
+    // Check if amount exceeds max individual stake
+    if (stakeAmount > BigInt(params.max_staking_amount)) {
+        result.errors.push('EXCEEDS_MAX_STAKE');
+        result.invalidReasons.invalidAmount = true;
+        return result;
+    }
+
+    // Note: Overflow check is now handled in processBlockWithParams
+    // This function only validates the basic requirements
 
     // Validate staking time
     const stakingTime = result.parsedOpReturn?.staking_time;

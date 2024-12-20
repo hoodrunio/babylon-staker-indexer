@@ -9,7 +9,8 @@ export interface StakeTransaction {
   stakingTime: number;
   version: number;
   paramsVersion: number;
-  is_overflow: boolean;
+  isOverflow: boolean;
+  overflowAmount: number;
 }
 
 export interface TimeRange {
@@ -24,8 +25,6 @@ export interface StakeMetrics {
   uniqueStakers: number;
   uniqueBlocks: number;
   timeRange: TimeRange;
-  overflowCount: number;
-  overflowStakeBTC: number;
 }
 
 export interface FinalityProviderStats extends StakeMetrics {

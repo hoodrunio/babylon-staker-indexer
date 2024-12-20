@@ -18,16 +18,6 @@ const stakerSchema = new mongoose.Schema({
     required: true, 
     default: 0 
   },
-  overflowCount: {
-    type: Number,
-    required: true,
-    default: 0
-  },
-  overflowStakeBTC: {
-    type: Number,
-    required: true,
-    default: 0
-  },
   uniqueStakers: { 
     type: [String], 
     default: [] 

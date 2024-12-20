@@ -206,7 +206,8 @@ export class BabylonIndexer {
     tx: any,
     parsed: any,
     block: any,
-    stakeAmountSatoshi: number
+    stakeAmountSatoshi: number,
+    validationResult: any
   ): StakeTransaction | null {
     // Get staker address from input - try different formats
     let stakerAddress: string | undefined;
@@ -251,61 +252,127 @@ export class BabylonIndexer {
       stakingTime: parsed.staking_time,
       version: parsed.version,
       paramsVersion: parsed.version,
-      is_overflow: parsed.isOverflow || false
+      isOverflow: validationResult.isOverflow || false,
+      overflowAmount: validationResult.overflowAmount || 0
     };
   }
 
   private async processBlockWithParams(block: any, params: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
     const transactions: Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}> = [];
+    const validTransactions: Array<{tx: any, amount: number, timestamp: number}> = [];
 
+    // Get current ACTIVE stake from previous blocks
+    const stats = await this.db.getGlobalStats();
+    const previousBlocksStake = Math.floor(stats.activeStakeBTC * 100000000); // Convert to satoshis
+    const stakingCapSats = BigInt(Math.floor(params.staking_cap!));
+
+    console.log(`Processing block ${block.height}:`, {
+      previousBlocksStake: previousBlocksStake / 100000000,
+      stakingCap: Number(stakingCapSats) / 100000000,
+      remainingSpace: (Number(stakingCapSats) - previousBlocksStake) / 100000000,
+      totalTxs: block.tx.length
+    });
+
+    // First pass: Collect all valid transactions with their timestamps
     for (const tx of block.tx) {
-      // Skip if no parameters available
       if (!params) {
         console.log(`Skip: No parameters found for height ${block.height}`);
         continue;
       }
 
-      // Validate the transaction
-      const validationResult = validateStakeTransaction(tx, params, block.height);
+      // Basic validation without overflow check
+      const validationResult = await validateStakeTransaction(tx, params, block.height, 0);
       
-      // Always process transactions with Babylon prefix, even if invalid
       if (!validationResult.hasBabylonPrefix) continue;
 
-      // Create stake transaction with adjusted amount if overflow
-      const stakeAmountSatoshi = this.findStakingAmount(tx, validationResult);
+      // Skip invalid transactions
+      if (validationResult.errors.length > 0) {
+        transactions.push({
+          ...this.createStakeTransaction(tx, validationResult.parsedOpReturn, block, validationResult.adjustedAmount, validationResult)!,
+          isValid: false,
+          hasBabylonPrefix: true
+        });
+        continue;
+      }
+
+      // Collect valid transactions with their timestamps
+      const stakeAmountSatoshi = Math.floor(this.findStakingAmount(tx, validationResult));
+      validTransactions.push({
+        tx,
+        amount: stakeAmountSatoshi,
+        timestamp: tx.time || block.time // Use tx timestamp if available, fallback to block time
+      });
+    }
+
+    // Sort transactions by timestamp (FCFS)
+    validTransactions.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Second pass: Process transactions in timestamp order
+    let runningTotal = previousBlocksStake;
+
+    console.log(`Processing ${validTransactions.length} valid transactions in order`);
+
+    for (const {tx, amount, timestamp} of validTransactions) {
+      const newTotal = BigInt(Math.floor(runningTotal)) + BigInt(Math.floor(amount));
+      const isOverflow = newTotal > stakingCapSats;
+
+      // Create transaction with overflow status
+      const validationResult = {
+        isValid: true,
+        hasBabylonPrefix: true,
+        errors: [],
+        isOverflow,
+        overflowAmount: isOverflow ? amount : 0,
+        adjustedAmount: amount
+      };
+
       const stakeTransaction = this.createStakeTransaction(
         tx,
-        validationResult.parsedOpReturn,
+        parseOpReturn(tx.vout.find((v: any) => v.scriptPubKey.hex?.startsWith('6a47')).scriptPubKey.hex),
         block,
-        stakeAmountSatoshi
+        amount,
+        validationResult
       );
 
       if (stakeTransaction) {
+        if (!isOverflow) {
+          // Transaction fits under cap, update running total
+          runningTotal = Math.floor(Number(newTotal));
+          console.log(`Accepted tx ${tx.txid} (timestamp: ${new Date(timestamp * 1000).toISOString()}):`, {
+            amount: amount / 100000000,
+            newTotal: runningTotal / 100000000,
+            remainingSpace: (Number(stakingCapSats) - runningTotal) / 100000000
+          });
+        } else {
+          console.log(`Overflow tx ${tx.txid} (timestamp: ${new Date(timestamp * 1000).toISOString()}):`, {
+            amount: amount / 100000000,
+            currentTotal: runningTotal / 100000000,
+            wouldBe: Number(newTotal) / 100000000,
+            stakingCap: Number(stakingCapSats) / 100000000,
+            exceedBy: (Number(newTotal) - Number(stakingCapSats)) / 100000000
+          });
+        }
+
         transactions.push({
           ...stakeTransaction,
-          isValid: validationResult.isValid,
-          hasBabylonPrefix: true
+          isValid: true,
+          hasBabylonPrefix: true,
+          isOverflow: validationResult.isOverflow,
+          overflowAmount: validationResult.overflowAmount
         });
       }
-
-      // Log validation details
-      if (validationResult.errors.length > 0) {
-        const logData = {
-          txid: tx.txid,
-          height: block.height,
-          errors: validationResult.errors,
-          stake: {
-            total: tx.vout.find((out: any) => this.isTaprootOutput(out))?.value || 0,
-            adjusted: stakeAmountSatoshi / 100000000,
-            overflow: validationResult.overflowAmount ? validationResult.overflowAmount / 100000000 : 0
-          },
-          isOverflow: validationResult.isOverflow,
-          invalidReasons: validationResult.invalidReasons
-        };
-        
-        console.log(`Validation issues for tx ${tx.txid}:`, JSON.stringify(logData, null, 2));
-      }
     }
+
+    // Log final state
+    console.log(`Finished block ${block.height}:`, {
+      initialStake: previousBlocksStake / 100000000,
+      finalStake: runningTotal / 100000000,
+      stakingCap: Number(stakingCapSats) / 100000000,
+      remainingSpace: (Number(stakingCapSats) - runningTotal) / 100000000,
+      processedTxs: transactions.length,
+      activeAccepted: transactions.filter(tx => !tx.isOverflow).length,
+      overflowTxs: transactions.filter(tx => tx.isOverflow).length
+    });
 
     return transactions;
   }
