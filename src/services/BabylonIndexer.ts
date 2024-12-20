@@ -22,8 +22,9 @@ export class BabylonIndexer {
       let actualEndHeight = endHeight;
 
       // Handle phase-specific indexing
+      const isReindexing = process.env.INDEX_SPECIFIC_PHASE === 'true';
       let targetPhase = null;
-      if (process.env.INDEX_SPECIFIC_PHASE === 'true') {
+      if (isReindexing) {
         const phaseToIndex = parseInt(process.env.PHASE_TO_INDEX || '1');
         const phaseStartOverride = process.env.PHASE_START_OVERRIDE ? parseInt(process.env.PHASE_START_OVERRIDE) : null;
         const phaseEndOverride = process.env.PHASE_END_OVERRIDE ? parseInt(process.env.PHASE_END_OVERRIDE) : null;
@@ -69,26 +70,83 @@ export class BabylonIndexer {
       const { getPhaseForHeight, checkPhaseCondition, getPhaseConfig } = await import('../config/phase-config');
       const phaseConfig = getPhaseConfig();
 
-      // Pre-load and cache parameters for the entire range
-      const paramsCache = new Map<number, any>();
-      for (let height = actualStartHeight; height <= actualEndHeight; height++) {
-        const params = await getParamsForHeight(height);
-        if (params) {
-          paramsCache.set(height, params);
+      // Initialize stats for all phases if not reindexing
+      if (!isReindexing) {
+        for (const phase of phaseConfig.phases) {
+          try {
+            await this.db.initPhaseStats(phase.phase, phase.startHeight);
+            console.log(`Initialized stats for phase ${phase.phase}`);
+          } catch (error) {
+            console.error(`Error initializing phase ${phase.phase} stats:`, error);
+          }
         }
       }
 
+      // Pre-load and cache parameters for the entire range
+      const paramsCache = new Map<number, any>();
+      
       // Process blocks in batches
-      const BATCH_SIZE = 5; // Reduced from 10 to 5 to stay within rate limits
-      for (let batchStart = actualStartHeight; batchStart <= actualEndHeight; batchStart += BATCH_SIZE) {
-        const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, actualEndHeight);
-        const progress = ((batchStart - actualStartHeight) / (actualEndHeight - actualStartHeight)) * 100;
-        console.log(`Progress: ${progress.toFixed(1)}% | Processing blocks ${batchStart} to ${batchEnd}`);
+      const BATCH_SIZE = 5;
+      let currentHeight = actualStartHeight;
+      let currentPhaseNumber = 0;
+      
+      while (currentHeight <= actualEndHeight) {
+        const batchEnd = Math.min(currentHeight + BATCH_SIZE - 1, actualEndHeight);
+        const progress = ((currentHeight - actualStartHeight) / (actualEndHeight - actualStartHeight)) * 100;
+        console.log(`Progress: ${progress.toFixed(1)}% | Processing blocks ${currentHeight} to ${batchEnd}`);
 
         try {
+          // Get the current phase
+          const currentPhase = targetPhase || getPhaseForHeight(currentHeight);
+          if (!currentPhase) {
+            console.log(`No active phase for height ${currentHeight}, skipping...`);
+            
+            // Find the next phase's start height
+            const nextPhase = phaseConfig.phases.find(p => p.startHeight > currentHeight);
+            if (nextPhase) {
+              console.log(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
+              
+              // Initialize stats for the next phase if it's different from the current one
+              if (nextPhase.phase !== currentPhaseNumber) {
+                try {
+                  await this.db.initPhaseStats(nextPhase.phase, nextPhase.startHeight);
+                  console.log(`Initialized stats for phase ${nextPhase.phase}`);
+                  currentPhaseNumber = nextPhase.phase;
+                } catch (error) {
+                  console.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
+                }
+              }
+              
+              currentHeight = nextPhase.startHeight;
+              continue;
+            } else {
+              console.log('No more phases to process');
+              break;
+            }
+          }
+
+          // Update current phase number if it changed
+          if (currentPhase.phase !== currentPhaseNumber) {
+            try {
+              await this.db.initPhaseStats(currentPhase.phase, currentPhase.startHeight);
+              console.log(`Initialized stats for phase ${currentPhase.phase}`);
+              currentPhaseNumber = currentPhase.phase;
+            } catch (error) {
+              console.error(`Error initializing phase ${currentPhase.phase} stats:`, error);
+            }
+          }
+
+          // Load parameters for the batch
+          for (let height = currentHeight; height <= batchEnd; height++) {
+            const params = await getParamsForHeight(height);
+            if (params) {
+              paramsCache.set(height, params);
+            }
+          }
+
           // Fetch blocks in parallel with built-in rate limiting
           const blockPromises = [];
-          for (let height = batchStart; height <= batchEnd; height++) {
+          for (let height = currentHeight; height <= batchEnd; height++) {
             blockPromises.push(this.rpc.getBlock(height));
           }
           
@@ -100,14 +158,8 @@ export class BabylonIndexer {
 
           for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
-            const height = batchStart + i;
+            const height = currentHeight + i;
             
-            const currentPhase = targetPhase || getPhaseForHeight(height);
-            if (!currentPhase) {
-              console.log(`No active phase for height ${height}, skipping...`);
-              continue;
-            }
-
             // Get cached parameters
             const params = this.getParamsFromCache(height, paramsCache);
             const transactions = await this.processBlockWithParams(block, params);
@@ -119,6 +171,29 @@ export class BabylonIndexer {
 
             blockStats.set(height, { phase: currentPhase.phase, validTxCount });
             batchTransactions.push(...transactions);
+
+            // Check if phase conditions are met
+            if (!isReindexing && await checkPhaseCondition(currentPhase, height)) {
+              console.log(`Phase ${currentPhase.phase} conditions have been met at height ${height}`);
+              
+              // Find the next phase's start height
+              const nextPhase = phaseConfig.phases.find(p => p.startHeight > height);
+              if (nextPhase) {
+                console.log(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
+                
+                // Initialize stats for the next phase
+                try {
+                  await this.db.initPhaseStats(nextPhase.phase, nextPhase.startHeight);
+                  console.log(`Initialized stats for phase ${nextPhase.phase}`);
+                  currentPhaseNumber = nextPhase.phase;
+                } catch (error) {
+                  console.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
+                }
+                
+                currentHeight = nextPhase.startHeight - 1; // -1 because we'll increment at the end of the loop
+                break;
+              }
+            }
           }
 
           // Batch save transactions and update stats
@@ -128,46 +203,34 @@ export class BabylonIndexer {
               await this.db.saveTransactionBatch(validTransactions);
               savedTransactions += validTransactions.length;
             }
-          }
 
-          // Update block processing state and phase stats
-          for (const [height, stats] of blockStats) {
-            await this.db.updateLastProcessedBlock(height);
-            if (stats.validTxCount > 0) {
-              const transactions = batchTransactions.filter(tx => 
-                tx.isValid && tx.blockHeight === height
-              );
-              await this.db.updatePhaseStatsBatch(stats.phase, height, transactions);
-            }
-
-            // Check phase conditions
-            if (!targetPhase) {
-              const currentPhase = getPhaseForHeight(height);
-              if (currentPhase) {
-                const phaseEnded = await checkPhaseCondition(currentPhase, height);
-                if (phaseEnded) {
-                  console.log(`Phase ${currentPhase.phase} conditions have been met at height ${height}`);
-                }
+            // Update phase stats and last processed block
+            for (const [height, stats] of blockStats) {
+              if (stats.validTxCount > 0) {
+                const heightTransactions = batchTransactions.filter(tx => 
+                  tx.isValid && tx.blockHeight === height
+                );
+                await this.db.updatePhaseStatsBatch(stats.phase, height, heightTransactions);
               }
+              await this.db.updateLastProcessedBlock(height);
             }
           }
 
-          // Add a small delay between batches to help prevent rate limiting
-          await new Promise(resolve => setTimeout(resolve, 500));
+          currentHeight = batchEnd + 1;
         } catch (error) {
-          console.error(`Error processing batch ${batchStart}-${batchEnd}:`, error);
-          continue;
+          console.error(`Error processing blocks ${currentHeight}-${batchEnd}:`, error);
+          currentHeight = batchEnd + 1;
         }
       }
 
-      console.log("\nScan Statistics:");
-      console.log(`Total transactions: ${totalTransactions}`);
-      console.log(`Babylon prefix found: ${babylonPrefix}`);
-      console.log(`Valid stakes found: ${validStakes}`);
-      console.log(`Successfully saved: ${savedTransactions}`);
+      console.log('\nIndexing completed!');
+      console.log(`Total transactions processed: ${totalTransactions}`);
+      console.log(`Babylon prefix transactions: ${babylonPrefix}`);
+      console.log(`Valid stakes: ${validStakes}`);
+      console.log(`Saved transactions: ${savedTransactions}`);
 
     } catch (error) {
-      console.error('Error in scanBlocks:', error);
+      console.error('Error scanning blocks:', error);
       throw error;
     }
   }
@@ -257,21 +320,80 @@ export class BabylonIndexer {
     };
   }
 
+  private determinePhaseAndOverflow(blockHeight: number, tx: any, params: any): { phase: number, isOverflow: boolean, shouldProcess: boolean } {
+    // Phase ranges
+    const phaseRanges = {
+      1: {
+        start: parseInt(process.env.PHASE1_START_HEIGHT || '857910'),
+        end: parseInt(process.env.PHASE1_END_HEIGHT || '864789')
+      },
+      2: {
+        start: parseInt(process.env.PHASE2_START_HEIGHT || '864790'),
+        end: parseInt(process.env.PHASE2_END_HEIGHT || '875087')
+      },
+      3: {
+        start: parseInt(process.env.PHASE3_START_HEIGHT || '875088'),
+        end: parseInt(process.env.PHASE3_END_HEIGHT || '885385')
+      }
+    };
+
+    // Determine which phase this block belongs to
+    let phase = 0;
+    for (const [p, range] of Object.entries(phaseRanges)) {
+      if (blockHeight >= range.start && blockHeight <= range.end) {
+        phase = parseInt(p);
+        break;
+      }
+    }
+
+    // If we're in specific phase mode, check if we should process this transaction
+    const indexSpecificPhase = process.env.INDEX_SPECIFIC_PHASE === 'true';
+    const targetPhase = parseInt(process.env.PHASE_TO_INDEX || '1');
+    
+    // In specific phase mode, only process transactions for the target phase
+    const shouldProcess = !indexSpecificPhase || phase === targetPhase;
+    if (!shouldProcess) {
+      return { phase, isOverflow: false, shouldProcess: false };
+    }
+
+    // Determine if transaction is overflow based on phase-specific rules
+    let isOverflow = false;
+
+    switch (phase) {
+      case 1:
+        // Phase 1: Check against staking cap
+        const stakingCapSats = BigInt(Math.floor(params.staking_cap!));
+        const currentStakeSats = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
+        isOverflow = currentStakeSats > stakingCapSats;
+        break;
+
+      case 2:
+        // Phase 2: Check block height range and max staking amount
+        const range2 = phaseRanges[2];
+        const stakeAmount2 = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
+        isOverflow = blockHeight < range2.start || blockHeight > range2.end || 
+                     stakeAmount2 > BigInt(params.max_staking_amount);
+        break;
+
+      case 3:
+        // Phase 3: Check block height range and phase 3 specific max staking amount
+        const range3 = phaseRanges[3];
+        const stakeAmount3 = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
+        isOverflow = blockHeight < range3.start || blockHeight > range3.end || 
+                     stakeAmount3 > BigInt(params.max_staking_amount_phase_3);
+        break;
+
+      default:
+        // If block is not in any phase range, mark as overflow
+        isOverflow = true;
+    }
+
+    return { phase, isOverflow, shouldProcess: true };
+  }
+
   private async processBlockWithParams(block: any, params: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
     const transactions: Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}> = [];
     const validTransactions: Array<{tx: any, amount: number, timestamp: number}> = [];
-
-    // Get current ACTIVE stake from previous blocks
-    const stats = await this.db.getGlobalStats();
-    const previousBlocksStake = Math.floor(stats.activeStakeBTC * 100000000); // Convert to satoshis
-    const stakingCapSats = BigInt(Math.floor(params.staking_cap!));
-
-    console.log(`Processing block ${block.height}:`, {
-      previousBlocksStake: previousBlocksStake / 100000000,
-      stakingCap: Number(stakingCapSats) / 100000000,
-      remainingSpace: (Number(stakingCapSats) - previousBlocksStake) / 100000000,
-      totalTxs: block.tx.length
-    });
 
     // First pass: Collect all valid transactions with their timestamps
     for (const tx of block.tx) {
@@ -300,21 +422,36 @@ export class BabylonIndexer {
       validTransactions.push({
         tx,
         amount: stakeAmountSatoshi,
-        timestamp: tx.time || block.time // Use tx timestamp if available, fallback to block time
+        timestamp: tx.time || block.time
       });
     }
 
     // Sort transactions by timestamp (FCFS)
     validTransactions.sort((a, b) => a.timestamp - b.timestamp);
 
-    // Second pass: Process transactions in timestamp order
-    let runningTotal = previousBlocksStake;
+    // Get running total for Phase 1 cap check
+    const stats = await this.db.getGlobalStats();
+    let runningTotal = Math.floor(stats.activeStakeBTC * 100000000); // Convert to satoshis
 
-    console.log(`Processing ${validTransactions.length} valid transactions in order`);
-
+    // Second pass: Process transactions
     for (const {tx, amount, timestamp} of validTransactions) {
-      const newTotal = BigInt(Math.floor(runningTotal)) + BigInt(Math.floor(amount));
-      const isOverflow = newTotal > stakingCapSats;
+      // Determine phase and overflow status
+      const { phase, isOverflow: initialOverflow, shouldProcess } = this.determinePhaseAndOverflow(block.height, tx, params);
+
+      // Skip if we shouldn't process this transaction
+      if (!shouldProcess) continue;
+
+      // For Phase 1, we need to check running total
+      let isOverflow = initialOverflow;
+      if (phase === 1 && !initialOverflow) {
+        const newTotal = BigInt(Math.floor(runningTotal)) + BigInt(Math.floor(amount));
+        const stakingCapSats = BigInt(Math.floor(params.staking_cap!));
+        isOverflow = newTotal > stakingCapSats;
+        
+        if (!isOverflow) {
+          runningTotal = Math.floor(Number(newTotal));
+        }
+      }
 
       // Create transaction with overflow status
       const validationResult = {
@@ -336,20 +473,17 @@ export class BabylonIndexer {
 
       if (stakeTransaction) {
         if (!isOverflow) {
-          // Transaction fits under cap, update running total
-          runningTotal = Math.floor(Number(newTotal));
-          console.log(`Accepted tx ${tx.txid} (timestamp: ${new Date(timestamp * 1000).toISOString()}):`, {
+          console.log(`Accepted tx ${tx.txid} (phase ${phase}):`, {
             amount: amount / 100000000,
-            newTotal: runningTotal / 100000000,
-            remainingSpace: (Number(stakingCapSats) - runningTotal) / 100000000
+            blockHeight: block.height,
+            timestamp: new Date(timestamp * 1000).toISOString()
           });
         } else {
-          console.log(`Overflow tx ${tx.txid} (timestamp: ${new Date(timestamp * 1000).toISOString()}):`, {
+          console.log(`Overflow tx ${tx.txid} (phase ${phase}):`, {
             amount: amount / 100000000,
-            currentTotal: runningTotal / 100000000,
-            wouldBe: Number(newTotal) / 100000000,
-            stakingCap: Number(stakingCapSats) / 100000000,
-            exceedBy: (Number(newTotal) - Number(stakingCapSats)) / 100000000
+            blockHeight: block.height,
+            timestamp: new Date(timestamp * 1000).toISOString(),
+            reason: phase === 1 ? 'exceeds_cap' : 'invalid_height'
           });
         }
 
@@ -365,13 +499,10 @@ export class BabylonIndexer {
 
     // Log final state
     console.log(`Finished block ${block.height}:`, {
-      initialStake: previousBlocksStake / 100000000,
-      finalStake: runningTotal / 100000000,
-      stakingCap: Number(stakingCapSats) / 100000000,
-      remainingSpace: (Number(stakingCapSats) - runningTotal) / 100000000,
       processedTxs: transactions.length,
       activeAccepted: transactions.filter(tx => !tx.isOverflow).length,
-      overflowTxs: transactions.filter(tx => tx.isOverflow).length
+      overflowTxs: transactions.filter(tx => tx.isOverflow).length,
+      phase1Total: runningTotal / 100000000
     });
 
     return transactions;

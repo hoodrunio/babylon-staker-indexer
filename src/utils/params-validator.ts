@@ -75,13 +75,47 @@ async function findApplicableVersion(height: number, versions: VersionParams[], 
   // Consider it reindexing if INDEX_SPECIFIC_PHASE is true
   const isReindexing = process.env.INDEX_SPECIFIC_PHASE === 'true';
 
+  // Find the version configurations for each phase
+  const phase1Version = versions.find(v => v.phase === 1);
+  const phase2Version = versions.find(v => v.phase === 2);
+  const phase3Version = versions.find(v => v.phase === 3);
+
+  if (!phase1Version || !phase2Version || !phase3Version) {
+    console.error('Missing phase configurations in global-params.json');
+    return null;
+  }
+
   for (const version of versions) {
-    // Use environment variables for heights based on phase
-    const startHeight = parseInt(process.env[`PHASE${version.phase}_START_HEIGHT`] || version.activation_height.toString());
-    const endHeight = version.phase === 1 ? 
-      parseInt(process.env.PHASE1_TIMEOUT_HEIGHT || '858000') :
-      parseInt(process.env[`PHASE${version.phase}_END_HEIGHT`] || (version.cap_height || '0').toString());
+    let startHeight = 0;
+    let endHeight = 0;
+
+    if (isReindexing) {
+      // In reindexing mode, use strict phase boundaries from env vars with params as fallback
+      startHeight = parseInt(process.env[`PHASE${version.phase}_START_HEIGHT`] || version.activation_height.toString());
+      endHeight = version.phase === 1 ? 
+        parseInt(process.env.PHASE1_TIMEOUT_HEIGHT || version.cap_height?.toString() || version.activation_height.toString()) :
+        parseInt(process.env[`PHASE${version.phase}_END_HEIGHT`] || version.cap_height?.toString() || version.activation_height.toString());
+    } else {
+      // In continuous mode, use phase boundaries that connect without gaps
+      // Use env vars if specified, otherwise fall back to global-params.json values
+      if (version.phase === 1) {
+        startHeight = parseInt(process.env.PHASE1_START_HEIGHT || phase1Version.activation_height.toString());
+        endHeight = parseInt(process.env.PHASE2_START_HEIGHT || phase2Version.activation_height.toString()) - 1;
+      } else if (version.phase === 2) {
+        startHeight = parseInt(process.env.PHASE2_START_HEIGHT || phase2Version.activation_height.toString());
+        endHeight = parseInt(process.env.PHASE3_START_HEIGHT || phase3Version.activation_height.toString()) - 1;
+      } else if (version.phase === 3) {
+        startHeight = parseInt(process.env.PHASE3_START_HEIGHT || phase3Version.activation_height.toString());
+        endHeight = parseInt(process.env.PHASE3_END_HEIGHT || phase3Version.cap_height?.toString() || phase3Version.activation_height.toString());
+      }
+    }
     
+    // Skip if height is outside the valid range
+    if (startHeight === 0 || endHeight === 0) {
+      console.error(`Invalid height range for phase ${version.phase}: ${startHeight} - ${endHeight}`);
+      continue;
+    }
+
     if (height < startHeight || height > endHeight) {
       continue;
     }

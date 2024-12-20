@@ -1013,16 +1013,47 @@ export class Database {
     }
   }
 
-  async getPhaseStats(phase: number): Promise<any> {
+  async getPhaseStats(phase: number): Promise<PhaseStats | null> {
     try {
-      const stats = await PhaseStats.findOne({ phase }).lean();
+      let stats = await PhaseStats.findOne({ phase });
+      
       if (!stats) {
-        throw new Error(`Phase ${phase} not found`);
+        // Get the phase configuration to set proper start height
+        const { getPhaseConfig } = await import('../config/phase-config');
+        const phaseConfig = getPhaseConfig();
+        const phaseInfo = phaseConfig.phases.find(p => p.phase === phase);
+        
+        const startHeight = phaseInfo ? 
+          parseInt(process.env[`PHASE${phase}_START_HEIGHT`] || phaseInfo.startHeight.toString()) :
+          parseInt(process.env[`PHASE${phase}_START_HEIGHT`] || '0');
+
+        const currentTime = new Date();
+        
+        // If stats don't exist, create them with all required fields
+        stats = await PhaseStats.create({
+          phase,
+          totalStakeBTC: 0,
+          activeStakeBTC: 0,
+          overflowStakeBTC: 0,
+          uniqueStakers: 0,
+          transactionCount: 0,
+          firstBlock: startHeight,
+          lastBlock: startHeight,
+          startTime: currentTime,
+          endTime: currentTime,
+          status: 'active',
+          // Add the missing required fields
+          startHeight: startHeight,
+          currentHeight: startHeight,
+          lastStakeHeight: startHeight,
+          lastUpdateTime: currentTime
+        });
       }
+      
       return stats;
     } catch (error) {
       console.error('Error getting phase stats:', error);
-      throw error;
+      return null;
     }
   }
 
