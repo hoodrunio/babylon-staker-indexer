@@ -368,19 +368,10 @@ export class BabylonIndexer {
         break;
 
       case 2:
-        // Phase 2: Check block height range and max staking amount
-        const range2 = phaseRanges[2];
-        const stakeAmount2 = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
-        isOverflow = blockHeight < range2.start || blockHeight > range2.end || 
-                     stakeAmount2 > BigInt(params.max_staking_amount);
-        break;
-
       case 3:
-        // Phase 3: Check block height range and phase 3 specific max staking amount
-        const range3 = phaseRanges[3];
-        const stakeAmount3 = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
-        isOverflow = blockHeight < range3.start || blockHeight > range3.end || 
-                     stakeAmount3 > BigInt(params.max_staking_amount_phase_3);
+        // Phase 2 & 3: Transaction is overflow if outside valid block height range
+        const range = phaseRanges[phase];
+        isOverflow = blockHeight < range.start || blockHeight > range.end;
         break;
 
       default:
