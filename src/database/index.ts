@@ -17,6 +17,28 @@ interface QueryWithTimestamp {
   };
 }
 
+interface StakerTransaction {
+  txid: string;
+  phase: number;
+  timestamp: number;
+  amount: number;
+  amountBTC: number;
+  finalityProvider: string;
+}
+
+interface StakeTransactionInfo {
+  txid: string;
+  timestamp: number;
+  amount: number;
+  amountBTC: number;
+  finalityProvider: string;
+}
+
+interface PhaseTransactions {
+  phase: number;
+  transactions: StakeTransactionInfo[];
+}
+
 export class Database {
   private static instance: Database | null = null;
   private isConnected: boolean = false;
@@ -470,6 +492,61 @@ export class Database {
     // Get unique staker addresses
     const stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
 
+    // Filter phase stakes based on time range if provided
+    let phaseStakes = fp.phaseStakes?.map(phase => ({
+      phase: phase.phase,
+      totalStake: phase.totalStake,
+      transactionCount: phase.transactionCount,
+      stakerCount: phase.stakerCount,
+      stakers: phase.stakers.map(staker => ({
+        address: staker.address,
+        stake: staker.stake
+      }))
+    }));
+
+    if (timeRange) {
+      const transactions = await Transaction.find({
+        finalityProvider: address,
+        timestamp: {
+          $gte: timeRange.firstTimestamp,
+          $lte: timeRange.lastTimestamp
+        }
+      });
+
+      // Group transactions by phase
+      const phaseTransactions = new Map<number, StakeTransaction[]>();
+      transactions.forEach(tx => {
+        const phase = (tx as any).phase || 0;
+        if (!phaseTransactions.has(phase)) {
+          phaseTransactions.set(phase, []);
+        }
+        phaseTransactions.get(phase)!.push(tx);
+      });
+
+      // Update phase stakes
+      phaseStakes = Array.from(phaseTransactions.entries()).map(([phase, txs]) => {
+        const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
+        const uniqueStakers = new Set(txs.map(tx => tx.stakerAddress));
+        const stakerStakes = new Map<string, number>();
+        
+        txs.forEach(tx => {
+          const currentStake = stakerStakes.get(tx.stakerAddress) || 0;
+          stakerStakes.set(tx.stakerAddress, currentStake + tx.stakeAmount);
+        });
+
+        return {
+          phase,
+          totalStake,
+          transactionCount: txs.length,
+          stakerCount: uniqueStakers.size,
+          stakers: Array.from(stakerStakes.entries()).map(([address, stake]) => ({
+            address,
+            stake
+          }))
+        };
+      });
+    }
+
     return {
       address: fp.address,
       totalStakeBTC: fp.totalStake / 100000000,
@@ -483,7 +560,8 @@ export class Database {
       },
       averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
       versionsUsed: fp.versionsUsed,
-      stakerAddresses
+      stakerAddresses,
+      phaseStakes
     };
   }
 
@@ -516,7 +594,17 @@ export class Database {
         },
         averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
         versionsUsed: fp.versionsUsed,
-        stakerAddresses
+        stakerAddresses,
+        phaseStakes: fp.phaseStakes?.map(phase => ({
+          phase: phase.phase,
+          totalStake: phase.totalStake,
+          transactionCount: phase.transactionCount,
+          stakerCount: phase.stakerCount,
+          stakers: phase.stakers.map(staker => ({
+            address: staker.address,
+            stake: staker.stake
+          }))
+        }))
       };
     }));
   }
@@ -526,18 +614,27 @@ export class Database {
       .sort({ totalStake: -1 })
       .limit(limit);
 
-    // Toplam stake miktarını hesapla
-    const totalStake = await FinalityProvider.aggregate([
-      { $group: { _id: null, total: { $sum: '$totalStake' } } }
-    ]);
-    const totalStakeAmount = totalStake[0]?.total || 0;
+    const totalStake = fps.reduce((sum, fp) => sum + fp.totalStake, 0);
 
     const results = await Promise.all(fps.map(async (fp, index) => {
       const uniqueBlocks = await Transaction.distinct('blockHeight', {
         finalityProvider: fp.address
       });
 
+      const phaseStakes = fp.phaseStakes?.map(phase => ({
+        phase: phase.phase,
+        totalStake: phase.totalStake,
+        transactionCount: phase.transactionCount,
+        stakerCount: phase.stakerCount,
+        stakers: phase.stakers.map(staker => ({
+          address: staker.address,
+          stake: staker.stake
+        }))
+      }));
+
       return {
+        rank: index + 1,
+        stakingShare: totalStake > 0 ? (fp.totalStake / totalStake) * 100 : 0,
         address: fp.address,
         totalStakeBTC: fp.totalStake / 100000000,
         transactionCount: fp.transactionCount,
@@ -548,11 +645,10 @@ export class Database {
           lastTimestamp: fp.lastSeen,
           durationSeconds: fp.lastSeen - fp.firstSeen
         },
-        stakerAddresses: [],
         averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
         versionsUsed: fp.versionsUsed,
-        rank: index + 1,
-        stakingShare: (fp.totalStake / totalStakeAmount) * 100
+        stakerAddresses: fp.uniqueStakers,
+        phaseStakes
       };
     }));
 
@@ -560,50 +656,119 @@ export class Database {
   }
 
   async getStakerStats(address: string, timeRange?: TimeRange): Promise<StakerStats> {
-    try {
-      console.log('Searching for staker:', address);
-      console.log('Time range:', timeRange);
-
-      // Önce staker'ı bul
-      const staker = await Staker.findOne({ address });
-      if (!staker) {
-        throw new Error(`Staker not found: ${address}`);
-      }
-
-      // TimeRange varsa geçerli olduğunu kontrol et
-      if (timeRange) {
-        if (isNaN(timeRange.firstTimestamp) || isNaN(timeRange.lastTimestamp)) {
-          throw new Error('Invalid time range parameters');
-        }
-      }
-
-      // Blok sayısını hesapla
-      const uniqueBlocks = await Transaction.distinct('blockHeight', {
-        stakerAddress: address,
-        ...(timeRange && {
-          timestamp: {
-            $gte: timeRange.firstTimestamp,
-            $lte: timeRange.lastTimestamp
-          }
-        })
-      });
-
-      return {
-        totalStakeBTC: staker.totalStake / 100000000,
-        transactionCount: staker.transactionCount,
-        uniqueBlocks: uniqueBlocks.length,
-        timeRange: timeRange || {
-          firstTimestamp: staker.firstSeen,
-          lastTimestamp: staker.lastSeen,
-          durationSeconds: staker.lastSeen - staker.firstSeen
-        },
-        finalityProviders: staker.finalityProviders,
-        activeStakes: staker.activeStakes
+    const query: QueryWithTimestamp = { address };
+    if (timeRange) {
+      query.timestamp = {
+        $gte: timeRange.firstTimestamp,
+        $lte: timeRange.lastTimestamp
       };
-    } catch (error) {
-      console.error('Error in getStakerStats:', error);
-      throw error;
     }
+
+    const staker = await Staker.findOne(query);
+    if (!staker) {
+      throw new Error(`Staker not found: ${address}`);
+    }
+
+    // Get unique blocks
+    const uniqueBlocks = await Transaction.distinct('blockHeight', {
+      stakerAddress: address,
+      ...(timeRange && {
+        timestamp: {
+          $gte: timeRange.firstTimestamp,
+          $lte: timeRange.lastTimestamp
+        }
+      })
+    });
+
+    // Get transactions for this staker
+    const transactionQuery = {
+      stakerAddress: address,
+      ...(timeRange && {
+        timestamp: {
+          $gte: timeRange.firstTimestamp,
+          $lte: timeRange.lastTimestamp
+        }
+      })
+    };
+
+    const transactions = await Transaction.find(transactionQuery)
+      .sort({ timestamp: -1 })
+      .lean();
+
+    // Group transactions by phase
+    const phaseTransactionsMap = new Map<number, StakeTransactionInfo[]>();
+    
+    transactions.forEach(tx => {
+      const phase = tx.paramsVersion || 0;
+      if (!phaseTransactionsMap.has(phase)) {
+        phaseTransactionsMap.set(phase, []);
+      }
+      
+      phaseTransactionsMap.get(phase)!.push({
+        txid: tx.txid,
+        timestamp: tx.timestamp,
+        amount: tx.stakeAmount,
+        amountBTC: tx.stakeAmount / 100000000,
+        finalityProvider: tx.finalityProvider
+      });
+    });
+
+    const phaseTransactions: PhaseTransactions[] = Array.from(phaseTransactionsMap.entries())
+      .map(([phase, txs]) => ({
+        phase,
+        transactions: txs
+      }))
+      .sort((a, b) => b.phase - a.phase); // Sort by phase in descending order
+
+    // Filter phase stakes based on time range if provided
+    let phaseStakes = staker.phaseStakes?.map(phase => ({
+      phase: phase.phase,
+      totalStake: phase.totalStake,
+      transactionCount: phase.transactionCount,
+      finalityProviders: phase.finalityProviders.map(fp => ({
+        address: fp.address,
+        stake: fp.stake
+      }))
+    }));
+
+    if (timeRange) {
+      // Update phase stakes based on filtered transactions
+      phaseStakes = Array.from(phaseTransactionsMap.entries()).map(([phase, txs]) => {
+        const totalStake = txs.reduce((sum, tx) => sum + tx.amount, 0);
+        const fpStakes = new Map<string, number>();
+        
+        txs.forEach(tx => {
+          const currentStake = fpStakes.get(tx.finalityProvider) || 0;
+          fpStakes.set(tx.finalityProvider, currentStake + tx.amount);
+        });
+
+        return {
+          phase,
+          totalStake,
+          transactionCount: txs.length,
+          finalityProviders: Array.from(fpStakes.entries()).map(([address, stake]) => ({
+            address,
+            stake
+          }))
+        };
+      });
+    }
+
+    return {
+      address: staker.address,
+      totalStakeBTC: staker.totalStake / 100000000,
+      transactionCount: staker.transactionCount,
+      uniqueBlocks: uniqueBlocks.length,
+      timeRange: {
+        firstTimestamp: staker.firstSeen,
+        lastTimestamp: staker.lastSeen,
+        durationSeconds: staker.lastSeen - staker.firstSeen
+      },
+      finalityProviders: staker.finalityProviders,
+      activeStakes: staker.activeStakes,
+      phaseStakes,
+      transactions: phaseTransactions
+    };
   }
 
   async getTopStakers(limit: number = 10): Promise<StakerStats[]> {
@@ -616,7 +781,18 @@ export class Database {
         stakerAddress: staker.address
       });
 
+      const phaseStakes = staker.phaseStakes?.map(phase => ({
+        phase: phase.phase,
+        totalStake: phase.totalStake,
+        transactionCount: phase.transactionCount,
+        finalityProviders: phase.finalityProviders.map(fp => ({
+          address: fp.address,
+          stake: fp.stake
+        }))
+      }));
+
       return {
+        address: staker.address,
         totalStakeBTC: staker.totalStake / 100000000,
         transactionCount: staker.transactionCount,
         uniqueBlocks: uniqueBlocks.length,
@@ -626,7 +802,8 @@ export class Database {
           durationSeconds: staker.lastSeen - staker.firstSeen
         },
         finalityProviders: staker.finalityProviders,
-        activeStakes: staker.activeStakes
+        activeStakes: staker.activeStakes,
+        phaseStakes
       };
     }));
 
