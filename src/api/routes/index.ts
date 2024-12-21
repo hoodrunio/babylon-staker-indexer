@@ -1,8 +1,14 @@
 import express from 'express';
+import swaggerUi from 'swagger-ui-express';
 import { BabylonIndexer } from '../../services/BabylonIndexer';
+import { swaggerDocument } from '../swagger';
 
 const router = express.Router();
 const indexer = new BabylonIndexer();
+
+// Swagger documentation route
+router.use('/api-docs', swaggerUi.serve);
+router.get('/api-docs', swaggerUi.setup(swaggerDocument));
 
 // Finality Provider routes
 router.get('/finality-providers', async (req, res) => {
