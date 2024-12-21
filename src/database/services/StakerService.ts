@@ -178,21 +178,95 @@ export class StakerService {
     try {
       console.log('Starting staker reindexing...');
       
-      const transactions = await Transaction.find({});
+      const transactions = await Transaction.find({}).sort({ timestamp: 1 });
       
-      for (const tx of transactions) {
+      // Group transactions by staker
+      const stakerTransactions = new Map<string, Array<any>>();
+      transactions.forEach(tx => {
+        if (!stakerTransactions.has(tx.stakerAddress)) {
+          stakerTransactions.set(tx.stakerAddress, []);
+        }
+        stakerTransactions.get(tx.stakerAddress)!.push(tx);
+      });
+
+      // Process each staker
+      for (const [stakerAddress, txs] of stakerTransactions.entries()) {
+        // Group transactions by phase
+        const phaseTransactionsMap = new Map<number, Array<any>>();
+        const phaseStakesMap = new Map<number, {
+          totalStake: number;
+          transactionCount: number;
+          finalityProviders: Map<string, number>;
+        }>();
+
+        txs.forEach(tx => {
+          const phase = tx.paramsVersion || 0;
+          
+          // Add to phase transactions
+          if (!phaseTransactionsMap.has(phase)) {
+            phaseTransactionsMap.set(phase, []);
+          }
+          phaseTransactionsMap.get(phase)!.push({
+            txid: tx.txid,
+            phase,
+            timestamp: tx.timestamp,
+            amount: tx.stakeAmount,
+            finalityProvider: tx.finalityProvider
+          });
+
+          // Update phase stakes
+          if (!phaseStakesMap.has(phase)) {
+            phaseStakesMap.set(phase, {
+              totalStake: 0,
+              transactionCount: 0,
+              finalityProviders: new Map()
+            });
+          }
+          const phaseStats = phaseStakesMap.get(phase)!;
+          phaseStats.totalStake += tx.stakeAmount;
+          phaseStats.transactionCount += 1;
+          
+          const currentFPStake = phaseStats.finalityProviders.get(tx.finalityProvider) || 0;
+          phaseStats.finalityProviders.set(tx.finalityProvider, currentFPStake + tx.stakeAmount);
+        });
+
+        // Convert phase stakes to array format
+        const phaseStakes = Array.from(phaseStakesMap.entries()).map(([phase, stats]) => ({
+          phase,
+          totalStake: stats.totalStake,
+          transactionCount: stats.transactionCount,
+          finalityProviders: Array.from(stats.finalityProviders.entries()).map(([address, stake]) => ({
+            address,
+            stake
+          }))
+        }));
+
+        // Convert phase transactions to array format
+        const transactions = Array.from(phaseTransactionsMap.entries())
+          .sort((a, b) => b[0] - a[0]) // Sort by phase in descending order
+          .map(([phase, phaseTxs]) => ({
+            phase,
+            transactions: phaseTxs
+          }));
+
+        // Calculate total stats
+        const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
+        const uniqueFPs = new Set(txs.map(tx => tx.finalityProvider));
+        const timestamps = txs.map(tx => tx.timestamp);
+
+        // Update staker document
         await Staker.findOneAndUpdate(
-          { address: tx.stakerAddress },
+          { address: stakerAddress },
           {
-            address: tx.stakerAddress,
-            $inc: { 
-              totalStake: tx.stakeAmount,
-              transactionCount: 1,
-              activeStakes: 1
-            },
-            $addToSet: { finalityProviders: tx.finalityProvider },
-            $min: { firstSeen: tx.timestamp },
-            $max: { lastSeen: tx.timestamp }
+            address: stakerAddress,
+            totalStake,
+            transactionCount: txs.length,
+            activeStakes: txs.filter(tx => !tx.isOverflow).length,
+            finalityProviders: Array.from(uniqueFPs),
+            firstSeen: Math.min(...timestamps),
+            lastSeen: Math.max(...timestamps),
+            transactions: transactions.flatMap(p => p.transactions),
+            phaseStakes
           },
           { 
             upsert: true, 
