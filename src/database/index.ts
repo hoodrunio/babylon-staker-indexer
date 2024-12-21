@@ -851,9 +851,6 @@ export class Database {
         throw new Error(`Phase ${phase} stats not found`);
       }
 
-      // Get the staking cap from the current parameters
-      const stakingCapBTC = 1000; // This should come from your parameters
-
       // Sort transactions by timestamp for FCFS
       transactions.sort((a, b) => a.timestamp - b.timestamp);
 
@@ -863,10 +860,11 @@ export class Database {
       // Process transactions in timestamp order
       for (const tx of transactions) {
         const txAmountBTC = Number((tx.stakeAmount / 100000000).toFixed(8));
-        const wouldBe = currentActiveBTC + txAmountBTC;
 
-        // Mark as overflow if it would exceed cap
-        const isOverflow = wouldBe > stakingCapBTC;
+        // Only apply staking cap for phase 1
+        const isOverflow = phase === 1 ? 
+          currentActiveBTC + txAmountBTC > 1000 : // 1000 BTC cap only for phase 1
+          tx.isOverflow; // For other phases, use the overflow status from the transaction
         
         processedTxs.push({
           ...tx,
@@ -875,7 +873,7 @@ export class Database {
 
         // Only update active stake if not overflow
         if (!isOverflow) {
-          currentActiveBTC = wouldBe;
+          currentActiveBTC += txAmountBTC;
         }
       }
 
@@ -890,14 +888,13 @@ export class Database {
       const overflowStakeBTC = overflowTransactions.reduce((sum, tx) => 
         sum + Number((tx.stakeAmount / 100000000).toFixed(8)), 0);
 
-      // Double check we haven't exceeded cap
-      if (stats.activeStakeBTC + activeStakeBTC > stakingCapBTC) {
+      // Double check we haven't exceeded cap for phase 1
+      if (phase === 1 && stats.activeStakeBTC + activeStakeBTC > 1000) {
         console.error('ERROR: Would exceed staking cap! Marking all transactions as overflow');
         // Mark all transactions as overflow
         processedTxs.forEach(tx => tx.isOverflow = true);
         
         // Recalculate totals
-        const newActiveTransactions: StakeTransaction[] = [];
         const newOverflowTransactions = processedTxs;
         
         // Update transactions in database

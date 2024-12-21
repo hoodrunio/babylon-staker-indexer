@@ -371,9 +371,11 @@ export class BabylonIndexer {
     switch (phase) {
       case 1:
         // Phase 1: Check against staking cap
-        const stakingCapSats = BigInt(Math.floor(params.staking_cap!));
-        const currentStakeSats = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
-        isOverflow = currentStakeSats > stakingCapSats;
+        if (params.staking_cap !== undefined) {
+          const stakingCapSats = BigInt(Math.floor(params.staking_cap));
+          const currentStakeSats = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
+          isOverflow = currentStakeSats > stakingCapSats;
+        }
         break;
 
       case 2:
@@ -443,8 +445,15 @@ export class BabylonIndexer {
     // Second pass: Process transactions with proper overflow checking
     let currentActiveStake = 0;
     for (const { tx, amount } of validTransactions) {
-      // Re-validate with current active stake
-      const validationResult = await validateStakeTransaction(tx, params, block.height, currentActiveStake);
+      // Determine phase and overflow status first
+      const { phase, isOverflow } = this.determinePhaseAndOverflow(block.height, tx, params);
+      
+      // For phase 1, we need to track active stake for overflow
+      // For other phases, we only care about block height range
+      const effectiveActiveStake = phase === 1 ? currentActiveStake : 0;
+      
+      // Re-validate with current active stake (only matters for phase 1)
+      const validationResult = await validateStakeTransaction(tx, params, block.height, effectiveActiveStake);
       
       // Parse OP_RETURN data
       const opReturnOutput = tx.vout?.find((out: any) => 
@@ -463,13 +472,17 @@ export class BabylonIndexer {
         continue;
       }
 
-      // Create stake transaction
+      // Create stake transaction with phase-specific overflow status
       const stakeTransaction = await this.createStakeTransaction(
         tx,
         parsed,
         block,
         amount,
-        validationResult
+        { 
+          ...validationResult,
+          isOverflow,
+          overflowAmount: isOverflow ? amount : 0
+        }
       );
 
       if (stakeTransaction) {
@@ -479,7 +492,8 @@ export class BabylonIndexer {
           hasBabylonPrefix: true
         });
 
-        if (validationResult.isValid && !validationResult.isOverflow) {
+        // Only update active stake for phase 1
+        if (phase === 1 && validationResult.isValid && !isOverflow) {
           currentActiveStake += amount;
         }
       }
