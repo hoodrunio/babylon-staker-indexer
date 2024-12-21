@@ -1,5 +1,26 @@
 import mongoose from 'mongoose';
 
+const phaseStakeSchema = new mongoose.Schema({
+  phase: {
+    type: Number,
+    required: true
+  },
+  totalStake: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  stakerCount: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  stakers: [{
+    address: String,
+    stake: Number
+  }]
+}, { _id: false });
+
 const finalityProviderSchema = new mongoose.Schema({
   address: { 
     type: String, 
@@ -31,6 +52,10 @@ const finalityProviderSchema = new mongoose.Schema({
   versionsUsed: { 
     type: [Number], 
     default: [] 
+  },
+  phaseStakes: {
+    type: [phaseStakeSchema],
+    default: []
   }
 }, {
   timestamps: true

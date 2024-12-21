@@ -138,6 +138,14 @@ export class Database {
       const stakerTransactions = new Map<string, Array<StakeTransaction>>();
       
       for (const tx of newTransactions) {
+        // Get phase for the transaction
+        const { getPhaseForHeight } = await import('../config/phase-config');
+        const phaseConfig = getPhaseForHeight(tx.blockHeight);
+        const phase = phaseConfig?.phase || 0;
+
+        // Add phase to transaction
+        (tx as any).phase = phase;
+
         // Group by finality provider
         if (!fpTransactions.has(tx.finalityProvider)) {
           fpTransactions.set(tx.finalityProvider, []);
@@ -161,15 +169,102 @@ export class Database {
       }
 
       // 2. Update finality providers - only for non-overflow transactions
-      const activeTransactions = newTransactions.filter(tx => !tx.isOverflow);
-      const fpUpdates = Array.from(fpTransactions.entries()).map(([fpAddress, txs]) => {
+      const fpUpdates = Array.from(fpTransactions.entries()).map(async ([fpAddress, txs]) => {
         const activeTxs = txs.filter(tx => !tx.isOverflow);
         const totalStake = activeTxs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
         const uniqueStakers = [...new Set(activeTxs.map(tx => tx.stakerAddress))];
         const versions = [...new Set(activeTxs.map(tx => tx.version))];
         const timestamps = activeTxs.map(tx => tx.timestamp);
 
-        return FinalityProvider.updateOne(
+        // Group transactions by phase
+        const phaseStakes = new Map<number, {
+          totalStake: number,
+          stakerCount: number,
+          stakers: Map<string, number>
+        }>();
+
+        for (const tx of activeTxs) {
+          const phase = (tx as any).phase;
+          if (!phaseStakes.has(phase)) {
+            phaseStakes.set(phase, {
+              totalStake: 0,
+              stakerCount: 0,
+              stakers: new Map()
+            });
+          }
+          const phaseData = phaseStakes.get(phase)!;
+          phaseData.totalStake += tx.stakeAmount;
+          
+          // Update staker's stake in this phase
+          const currentStake = phaseData.stakers.get(tx.stakerAddress) || 0;
+          phaseData.stakers.set(tx.stakerAddress, currentStake + tx.stakeAmount);
+        }
+
+        // First, get the existing document to check current phase stakes
+        const existingFP = await FinalityProvider.findOne({ address: fpAddress });
+        
+        // For each phase, perform a separate update
+        for (const [phase, data] of phaseStakes.entries()) {
+          const stakersList = Array.from(data.stakers.entries()).map(([address, stake]) => ({
+            address,
+            stake
+          }));
+
+          if (!existingFP || !existingFP.phaseStakes?.some(ps => ps.phase === phase)) {
+            // Phase doesn't exist, add it
+            await FinalityProvider.updateOne(
+              { address: fpAddress },
+              {
+                $push: {
+                  phaseStakes: {
+                    phase,
+                    totalStake: data.totalStake,
+                    stakerCount: data.stakers.size,
+                    stakers: stakersList
+                  }
+                }
+              },
+              { upsert: true }
+            );
+          } else {
+            // Phase exists, update existing stakers and add new ones
+            const existingPhase = existingFP.phaseStakes.find(ps => ps.phase === phase);
+            const existingStakers = new Map(existingPhase!.stakers.map(s => [s.address, s.stake]));
+            
+            // Merge existing and new stakes
+            for (const [address, stake] of data.stakers.entries()) {
+              if (existingStakers.has(address)) {
+                existingStakers.set(address, existingStakers.get(address)! + stake);
+              } else {
+                existingStakers.set(address, stake);
+              }
+            }
+
+            // Create updated stakers list
+            const updatedStakers = Array.from(existingStakers.entries()).map(([address, stake]) => ({
+              address,
+              stake
+            }));
+
+            // Update the entire phase
+            await FinalityProvider.updateOne(
+              { 
+                address: fpAddress,
+                'phaseStakes.phase': phase
+              },
+              {
+                $set: {
+                  'phaseStakes.$.totalStake': existingPhase!.totalStake + data.totalStake,
+                  'phaseStakes.$.stakerCount': updatedStakers.length,
+                  'phaseStakes.$.stakers': updatedStakers
+                }
+              }
+            );
+          }
+        }
+
+        // Update the main document fields
+        await FinalityProvider.updateOne(
           { address: fpAddress },
           {
             $inc: { 
@@ -188,13 +283,123 @@ export class Database {
       });
 
       // 3. Update stakers - only for non-overflow transactions
-      const stakerUpdates = Array.from(stakerTransactions.entries()).map(([stakerAddress, txs]) => {
+      const stakerUpdates = Array.from(stakerTransactions.entries()).map(async ([stakerAddress, txs]) => {
         const activeTxs = txs.filter(tx => !tx.isOverflow);
         const totalStake = activeTxs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
         const uniqueFPs = [...new Set(activeTxs.map(tx => tx.finalityProvider))];
         const timestamps = activeTxs.map(tx => tx.timestamp);
 
-        return Staker.updateOne(
+        // Group transactions by phase
+        const phaseStakes = new Map<number, {
+          totalStake: number,
+          transactionCount: number,
+          finalityProviders: Map<string, number>
+        }>();
+
+        // Prepare transactions array
+        const transactions = activeTxs.map(tx => ({
+          txid: tx.txid,
+          phase: (tx as any).phase,
+          timestamp: tx.timestamp,
+          amount: tx.stakeAmount,
+          finalityProvider: tx.finalityProvider
+        }));
+
+        for (const tx of activeTxs) {
+          const phase = (tx as any).phase;
+          if (!phaseStakes.has(phase)) {
+            phaseStakes.set(phase, {
+              totalStake: 0,
+              transactionCount: 0,
+              finalityProviders: new Map()
+            });
+          }
+          const phaseData = phaseStakes.get(phase)!;
+          phaseData.totalStake += tx.stakeAmount;
+          phaseData.transactionCount += 1;
+          
+          // Update finality provider's stake in this phase
+          const currentStake = phaseData.finalityProviders.get(tx.finalityProvider) || 0;
+          phaseData.finalityProviders.set(tx.finalityProvider, currentStake + tx.stakeAmount);
+        }
+
+        // First, get the existing document to check current phase stakes
+        const existingStaker = await Staker.findOne({ address: stakerAddress });
+
+        // Add new transactions
+        await Staker.updateOne(
+          { address: stakerAddress },
+          {
+            $push: {
+              transactions: {
+                $each: transactions
+              }
+            }
+          },
+          { upsert: true }
+        );
+
+        // For each phase, perform a separate update
+        for (const [phase, data] of phaseStakes.entries()) {
+          const fpList = Array.from(data.finalityProviders.entries()).map(([address, stake]) => ({
+            address,
+            stake
+          }));
+
+          if (!existingStaker || !existingStaker.phaseStakes?.some(ps => ps.phase === phase)) {
+            // Phase doesn't exist, add it
+            await Staker.updateOne(
+              { address: stakerAddress },
+              {
+                $push: {
+                  phaseStakes: {
+                    phase,
+                    totalStake: data.totalStake,
+                    transactionCount: data.transactionCount,
+                    finalityProviders: fpList
+                  }
+                }
+              }
+            );
+          } else {
+            // Phase exists, update existing FPs and add new ones
+            const existingPhase = existingStaker.phaseStakes.find(ps => ps.phase === phase);
+            const existingFPs = new Map(existingPhase!.finalityProviders.map(fp => [fp.address, fp.stake]));
+            
+            // Merge existing and new stakes
+            for (const [address, stake] of data.finalityProviders.entries()) {
+              if (existingFPs.has(address)) {
+                existingFPs.set(address, existingFPs.get(address)! + stake);
+              } else {
+                existingFPs.set(address, stake);
+              }
+            }
+
+            // Create updated FPs list
+            const updatedFPs = Array.from(existingFPs.entries()).map(([address, stake]) => ({
+              address,
+              stake
+            }));
+
+            // Update the entire phase
+            await Staker.updateOne(
+              { 
+                address: stakerAddress,
+                'phaseStakes.phase': phase
+              },
+              {
+                $set: {
+                  'phaseStakes.$.totalStake': existingPhase!.totalStake + data.totalStake,
+                  'phaseStakes.$.transactionCount': existingPhase!.transactionCount + data.transactionCount,
+                  'phaseStakes.$.finalityProviders': updatedFPs
+                }
+              }
+            );
+          }
+        }
+
+        // Update the main document fields
+        await Staker.updateOne(
           { address: stakerAddress },
           {
             $inc: { 
@@ -207,8 +412,7 @@ export class Database {
             },
             $min: { firstSeen: Math.min(...timestamps) },
             $max: { lastSeen: Math.max(...timestamps) }
-          },
-          { upsert: true }
+          }
         );
       });
 
