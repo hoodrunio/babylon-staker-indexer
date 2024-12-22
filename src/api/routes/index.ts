@@ -26,8 +26,10 @@ router.get('/api-docs', corsMiddleware, swaggerUi.setup(swaggerDocument, {
   swaggerOptions: {
     url: `${process.env.NODE_ENV === 'production' ? process.env.ALLOWED_ORIGINS : 'http://localhost:3000'}/api/api-docs`,
     displayRequestDuration: true,
-    docExpansion: 'none',
-    filter: true
+    docExpansion: 'list',
+    filter: true,
+    defaultModelsExpandDepth: 1,
+    defaultModelExpandDepth: 1
   }
 }));
 
