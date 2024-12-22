@@ -50,7 +50,16 @@ const finalityProviderSchema = new mongoose.Schema({
     default: []
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'finalityproviders',
+  strict: true,
+  strictQuery: true
 });
 
-export const FinalityProvider = mongoose.model('FinalityProvider', finalityProviderSchema);
+// Create indexes
+finalityProviderSchema.index({ address: 1 }, { unique: true });
+finalityProviderSchema.index({ totalStake: -1 });
+finalityProviderSchema.index({ firstSeen: 1 });
+finalityProviderSchema.index({ lastSeen: 1 });
+
+export const FinalityProvider = mongoose.model('FinalityProvider', finalityProviderSchema, 'finalityproviders');

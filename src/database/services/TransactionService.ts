@@ -311,4 +311,15 @@ export class TransactionService {
       throw error;
     }
   }
+
+  async getUniqueBlocks(finalityProvider: string): Promise<number[]> {
+    return Transaction.distinct('blockHeight', { finalityProvider });
+  }
+
+  async getStakerTransactions(finalityProvider: string): Promise<StakeTransaction[]> {
+    return Transaction.find(
+      { finalityProvider },
+      { stakerAddress: 1, timestamp: 1 }
+    ).lean();
+  }
 }

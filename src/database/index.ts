@@ -8,12 +8,14 @@ import {
   IndexerStateService,
   StatsService
 } from './services';
+import { FinalityProvider, FinalityProviderStats, StakerStats } from '../types';
 
 dotenv.config();
 
 export class Database {
   private static instance: Database | null = null;
   private isConnected: boolean = false;
+  private db: mongoose.Connection;
 
   private transactionService: TransactionService;
   private finalityProviderService: FinalityProviderService;
@@ -29,6 +31,7 @@ export class Database {
     this.phaseStatsService = new PhaseStatsService();
     this.indexerStateService = new IndexerStateService();
     this.statsService = new StatsService();
+    this.db = mongoose.connection;
   }
 
   static getInstance(): Database {
@@ -44,10 +47,17 @@ export class Database {
     }
 
     try {
+      console.log('Connecting to MongoDB...');
+      console.log('MongoDB URI:', process.env.MONGODB_URI);
+      
       await mongoose.connect(process.env.MONGODB_URI!);
       this.isConnected = true;
-      if (process.env.LOG_LEVEL === 'debug') {
-        console.log('Connected to MongoDB successfully');
+      this.db = mongoose.connection;
+      
+      console.log('Connected to MongoDB successfully');
+      console.log('Database name:', this.db.name);
+      if (this.db.db) {
+        console.log('Collections:', await this.db.db.collections());
       }
     } catch (error) {
       console.error('MongoDB connection error:', error);
@@ -86,8 +96,18 @@ export class Database {
     return this.stakerService.getStakerStats(address, timeRange);
   }
 
-  async getTopStakers(limit?: number): Promise<any[]> {
-    return this.stakerService.getTopStakers(limit);
+  async getTopStakers(
+    skip: number = 0,
+    limit: number = 10,
+    sortBy: string = 'totalStake',
+    order: 'asc' | 'desc' = 'desc',
+    includeTransactions: boolean = false
+  ): Promise<StakerStats[]> {
+    return this.stakerService.getTopStakers(skip, limit, sortBy, order, includeTransactions);
+  }
+
+  async getStakersCount(): Promise<number> {
+    return this.stakerService.getStakersCount();
   }
 
   async reindexStakers(): Promise<void> {
@@ -143,5 +163,19 @@ export class Database {
 
   async getGlobalStats(): Promise<any> {
     return this.statsService.getGlobalStats();
+  }
+
+  async getFinalityProviders(
+    skip: number = 0,
+    limit: number = 10,
+    sortBy: string = 'totalStake',
+    order: 'asc' | 'desc' = 'desc',
+    includeStakers: boolean = false
+  ): Promise<FinalityProviderStats[]> {
+    return this.finalityProviderService.getAllFPs(skip, limit, sortBy, order, includeStakers);
+  }
+
+  async getFinalityProvidersCount(): Promise<number> {
+    return this.finalityProviderService.getFinalityProvidersCount();
   }
 }

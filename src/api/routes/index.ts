@@ -2,33 +2,46 @@ import express from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { BabylonIndexer } from '../../services/BabylonIndexer';
 import { swaggerDocument } from '../swagger';
+import { 
+  compressionMiddleware, 
+  rateLimiter, 
+  paginationMiddleware, 
+  formatPaginatedResponse 
+} from '../middleware';
 
 const router = express.Router();
 const indexer = new BabylonIndexer();
+
+// Apply global middlewares
+router.use(compressionMiddleware);
+router.use(rateLimiter);
 
 // Swagger documentation route
 router.use('/api-docs', swaggerUi.serve);
 router.get('/api-docs', swaggerUi.setup(swaggerDocument));
 
 // Finality Provider routes
-router.get('/finality-providers', async (req, res) => {
+router.get('/finality-providers', paginationMiddleware, async (req, res) => {
   try {
-    const fps = await indexer.getAllFinalityProviders();
-    res.json({ 
-      data: fps,
-      count: fps.length,
-      timestamp: Date.now()
-    });
+    const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc', skip = 0 } = req.pagination!;
+    const includeStakers = req.query.include_stakers === 'true';
+    
+    const [fps, total] = await Promise.all([
+      indexer.getAllFinalityProviders(skip, limit, sortBy, order, includeStakers),
+      indexer.getFinalityProvidersCount()
+    ]);
+
+    res.json(formatPaginatedResponse(fps, total, page, limit));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
 });
 
-router.get('/finality-providers/top', async (req, res) => {
-  const { limit } = req.query;
+router.get('/finality-providers/top', paginationMiddleware, async (req, res) => {
+  const { limit = 10 } = req.pagination!;
   
   try {
-    const fps = await indexer.getTopFinalityProviders(Number(limit) || 10);
+    const fps = await indexer.getTopFinalityProviders(Number(limit));
     res.json({ 
       data: fps,
       count: fps.length,
@@ -61,13 +74,17 @@ router.get('/finality-providers/:address', async (req, res) => {
 });
 
 // Staker routes
-router.get('/stakers', async (req, res) => {
-  const { limit, from, to } = req.query;
-  const timeRange = from && to ? { firstTimestamp: Number(from), lastTimestamp: Number(to) } : undefined;
-  
+router.get('/stakers', paginationMiddleware, async (req, res) => {
   try {
-    const stakers = await indexer.getTopStakers(Number(limit) || 10);
-    res.json({ data: stakers });
+    const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc', skip = 0 } = req.pagination!;
+    const includeTransactions = req.query.include_transactions === 'true';
+    
+    const [stakers, total] = await Promise.all([
+      indexer.getTopStakers(skip, limit, sortBy, order, includeTransactions),
+      indexer.getStakersCount()
+    ]);
+
+    res.json(formatPaginatedResponse(stakers, total, page, limit));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

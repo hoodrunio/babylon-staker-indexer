@@ -1,3 +1,21 @@
+import { Request } from 'express';
+
+export interface PaginationQuery {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  order?: 'asc' | 'desc';
+  skip?: number;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      pagination?: PaginationQuery;
+    }
+  }
+}
+
 export interface TimeRange {
   firstTimestamp: number;
   lastTimestamp: number;
@@ -33,12 +51,34 @@ export interface StakerPhaseStake extends PhaseStakeInfo {
   }>;
 }
 
-export interface FinalityProviderStats extends StakeMetrics {
+export interface FinalityProviderStats {
   address: string;
+  totalStake: string;
+  createdAt: number;
+  updatedAt: number;
+  totalStakeBTC: number;
+  transactionCount: number;
+  uniqueStakers: number;
+  uniqueBlocks: number;
+  timeRange: {
+    firstTimestamp: number;
+    lastTimestamp: number;
+    durationSeconds: number;
+  };
   averageStakeBTC: number;
   versionsUsed: number[];
-  stakerAddresses: string[];
-  phaseStakes?: FinalityProviderPhaseStake[];
+  stakerAddresses?: string[];
+  stats: Record<string, any>;
+  phaseStakes: {
+    phase: number;
+    totalStake: number;
+    transactionCount: number;
+    stakerCount: number;
+    stakers?: {
+      address: string;
+      stake: number;
+    }[];
+  }[];
 }
 
 export interface StakeTransactionInfo {
@@ -64,8 +104,8 @@ export interface StakerStats extends StakeMetrics {
 }
 
 export interface TopFinalityProviderStats extends FinalityProviderStats {
-  rank?: number;
-  stakingShare?: number; // Total stake'in yüzdesi
+  rank: number;
+  stakingShare: number;
 }
 
 export interface StakeTransaction {
@@ -86,4 +126,11 @@ export interface StakeTransaction {
 
 export interface VersionStats extends StakeMetrics {
   uniqueFPs: number;
+}
+
+export interface FinalityProvider {
+  address: string;
+  totalStake: string;
+  createdAt: number;
+  updatedAt: number;
 }

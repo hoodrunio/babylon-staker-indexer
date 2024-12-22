@@ -135,43 +135,91 @@ export class StakerService {
     };
   }
 
-  async getTopStakers(limit: number = 10): Promise<StakerStats[]> {
-    const stakers = await Staker.find()
-      .sort({ totalStake: -1 })
-      .limit(limit);
+  async getTopStakers(
+    skip: number = 0,
+    limit: number = 10,
+    sortBy: string = 'totalStake',
+    order: 'asc' | 'desc' = 'desc',
+    includeTransactions: boolean = false
+  ): Promise<StakerStats[]> {
+    console.log('Getting top stakers with params:', { skip, limit, sortBy, order, includeTransactions });
+    
+    try {
+      const sortOrder = order === 'asc' ? 1 : -1;
+      const stakers = await Staker.find()
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean();
 
-    const results = await Promise.all(stakers.map(async (staker) => {
-      const uniqueBlocks = await Transaction.distinct('blockHeight', {
-        stakerAddress: staker.address
-      });
+      console.log('Found stakers:', stakers.length);
 
-      const phaseStakes = staker.phaseStakes?.map(phase => ({
-        phase: phase.phase,
-        totalStake: phase.totalStake,
-        transactionCount: phase.transactionCount,
-        finalityProviders: phase.finalityProviders.map(fp => ({
-          address: fp.address,
-          stake: fp.stake
-        }))
+      return Promise.all(stakers.map(async (staker) => {
+        const uniqueBlocks = await Transaction.distinct('blockHeight', {
+          stakerAddress: staker.address
+        });
+
+        let transactions: PhaseTransactions[] = [];
+        if (includeTransactions) {
+          const txs = await Transaction.find({ stakerAddress: staker.address })
+            .sort({ timestamp: -1 })
+            .lean();
+
+          const phaseTransactionsMap = new Map<number, StakeTransactionInfo[]>();
+          
+          txs.forEach(tx => {
+            const phase = tx.paramsVersion || 0;
+            if (!phaseTransactionsMap.has(phase)) {
+              phaseTransactionsMap.set(phase, []);
+            }
+            
+            phaseTransactionsMap.get(phase)!.push({
+              txid: tx.txid,
+              timestamp: tx.timestamp,
+              amount: tx.stakeAmount,
+              amountBTC: tx.stakeAmount / 100000000,
+              finalityProvider: tx.finalityProvider
+            });
+          });
+
+          transactions = Array.from(phaseTransactionsMap.entries())
+            .map(([phase, txs]) => ({
+              phase,
+              transactions: txs
+            }))
+            .sort((a, b) => b.phase - a.phase);
+        }
+
+        const phaseStakes = staker.phaseStakes?.map(phase => ({
+          phase: phase.phase,
+          totalStake: phase.totalStake,
+          transactionCount: phase.transactionCount,
+          finalityProviders: phase.finalityProviders.map(fp => ({
+            address: fp.address,
+            stake: fp.stake
+          }))
+        }));
+
+        return {
+          address: staker.address,
+          totalStakeBTC: staker.totalStake / 100000000,
+          transactionCount: staker.transactionCount,
+          uniqueBlocks: uniqueBlocks.length,
+          timeRange: {
+            firstTimestamp: staker.firstSeen,
+            lastTimestamp: staker.lastSeen,
+            durationSeconds: staker.lastSeen - staker.firstSeen
+          },
+          finalityProviders: staker.finalityProviders,
+          activeStakes: staker.activeStakes,
+          phaseStakes,
+          ...(includeTransactions && { transactions })
+        };
       }));
-
-      return {
-        address: staker.address,
-        totalStakeBTC: staker.totalStake / 100000000,
-        transactionCount: staker.transactionCount,
-        uniqueBlocks: uniqueBlocks.length,
-        timeRange: {
-          firstTimestamp: staker.firstSeen,
-          lastTimestamp: staker.lastSeen,
-          durationSeconds: staker.lastSeen - staker.firstSeen
-        },
-        finalityProviders: staker.finalityProviders,
-        activeStakes: staker.activeStakes,
-        phaseStakes
-      };
-    }));
-
-    return results;
+    } catch (error) {
+      console.error('Error in getTopStakers:', error);
+      throw error;
+    }
   }
 
   async reindexStakers(): Promise<void> {
@@ -301,5 +349,16 @@ export class StakerService {
 
     const transaction = await Transaction.findOne({ stakerAddress: address });
     console.log('Found in transactions:', transaction?.stakerAddress);
+  }
+
+  async getStakersCount(): Promise<number> {
+    try {
+      const count = await Staker.countDocuments({});
+      console.log('Total stakers:', count);
+      return count;
+    } catch (error) {
+      console.error('Error in getStakersCount:', error);
+      throw error;
+    }
   }
 }

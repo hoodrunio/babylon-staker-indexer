@@ -1,4 +1,4 @@
-import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, TopFinalityProviderStats } from '../types';
+import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, TopFinalityProviderStats, FinalityProvider } from '../types';
 import { BitcoinRPC } from '../utils/bitcoin-rpc';
 import { Database } from '../database';
 import { parseOpReturn } from '../utils/op-return-parser';
@@ -502,8 +502,18 @@ export class BabylonIndexer {
     return transactions;
   }
 
-  async getAllFinalityProviders(): Promise<FinalityProviderStats[]> {
-    return this.db.getAllFPs();
+  async getAllFinalityProviders(
+    skip: number = 0,
+    limit: number = 10,
+    sortBy: string = 'totalStake',
+    order: 'asc' | 'desc' = 'desc',
+    includeStakers: boolean = false
+  ): Promise<FinalityProviderStats[]> {
+    return this.db.getFinalityProviders(skip, limit, sortBy, order, includeStakers);
+  }
+
+  async getFinalityProvidersCount(): Promise<number> {
+    return this.db.getFinalityProvidersCount();
   }
 
   async getTopFinalityProviders(limit: number = 10): Promise<TopFinalityProviderStats[]> {
@@ -514,8 +524,18 @@ export class BabylonIndexer {
     return this.db.getFPStats(address, timeRange);
   }
 
-  async getTopStakers(limit: number = 10): Promise<StakerStats[]> {
-    return this.db.getTopStakers(limit);
+  async getTopStakers(
+    skip: number = 0,
+    limit: number = 10,
+    sortBy: string = 'totalStake',
+    order: 'asc' | 'desc' = 'desc',
+    includeTransactions: boolean = false
+  ): Promise<StakerStats[]> {
+    return this.db.getTopStakers(skip, limit, sortBy, order, includeTransactions);
+  }
+
+  async getStakersCount(): Promise<number> {
+    return this.db.getStakersCount();
   }
 
   async getStakerStats(address: string, timeRange?: TimeRange): Promise<StakerStats> {

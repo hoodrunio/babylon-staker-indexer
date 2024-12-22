@@ -20,7 +20,7 @@ export class FinalityProviderService {
       };
     }
 
-    const fp = await FinalityProvider.findOne(query);
+    const fp = await FinalityProvider.findOne({ address }).lean();
     if (!fp) {
       throw new Error(`Finality Provider not found: ${address}`);
     }
@@ -46,7 +46,7 @@ export class FinalityProviderService {
         })
       },
       { stakerAddress: 1, timestamp: 1 }
-    ).sort({ timestamp: -1 });
+    ).lean();
 
     const stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
 
@@ -68,7 +68,7 @@ export class FinalityProviderService {
           $gte: timeRange.firstTimestamp,
           $lte: timeRange.lastTimestamp
         }
-      });
+      }).lean();
 
       const phaseTransactions = new Map<number, any[]>();
       transactions.forEach(tx => {
@@ -104,6 +104,9 @@ export class FinalityProviderService {
 
     return {
       address: fp.address,
+      totalStake: fp.totalStake.toString(),
+      createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
+      updatedAt: Math.floor(new Date(fp.updatedAt || fp.lastSeen).getTime() / 1000),
       totalStakeBTC: fp.totalStake / 100000000,
       transactionCount: fp.transactionCount,
       uniqueStakers: fp.uniqueStakers.length,
@@ -116,57 +119,100 @@ export class FinalityProviderService {
       averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
       versionsUsed: fp.versionsUsed,
       stakerAddresses,
+      stats: {},
       phaseStakes
     };
   }
 
-  async getAllFPs(): Promise<FinalityProviderStats[]> {
-    const fps = await FinalityProvider.find();
+  async getAllFPs(
+    skip: number = 0,
+    limit: number = 10,
+    sortBy: string = 'totalStake',
+    order: 'asc' | 'desc' = 'desc',
+    includeStakers: boolean = false
+  ): Promise<FinalityProviderStats[]> {
+    console.log('Getting all FPs with params:', { skip, limit, sortBy, order, includeStakers });
     
-    return Promise.all(fps.map(async (fp) => {
-      const uniqueBlocks = await Transaction.distinct('blockHeight', {
-        finalityProvider: fp.address
-      });
+    try {
+      const sortOrder = order === 'asc' ? 1 : -1;
+      const collection = FinalityProvider.collection;
 
-      const stakerTransactions = await Transaction.find(
-        { finalityProvider: fp.address },
-        { stakerAddress: 1 }
-      );
+      const fps = await FinalityProvider.find()
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+      
+      console.log('Found FPs:', fps.length);
+      
+      return Promise.all(fps.map(async (fp) => {
+        const uniqueBlocks = await Transaction.distinct('blockHeight', {
+          finalityProvider: fp.address
+        });
 
-      const stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
+        let stakerAddresses: string[] = [];
+        if (includeStakers) {
+          const stakerTransactions = await Transaction.find(
+            { finalityProvider: fp.address },
+            { stakerAddress: 1 }
+          ).lean();
+          stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
+        }
 
-      return {
-        address: fp.address,
-        totalStakeBTC: fp.totalStake / 100000000,
-        transactionCount: fp.transactionCount,
-        uniqueStakers: fp.uniqueStakers.length,
-        uniqueBlocks: uniqueBlocks.length,
-        timeRange: {
-          firstTimestamp: fp.firstSeen,
-          lastTimestamp: fp.lastSeen,
-          durationSeconds: fp.lastSeen - fp.firstSeen
-        },
-        averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
-        versionsUsed: fp.versionsUsed,
-        stakerAddresses,
-        phaseStakes: fp.phaseStakes?.map(phase => ({
-          phase: phase.phase,
-          totalStake: phase.totalStake,
-          transactionCount: phase.transactionCount,
-          stakerCount: phase.stakerCount,
-          stakers: phase.stakers.map(staker => ({
-            address: staker.address,
-            stake: staker.stake
+        return {
+          address: fp.address,
+          totalStake: fp.totalStake.toString(),
+          createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
+          updatedAt: Math.floor(new Date(fp.updatedAt || fp.lastSeen).getTime() / 1000),
+          totalStakeBTC: fp.totalStake / 100000000,
+          transactionCount: fp.transactionCount,
+          uniqueStakers: fp.uniqueStakers.length,
+          uniqueBlocks: uniqueBlocks.length,
+          timeRange: {
+            firstTimestamp: fp.firstSeen,
+            lastTimestamp: fp.lastSeen,
+            durationSeconds: fp.lastSeen - fp.firstSeen
+          },
+          averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
+          versionsUsed: fp.versionsUsed,
+          ...(includeStakers && { stakerAddresses }),
+          stats: {},
+          phaseStakes: fp.phaseStakes?.map(phase => ({
+            phase: phase.phase,
+            totalStake: phase.totalStake,
+            transactionCount: phase.transactionCount,
+            stakerCount: phase.stakerCount,
+            ...(includeStakers && {
+              stakers: phase.stakers.map(staker => ({
+                address: staker.address,
+                stake: staker.stake
+              }))
+            })
           }))
-        }))
-      };
-    }));
+        };
+      }));
+    } catch (error) {
+      console.error('Error in getAllFPs:', error);
+      throw error;
+    }
+  }
+
+  async getFinalityProvidersCount(): Promise<number> {
+    try {
+      const count = await FinalityProvider.countDocuments({});
+      console.log('Total finality providers:', count);
+      return count;
+    } catch (error) {
+      console.error('Error in getFinalityProvidersCount:', error);
+      throw error;
+    }
   }
 
   async getTopFPs(limit: number = 10): Promise<TopFinalityProviderStats[]> {
     const fps = await FinalityProvider.find()
       .sort({ totalStake: -1 })
-      .limit(limit);
+      .limit(limit)
+      .lean();
 
     const totalStake = fps.reduce((sum, fp) => sum + fp.totalStake, 0);
 
@@ -187,9 +233,12 @@ export class FinalityProviderService {
       }));
 
       return {
+        address: fp.address,
+        totalStake: fp.totalStake.toString(),
+        createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
+        updatedAt: Math.floor(new Date(fp.updatedAt || fp.lastSeen).getTime() / 1000),
         rank: index + 1,
         stakingShare: totalStake > 0 ? (fp.totalStake / totalStake) * 100 : 0,
-        address: fp.address,
         totalStakeBTC: fp.totalStake / 100000000,
         transactionCount: fp.transactionCount,
         uniqueStakers: fp.uniqueStakers.length,
@@ -202,6 +251,7 @@ export class FinalityProviderService {
         averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
         versionsUsed: fp.versionsUsed,
         stakerAddresses: fp.uniqueStakers,
+        stats: {},
         phaseStakes
       };
     }));
