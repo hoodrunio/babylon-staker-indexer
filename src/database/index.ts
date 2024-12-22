@@ -8,7 +8,7 @@ import {
   IndexerStateService,
   StatsService
 } from './services';
-import { FinalityProvider, FinalityProviderStats, StakerStats } from '../types';
+import { FinalityProvider, FinalityProviderStats, StakerStats, TimeRange } from '../types';
 
 dotenv.config();
 
@@ -92,8 +92,12 @@ export class Database {
   }
 
   // Staker methods
-  async getStakerStats(address: string, timeRange?: any): Promise<any> {
-    return this.stakerService.getStakerStats(address, timeRange);
+  async getStakerStats(
+    address: string, 
+    timeRange?: TimeRange,
+    includeTransactions: boolean = false
+  ): Promise<StakerStats> {
+    return this.stakerService.getStakerStats(address, timeRange, includeTransactions);
   }
 
   async getTopStakers(

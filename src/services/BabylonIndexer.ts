@@ -516,8 +516,14 @@ export class BabylonIndexer {
     return this.db.getFinalityProvidersCount();
   }
 
-  async getTopFinalityProviders(limit: number = 10): Promise<TopFinalityProviderStats[]> {
-    return this.db.getTopFPs(limit);
+  async getTopFinalityProviders(
+    skip: number = 0,
+    limit: number = 10,
+    sortBy: string = 'totalStake',
+    order: 'asc' | 'desc' = 'desc',
+    includeStakers: boolean = false
+  ): Promise<FinalityProviderStats[]> {
+    return this.db.getFinalityProviders(skip, limit, sortBy, order, includeStakers);
   }
 
   async getFinalityProviderStats(address: string, timeRange?: TimeRange): Promise<FinalityProviderStats> {
@@ -538,8 +544,12 @@ export class BabylonIndexer {
     return this.db.getStakersCount();
   }
 
-  async getStakerStats(address: string, timeRange?: TimeRange): Promise<StakerStats> {
-    return this.db.getStakerStats(address, timeRange);
+  async getStakerStats(
+    address: string, 
+    timeRange?: TimeRange,
+    includeTransactions: boolean = false
+  ): Promise<StakerStats> {
+    return this.db.getStakerStats(address, timeRange, includeTransactions);
   }
 
   async getVersionStats(version: number, timeRange?: TimeRange): Promise<VersionStats> {

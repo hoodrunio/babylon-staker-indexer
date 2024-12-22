@@ -56,15 +56,16 @@ router.get('/finality-providers', paginationMiddleware, async (req, res) => {
 });
 
 router.get('/finality-providers/top', paginationMiddleware, async (req, res) => {
-  const { limit = 10 } = req.pagination!;
-  
   try {
-    const fps = await indexer.getTopFinalityProviders(Number(limit));
-    res.json({ 
-      data: fps,
-      count: fps.length,
-      timestamp: Date.now()
-    });
+    const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc', skip = 0 } = req.pagination!;
+    const includeStakers = req.query.include_stakers === 'true';
+    
+    const [fps, total] = await Promise.all([
+      indexer.getTopFinalityProviders(skip, limit, sortBy, order, includeStakers),
+      indexer.getFinalityProvidersCount()
+    ]);
+
+    res.json(formatPaginatedResponse(fps, total, page, limit));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -111,6 +112,7 @@ router.get('/stakers', paginationMiddleware, async (req, res) => {
 router.get('/stakers/:address', async (req, res) => {
   const { address } = req.params;
   const { from, to } = req.query;
+  const includeTransactions = req.query.include_transactions === 'true';
   
   try {
     // Debug search first
@@ -133,7 +135,7 @@ router.get('/stakers/:address', async (req, res) => {
       }
     }
 
-    const stats = await indexer.getStakerStats(address, timeRange);
+    const stats = await indexer.getStakerStats(address, timeRange, includeTransactions);
     res.json({ data: stats });
   } catch (error) {
     console.error('Staker lookup error:', error);

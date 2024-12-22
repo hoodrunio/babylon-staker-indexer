@@ -94,12 +94,16 @@ export interface PhaseTransactions {
   transactions: StakeTransactionInfo[];
 }
 
-export interface StakerStats extends StakeMetrics {
+export interface StakerStats {
   address: string;
+  totalStake: string;
+  totalStakeBTC: number;
+  transactionCount: number;
+  uniqueBlocks: number;
+  timeRange: TimeRange;
   finalityProviders: string[];
   activeStakes: number;
-  totalRewards?: number;
-  phaseStakes?: StakerPhaseStake[];
+  phaseStakes: PhaseStake[];
   transactions?: PhaseTransactions[];
 }
 
@@ -133,4 +137,16 @@ export interface FinalityProvider {
   totalStake: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface FinalityProviderStake {
+  address: string;
+  stake: number;
+}
+
+export interface PhaseStake {
+  phase: number;
+  totalStake: number;
+  transactionCount: number;
+  finalityProviders: FinalityProviderStake[];
 }
