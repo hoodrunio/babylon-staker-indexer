@@ -7,7 +7,7 @@ import { BabylonIndexer } from './services/BabylonIndexer';
 dotenv.config();
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 const port = process.env.PORT || 3000;
 
 // Middleware
