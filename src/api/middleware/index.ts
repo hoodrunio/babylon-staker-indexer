@@ -1,6 +1,22 @@
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import cors from 'cors';
 import { Request, Response, NextFunction } from 'express';
+
+// CORS middleware
+const getAllowedOrigins = () => {
+  if (process.env.NODE_ENV === 'production') {
+    return process.env.ALLOWED_ORIGINS?.split(',') || [];
+  }
+  return '*';
+};
+
+export const corsMiddleware = cors({
+  origin: getAllowedOrigins(),
+  methods: ['GET'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+});
 
 // Compression middleware
 export const compressionMiddleware = compression();

@@ -6,13 +6,15 @@ import {
   compressionMiddleware, 
   rateLimiter, 
   paginationMiddleware, 
-  formatPaginatedResponse 
+  formatPaginatedResponse,
+  corsMiddleware 
 } from '../middleware';
 
 const router = express.Router();
 const indexer = new BabylonIndexer();
 
 // Apply global middlewares
+router.use(corsMiddleware);
 router.use(compressionMiddleware);
 router.use(rateLimiter);
 

@@ -15,9 +15,11 @@
     "db:reset": "ts-node src/database/setup.ts --reset"
   },
   "dependencies": {
+    "@types/cors": "^2.8.17",
     "@types/swagger-ui-express": "^4.1.7",
     "axios": "^1.7.9",
     "compression": "^1.7.5",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.1",
     "express": "^4.18.2",
     "express-rate-limit": "^7.5.0",
