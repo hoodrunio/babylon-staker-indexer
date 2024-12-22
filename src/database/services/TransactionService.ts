@@ -13,53 +13,24 @@ export class TransactionService {
         return;
       }
 
-      // Save transaction and update stats
-      await Promise.all([
-        // Save transaction
-        Transaction.create(tx),
+      // Get phase for transaction
+      const { getPhaseForHeight } = await import('../../config/phase-config');
+      const phaseConfig = getPhaseForHeight(tx.blockHeight);
+      const phase = phaseConfig?.phase || 0;
+      (tx as any).phase = phase;
 
-        // Update FP stats
-        FinalityProvider.findOneAndUpdate(
-          { address: tx.finalityProvider },
-          {
-            $inc: { 
-              totalStake: tx.stakeAmount,
-              transactionCount: 1
-            },
-            $addToSet: { 
-              uniqueStakers: tx.stakerAddress,
-              versionsUsed: tx.version
-            },
-            $min: { firstSeen: tx.timestamp },
-            $max: { lastSeen: tx.timestamp }
-          },
-          { upsert: true, new: true }
-        ),
+      // Save transaction
+      await Transaction.create(tx);
 
-        // Update Staker stats
-        Staker.findOneAndUpdate(
-          { address: tx.stakerAddress },
-          {
-            address: tx.stakerAddress,
-            $inc: { 
-              totalStake: tx.stakeAmount,
-              transactionCount: 1,
-              activeStakes: 1
-            },
-            $addToSet: { finalityProviders: tx.finalityProvider },
-            $min: { firstSeen: tx.timestamp },
-            $max: { lastSeen: tx.timestamp },
-            $setOnInsert: {
-              uniqueStakers: [],
-            }
-          },
-          { 
-            upsert: true, 
-            new: true,
-            setDefaultsOnInsert: true
-          }
-        )
-      ]);
+      // Create maps for single transaction
+      const fpTransactions = new Map<string, Array<StakeTransaction>>();
+      const stakerTransactions = new Map<string, Array<StakeTransaction>>();
+
+      fpTransactions.set(tx.finalityProvider, [tx]);
+      stakerTransactions.set(tx.stakerAddress, [tx]);
+
+      // Update finality providers and stakers with phase information
+      await this.updateFinalityProvidersAndStakers(fpTransactions, stakerTransactions);
 
       console.log(`Transaction ${tx.txid} saved successfully`);
 
@@ -136,7 +107,64 @@ export class TransactionService {
       const versions = [...new Set(activeTxs.map(tx => tx.version))];
       const timestamps = activeTxs.map(tx => tx.timestamp);
 
-      await FinalityProvider.updateOne(
+      // Get existing FP document to merge phase stakes
+      const existingFP = await FinalityProvider.findOne({ address: fpAddress });
+      const existingPhaseStakes = existingFP?.phaseStakes || [];
+
+      // Convert existing phase stakes to map for easier merging
+      const phaseStakesMap = new Map<number, {
+        totalStake: number;
+        transactionCount: number;
+        stakerCount: number;
+        stakers: Map<string, number>;
+      }>();
+
+      // Initialize map with existing phase stakes
+      existingPhaseStakes.forEach(ps => {
+        phaseStakesMap.set(ps.phase, {
+          totalStake: ps.totalStake,
+          transactionCount: ps.transactionCount,
+          stakerCount: ps.stakerCount,
+          stakers: new Map(ps.stakers.map(s => [s.address, s.stake]))
+        });
+      });
+
+      // Update map with new transactions
+      activeTxs.forEach(tx => {
+        const phase = tx.paramsVersion || 0;
+        
+        // Initialize phase stats if not exists
+        if (!phaseStakesMap.has(phase)) {
+          phaseStakesMap.set(phase, {
+            totalStake: 0,
+            transactionCount: 0,
+            stakerCount: 0,
+            stakers: new Map()
+          });
+        }
+
+        const phaseStats = phaseStakesMap.get(phase)!;
+        phaseStats.totalStake += tx.stakeAmount;
+        phaseStats.transactionCount += 1;
+        
+        // Update staker's stake in this phase
+        const currentStake = phaseStats.stakers.get(tx.stakerAddress) || 0;
+        phaseStats.stakers.set(tx.stakerAddress, currentStake + tx.stakeAmount);
+      });
+
+      // Convert phase stakes to array format
+      const phaseStakes = Array.from(phaseStakesMap.entries()).map(([phase, stats]) => ({
+        phase,
+        totalStake: stats.totalStake,
+        transactionCount: stats.transactionCount,
+        stakerCount: stats.stakers.size,
+        stakers: Array.from(stats.stakers.entries()).map(([address, stake]) => ({
+          address,
+          stake
+        }))
+      }));
+
+      await FinalityProvider.findOneAndUpdate(
         { address: fpAddress },
         {
           $inc: { 
@@ -148,7 +176,10 @@ export class TransactionService {
             versionsUsed: { $each: versions }
           },
           $min: { firstSeen: Math.min(...timestamps) },
-          $max: { lastSeen: Math.max(...timestamps) }
+          $max: { lastSeen: Math.max(...timestamps) },
+          $set: {
+            phaseStakes: phaseStakes
+          }
         },
         { upsert: true }
       );
@@ -160,14 +191,40 @@ export class TransactionService {
       const uniqueFPs = [...new Set(activeTxs.map(tx => tx.finalityProvider))];
       const timestamps = activeTxs.map(tx => tx.timestamp);
 
-      // Group transactions by phase
-      const phaseTransactionsMap = new Map<number, Array<any>>();
+      // Get existing staker document to merge phase stakes and transactions
+      const existingStaker = await Staker.findOne({ address: stakerAddress });
+      const existingPhaseStakes = existingStaker?.phaseStakes || [];
+      const existingTransactions = existingStaker?.transactions || [];
+
+      // Convert existing phase stakes to map for easier merging
       const phaseStakesMap = new Map<number, {
         totalStake: number;
         transactionCount: number;
         finalityProviders: Map<string, number>;
       }>();
 
+      // Initialize map with existing phase stakes
+      existingPhaseStakes.forEach(ps => {
+        phaseStakesMap.set(ps.phase, {
+          totalStake: ps.totalStake,
+          transactionCount: ps.transactionCount,
+          finalityProviders: new Map(ps.finalityProviders.map(fp => [fp.address, fp.stake]))
+        });
+      });
+
+      // Group transactions by phase
+      const phaseTransactionsMap = new Map<number, Array<any>>();
+
+      // Initialize with existing transactions
+      existingTransactions.forEach(tx => {
+        const phase = tx.phase || 0;
+        if (!phaseTransactionsMap.has(phase)) {
+          phaseTransactionsMap.set(phase, []);
+        }
+        phaseTransactionsMap.get(phase)!.push(tx);
+      });
+
+      // Update with new transactions
       txs.forEach(tx => {
         const phase = tx.paramsVersion || 0;
         
@@ -210,13 +267,11 @@ export class TransactionService {
         }))
       }));
 
-      // Convert phase transactions to array format
+      // Convert phase transactions to array format and sort by timestamp
       const transactions = Array.from(phaseTransactionsMap.entries())
         .sort((a, b) => b[0] - a[0]) // Sort by phase in descending order
-        .map(([phase, phaseTxs]) => ({
-          phase,
-          transactions: phaseTxs
-        }));
+        .flatMap(([_, phaseTxs]) => phaseTxs)
+        .sort((a, b) => b.timestamp - a.timestamp); // Sort by timestamp in descending order
 
       await Staker.findOneAndUpdate(
         { address: stakerAddress },
@@ -232,7 +287,7 @@ export class TransactionService {
           $min: { firstSeen: Math.min(...timestamps) },
           $max: { lastSeen: Math.max(...timestamps) },
           $set: {
-            transactions: transactions.flatMap(p => p.transactions),
+            transactions: transactions,
             phaseStakes: phaseStakes
           }
         },

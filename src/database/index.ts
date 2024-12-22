@@ -94,6 +94,10 @@ export class Database {
     return this.stakerService.reindexStakers();
   }
 
+  async reindexFinalityProviders(): Promise<void> {
+    return this.finalityProviderService.reindexFinalityProviders();
+  }
+
   async debugStakerSearch(address: string): Promise<void> {
     return this.stakerService.debugStakerSearch(address);
   }

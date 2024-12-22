@@ -208,4 +208,99 @@ export class FinalityProviderService {
 
     return results;
   }
+
+  async reindexFinalityProviders(): Promise<void> {
+    try {
+      console.log('Starting finality provider reindexing...');
+      
+      const transactions = await Transaction.find({}).sort({ timestamp: 1 });
+      
+      // Group transactions by finality provider
+      const fpTransactions = new Map<string, Array<any>>();
+      transactions.forEach(tx => {
+        if (!fpTransactions.has(tx.finalityProvider)) {
+          fpTransactions.set(tx.finalityProvider, []);
+        }
+        fpTransactions.get(tx.finalityProvider)!.push(tx);
+      });
+
+      // Process each finality provider
+      for (const [fpAddress, txs] of fpTransactions.entries()) {
+        const activeTxs = txs.filter(tx => !tx.isOverflow);
+
+        // Group transactions by phase
+        const phaseStakesMap = new Map<number, {
+          totalStake: number;
+          transactionCount: number;
+          stakerCount: number;
+          stakers: Map<string, number>;
+        }>();
+
+        activeTxs.forEach(tx => {
+          const phase = tx.paramsVersion || 0;
+          
+          // Initialize phase stats if not exists
+          if (!phaseStakesMap.has(phase)) {
+            phaseStakesMap.set(phase, {
+              totalStake: 0,
+              transactionCount: 0,
+              stakerCount: 0,
+              stakers: new Map()
+            });
+          }
+
+          const phaseStats = phaseStakesMap.get(phase)!;
+          phaseStats.totalStake += tx.stakeAmount;
+          phaseStats.transactionCount += 1;
+          
+          // Update staker's stake in this phase
+          const currentStake = phaseStats.stakers.get(tx.stakerAddress) || 0;
+          phaseStats.stakers.set(tx.stakerAddress, currentStake + tx.stakeAmount);
+        });
+
+        // Convert phase stakes to array format
+        const phaseStakes = Array.from(phaseStakesMap.entries()).map(([phase, stats]) => ({
+          phase,
+          totalStake: stats.totalStake,
+          transactionCount: stats.transactionCount,
+          stakerCount: stats.stakers.size,
+          stakers: Array.from(stats.stakers.entries()).map(([address, stake]) => ({
+            address,
+            stake
+          }))
+        }));
+
+        // Calculate total stats
+        const totalStake = activeTxs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
+        const uniqueStakers = new Set(activeTxs.map(tx => tx.stakerAddress));
+        const versions = new Set(activeTxs.map(tx => tx.version));
+        const timestamps = activeTxs.map(tx => tx.timestamp);
+
+        // Update finality provider document
+        await FinalityProvider.findOneAndUpdate(
+          { address: fpAddress },
+          {
+            address: fpAddress,
+            totalStake,
+            transactionCount: activeTxs.length,
+            uniqueStakers: Array.from(uniqueStakers),
+            firstSeen: Math.min(...timestamps),
+            lastSeen: Math.max(...timestamps),
+            versionsUsed: Array.from(versions),
+            phaseStakes
+          },
+          { 
+            upsert: true, 
+            new: true,
+            setDefaultsOnInsert: true
+          }
+        );
+      }
+      
+      console.log('Finality provider reindexing completed');
+    } catch (error) {
+      console.error('Error reindexing finality providers:', error);
+      throw error;
+    }
+  }
 }
