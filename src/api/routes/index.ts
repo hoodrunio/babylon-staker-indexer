@@ -9,7 +9,9 @@ import {
   formatPaginatedResponse,
   corsMiddleware 
 } from '../middleware';
+import dotenv from 'dotenv';
 
+dotenv.config();
 const router = express.Router();
 const indexer = new BabylonIndexer();
 
@@ -19,8 +21,20 @@ router.use(compressionMiddleware);
 router.use(rateLimiter);
 
 // Swagger documentation route
-router.use('/api-docs', swaggerUi.serve);
-router.get('/api-docs', swaggerUi.setup(swaggerDocument));
+router.use('/api-docs', corsMiddleware, swaggerUi.serve);
+router.get('/api-docs', corsMiddleware, swaggerUi.setup(swaggerDocument, {
+  swaggerOptions: {
+    url: `${process.env.NODE_ENV === 'production' ? process.env.ALLOWED_ORIGINS : 'http://localhost:3000'}/api/api-docs`,
+    displayRequestDuration: true,
+    docExpansion: 'none',
+    filter: true
+  }
+}));
+
+// Add route to serve swagger.json
+router.get('/swagger.json', corsMiddleware, (req, res) => {
+  res.json(swaggerDocument);
+});
 
 // Finality Provider routes
 router.get('/finality-providers', paginationMiddleware, async (req, res) => {

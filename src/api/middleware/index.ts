@@ -2,6 +2,9 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import { Request, Response, NextFunction } from 'express';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 // CORS middleware
 const getAllowedOrigins = () => {
@@ -13,9 +16,17 @@ const getAllowedOrigins = () => {
 
 export const corsMiddleware = cors({
   origin: getAllowedOrigins(),
-  methods: ['GET'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  methods: ['GET', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'Origin'
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 });
 
 // Compression middleware
