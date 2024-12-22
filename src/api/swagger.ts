@@ -18,6 +18,55 @@ export const swaggerDocument: OpenAPIV3.Document = {
       get: {
         tags: ['Finality Providers'],
         summary: 'Get all finality providers',
+        parameters: [
+          {
+            name: 'page',
+            in: 'query',
+            description: 'Page number',
+            schema: {
+              type: 'integer',
+              default: 1
+            }
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            description: 'Number of items per page',
+            schema: {
+              type: 'integer',
+              default: 10
+            }
+          },
+          {
+            name: 'sort_by',
+            in: 'query',
+            description: 'Field to sort by',
+            schema: {
+              type: 'string',
+              default: 'totalStake',
+              enum: ['totalStake', 'transactionCount', 'uniqueStakers', 'createdAt', 'updatedAt']
+            }
+          },
+          {
+            name: 'order',
+            in: 'query',
+            description: 'Sort order',
+            schema: {
+              type: 'string',
+              default: 'desc',
+              enum: ['asc', 'desc']
+            }
+          },
+          {
+            name: 'include_stakers',
+            in: 'query',
+            description: 'Include staker details in response',
+            schema: {
+              type: 'boolean',
+              default: false
+            }
+          }
+        ],
         responses: {
           '200': {
             description: 'List of all finality providers',
@@ -29,11 +78,25 @@ export const swaggerDocument: OpenAPIV3.Document = {
                     data: {
                       type: 'array',
                       items: {
-                        $ref: '#/components/schemas/FinalityProvider'
+                        $ref: '#/components/schemas/FinalityProviderStats'
                       }
                     },
-                    count: {
-                      type: 'number'
+                    metadata: {
+                      type: 'object',
+                      properties: {
+                        currentPage: {
+                          type: 'number'
+                        },
+                        totalPages: {
+                          type: 'number'
+                        },
+                        totalItems: {
+                          type: 'number'
+                        },
+                        itemsPerPage: {
+                          type: 'number'
+                        }
+                      }
                     },
                     timestamp: {
                       type: 'number'
@@ -154,37 +217,59 @@ export const swaggerDocument: OpenAPIV3.Document = {
     '/stakers': {
       get: {
         tags: ['Stakers'],
-        summary: 'Get top stakers',
+        summary: 'Get all stakers',
         parameters: [
+          {
+            name: 'page',
+            in: 'query',
+            description: 'Page number',
+            schema: {
+              type: 'integer',
+              default: 1
+            }
+          },
           {
             name: 'limit',
             in: 'query',
-            description: 'Number of top stakers to return',
+            description: 'Number of items per page',
             schema: {
               type: 'integer',
               default: 10
             }
           },
           {
-            name: 'from',
+            name: 'sort_by',
             in: 'query',
-            description: 'Start timestamp for time range',
+            description: 'Field to sort by',
             schema: {
-              type: 'number'
+              type: 'string',
+              default: 'totalStake',
+              enum: ['totalStake', 'transactionCount', 'createdAt', 'updatedAt']
             }
           },
           {
-            name: 'to',
+            name: 'order',
             in: 'query',
-            description: 'End timestamp for time range',
+            description: 'Sort order',
             schema: {
-              type: 'number'
+              type: 'string',
+              default: 'desc',
+              enum: ['asc', 'desc']
+            }
+          },
+          {
+            name: 'include_transactions',
+            in: 'query',
+            description: 'Include transaction history in response',
+            schema: {
+              type: 'boolean',
+              default: false
             }
           }
         ],
         responses: {
           '200': {
-            description: 'List of top stakers',
+            description: 'List of all stakers',
             content: {
               'application/json': {
                 schema: {
@@ -193,8 +278,28 @@ export const swaggerDocument: OpenAPIV3.Document = {
                     data: {
                       type: 'array',
                       items: {
-                        $ref: '#/components/schemas/Staker'
+                        $ref: '#/components/schemas/StakerStats'
                       }
+                    },
+                    metadata: {
+                      type: 'object',
+                      properties: {
+                        currentPage: {
+                          type: 'number'
+                        },
+                        totalPages: {
+                          type: 'number'
+                        },
+                        totalItems: {
+                          type: 'number'
+                        },
+                        itemsPerPage: {
+                          type: 'number'
+                        }
+                      }
+                    },
+                    timestamp: {
+                      type: 'number'
                     }
                   }
                 }
@@ -458,12 +563,81 @@ export const swaggerDocument: OpenAPIV3.Document = {
         type: 'object',
         properties: {
           address: {
-            type: 'string',
-            description: 'Finality provider address'
+            type: 'string'
           },
-          stats: {
+          totalStakeBTC: {
+            type: 'number'
+          },
+          transactionCount: {
+            type: 'number'
+          },
+          uniqueStakers: {
+            type: 'number'
+          },
+          timeRange: {
             type: 'object',
-            description: 'Provider statistics'
+            properties: {
+              firstTimestamp: {
+                type: 'number'
+              },
+              lastTimestamp: {
+                type: 'number'
+              },
+              durationSeconds: {
+                type: 'number'
+              }
+            }
+          },
+          stakers: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                address: {
+                  type: 'string'
+                },
+                stake: {
+                  type: 'number'
+                }
+              }
+            }
+          },
+          activeStakes: {
+            type: 'number'
+          },
+          phaseStakes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                phase: {
+                  type: 'number'
+                },
+                totalStake: {
+                  type: 'number'
+                },
+                transactionCount: {
+                  type: 'number'
+                },
+                stakerCount: {
+                  type: 'number'
+                },
+                stakers: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      address: {
+                        type: 'string'
+                      },
+                      stake: {
+                        type: 'number'
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -484,12 +658,93 @@ export const swaggerDocument: OpenAPIV3.Document = {
         type: 'object',
         properties: {
           address: {
-            type: 'string',
-            description: 'Staker address'
+            type: 'string'
           },
-          stats: {
+          totalStakeBTC: {
+            type: 'number'
+          },
+          transactionCount: {
+            type: 'number'
+          },
+          uniqueBlocks: {
+            type: 'number'
+          },
+          timeRange: {
             type: 'object',
-            description: 'Staker statistics'
+            properties: {
+              firstTimestamp: {
+                type: 'number'
+              },
+              lastTimestamp: {
+                type: 'number'
+              },
+              durationSeconds: {
+                type: 'number'
+              }
+            }
+          },
+          finalityProviders: {
+            type: 'array',
+            items: {
+              type: 'string'
+            }
+          },
+          activeStakes: {
+            type: 'number'
+          },
+          phaseStakes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                phase: {
+                  type: 'number'
+                },
+                totalStake: {
+                  type: 'number'
+                },
+                transactionCount: {
+                  type: 'number'
+                },
+                finalityProviders: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      address: {
+                        type: 'string'
+                      },
+                      stake: {
+                        type: 'number'
+                      }
+                    }
+                  }
+                },
+                transactions: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      txid: {
+                        type: 'string'
+                      },
+                      timestamp: {
+                        type: 'number'
+                      },
+                      amount: {
+                        type: 'number'
+                      },
+                      amountBTC: {
+                        type: 'number'
+                      },
+                      finalityProvider: {
+                        type: 'string'
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
