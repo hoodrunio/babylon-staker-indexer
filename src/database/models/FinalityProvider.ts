@@ -1,5 +1,18 @@
 import mongoose from 'mongoose';
 
+const stakerSchema = new mongoose.Schema({
+  address: { type: String, required: true },
+  stake: { type: Number, required: true }
+}, { _id: false });
+
+const phaseStakeSchema = new mongoose.Schema({
+  phase: { type: Number, required: true },
+  totalStake: { type: Number, required: true, default: 0 },
+  transactionCount: { type: Number, required: true, default: 0 },
+  stakerCount: { type: Number, required: true, default: 0 },
+  stakers: [stakerSchema]
+}, { _id: false });
+
 const finalityProviderSchema = new mongoose.Schema({
   address: { 
     type: String, 
@@ -31,9 +44,22 @@ const finalityProviderSchema = new mongoose.Schema({
   versionsUsed: { 
     type: [Number], 
     default: [] 
+  },
+  phaseStakes: {
+    type: [phaseStakeSchema],
+    default: []
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'finalityproviders',
+  strict: true,
+  strictQuery: true
 });
 
-export const FinalityProvider = mongoose.model('FinalityProvider', finalityProviderSchema); 
+// Create indexes
+finalityProviderSchema.index({ address: 1 }, { unique: true });
+finalityProviderSchema.index({ totalStake: -1 });
+finalityProviderSchema.index({ firstSeen: 1 });
+finalityProviderSchema.index({ lastSeen: 1 });
+
+export const FinalityProvider = mongoose.model('FinalityProvider', finalityProviderSchema, 'finalityproviders');

@@ -46,9 +46,20 @@ const transactionSchema = new mongoose.Schema({
   paramsVersion: { 
     type: Number, 
     required: true 
+  },
+  isOverflow: {
+    type: Boolean,
+    required: true,
+    default: false,
+    index: true
+  },
+  overflowAmount: {
+    type: Number,
+    required: true,
+    default: 0
   }
 }, {
   timestamps: true
 });
 
-export const Transaction = mongoose.model('Transaction', transactionSchema); 
+export const Transaction = mongoose.model('Transaction', transactionSchema);

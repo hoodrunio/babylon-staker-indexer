@@ -1,12 +1,14 @@
-.env
 node_modules/*
 babylon-stake-analysis.json
 phase2-transactions.json
 btc.py
-tx_desc.md
 indexer_full.log
 analyze.log
 logs
-docs
+dist
+package-lock.json
 src/scripts/
 src/tests/
+scripts
+.env
+docs

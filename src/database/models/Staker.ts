@@ -1,5 +1,25 @@
 import mongoose from 'mongoose';
 
+const transactionSchema = new mongoose.Schema({
+  txid: { type: String, required: true },
+  phase: { type: Number, required: true },
+  timestamp: { type: Number, required: true },
+  amount: { type: Number, required: true },
+  finalityProvider: { type: String, required: true }
+}, { _id: false });
+
+const finalityProviderStakeSchema = new mongoose.Schema({
+  address: { type: String, required: true },
+  stake: { type: Number, required: true }
+}, { _id: false });
+
+const phaseStakeSchema = new mongoose.Schema({
+  phase: { type: Number, required: true },
+  totalStake: { type: Number, required: true, default: 0 },
+  transactionCount: { type: Number, required: true, default: 0 },
+  finalityProviders: [finalityProviderStakeSchema]
+}, { _id: false });
+
 const stakerSchema = new mongoose.Schema({
   address: { 
     type: String, 
@@ -18,9 +38,10 @@ const stakerSchema = new mongoose.Schema({
     required: true, 
     default: 0 
   },
-  uniqueStakers: { 
-    type: [String], 
-    default: [] 
+  activeStakes: { 
+    type: Number, 
+    required: true, 
+    default: 0 
   },
   finalityProviders: { 
     type: [String], 
@@ -34,10 +55,13 @@ const stakerSchema = new mongoose.Schema({
     type: Number, 
     required: true 
   },
-  activeStakes: { 
-    type: Number, 
-    required: true, 
-    default: 0 
+  transactions: {
+    type: [transactionSchema],
+    default: []
+  },
+  phaseStakes: {
+    type: [phaseStakeSchema],
+    default: []
   }
 }, {
   timestamps: true
@@ -48,4 +72,4 @@ stakerSchema.index(
   { collation: { locale: 'en', strength: 2 } }
 );
 
-export const Staker = mongoose.model('Staker', stakerSchema); 
+export const Staker = mongoose.model('Staker', stakerSchema);
