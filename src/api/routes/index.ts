@@ -147,13 +147,39 @@ router.get('/stakers', paginationMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc', skip = 0 } = req.pagination!;
     const includeTransactions = req.query.include_transactions === 'true';
+    const transactionsLimit = parseInt(req.query.transactions_limit as string) || 50;
+    const transactionsPage = parseInt(req.query.transactions_page as string) || 1;
     
     const [stakers, total] = await Promise.all([
-      indexer.getTopStakers(skip, limit, sortBy, order, includeTransactions),
+      indexer.getTopStakers(
+        skip, 
+        limit, 
+        sortBy, 
+        order, 
+        includeTransactions,
+        (transactionsPage - 1) * transactionsLimit,
+        transactionsLimit
+      ),
       indexer.getStakersCount()
     ]);
 
-    res.json(formatPaginatedResponse(stakers, total, page, limit));
+    res.json({ 
+      data: stakers,
+      timestamp: Date.now(),
+      meta: {
+        pagination: {
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          totalCount: total,
+          hasMore: page < Math.ceil(total / limit)
+        },
+        transactions: includeTransactions ? {
+          page: transactionsPage,
+          limit: transactionsLimit
+        } : null
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -163,12 +189,10 @@ router.get('/stakers/:address', async (req, res) => {
   const { address } = req.params;
   const { from, to } = req.query;
   const includeTransactions = req.query.include_transactions === 'true';
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 50;
   
   try {
-    // Debug search first
-    await indexer.db.debugStakerSearch(address);
-
-    // TimeRange parametrelerini kontrol et
     const timeRange = from && to ? {
       firstTimestamp: parseInt(from as string),
       lastTimestamp: parseInt(to as string),
@@ -185,8 +209,39 @@ router.get('/stakers/:address', async (req, res) => {
       }
     }
 
-    const stats = await indexer.getStakerStats(address, timeRange, includeTransactions);
-    res.json({ data: stats });
+    const skip = (page - 1) * limit;
+
+    const [stats, totalTransactions] = await Promise.all([
+      indexer.getStakerStats(
+        address, 
+        timeRange, 
+        includeTransactions,
+        skip,
+        limit
+      ),
+      indexer.getStakerTotalTransactions(address, timeRange)
+    ]);
+
+    const totalPages = Math.ceil(totalTransactions / limit);
+
+    res.json({ 
+      data: stats,
+      timestamp: Date.now(),
+      meta: {
+        pagination: includeTransactions ? {
+          page,
+          limit,
+          totalPages,
+          totalCount: totalTransactions,
+          hasMore: page < totalPages
+        } : null,
+        timeRange: timeRange ? {
+          from: timeRange.firstTimestamp,
+          to: timeRange.lastTimestamp,
+          duration: timeRange.durationSeconds
+        } : null
+      }
+    });
   } catch (error) {
     console.error('Staker lookup error:', error);
     res.status(404).json({ 

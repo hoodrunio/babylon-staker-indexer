@@ -413,6 +413,24 @@ export const swaggerDocument: OpenAPIV3.Document = {
               type: 'boolean',
               default: false
             }
+          },
+          {
+            name: 'transactions_page',
+            in: 'query',
+            description: 'Page number for transactions list (only when include_transactions=true)',
+            schema: {
+              type: 'integer',
+              default: 1
+            }
+          },
+          {
+            name: 'transactions_limit',
+            in: 'query',
+            description: 'Number of transactions per page (only when include_transactions=true)',
+            schema: {
+              type: 'integer',
+              default: 50
+            }
           }
         ],
         responses: {
@@ -429,25 +447,45 @@ export const swaggerDocument: OpenAPIV3.Document = {
                         $ref: '#/components/schemas/StakerStats'
                       }
                     },
-                    metadata: {
-                      type: 'object',
-                      properties: {
-                        currentPage: {
-                          type: 'number'
-                        },
-                        totalPages: {
-                          type: 'number'
-                        },
-                        totalItems: {
-                          type: 'number'
-                        },
-                        itemsPerPage: {
-                          type: 'number'
-                        }
-                      }
-                    },
                     timestamp: {
                       type: 'number'
+                    },
+                    meta: {
+                      type: 'object',
+                      properties: {
+                        pagination: {
+                          type: 'object',
+                          properties: {
+                            page: {
+                              type: 'number'
+                            },
+                            limit: {
+                              type: 'number'
+                            },
+                            totalPages: {
+                              type: 'number'
+                            },
+                            totalCount: {
+                              type: 'number'
+                            },
+                            hasMore: {
+                              type: 'boolean'
+                            }
+                          }
+                        },
+                        transactions: {
+                          type: 'object',
+                          nullable: true,
+                          properties: {
+                            page: {
+                              type: 'number'
+                            },
+                            limit: {
+                              type: 'number'
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -498,6 +536,24 @@ export const swaggerDocument: OpenAPIV3.Document = {
               type: 'boolean',
               default: false
             }
+          },
+          {
+            name: 'page',
+            in: 'query',
+            description: 'Page number for transactions list (only when include_transactions=true)',
+            schema: {
+              type: 'integer',
+              default: 1
+            }
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            description: 'Number of transactions per page (only when include_transactions=true)',
+            schema: {
+              type: 'integer',
+              default: 50
+            }
           }
         ],
         responses: {
@@ -510,6 +566,50 @@ export const swaggerDocument: OpenAPIV3.Document = {
                   properties: {
                     data: {
                       $ref: '#/components/schemas/StakerStats'
+                    },
+                    timestamp: {
+                      type: 'number'
+                    },
+                    meta: {
+                      type: 'object',
+                      properties: {
+                        pagination: {
+                          type: 'object',
+                          nullable: true,
+                          properties: {
+                            page: {
+                              type: 'number'
+                            },
+                            limit: {
+                              type: 'number'
+                            },
+                            totalPages: {
+                              type: 'number'
+                            },
+                            totalCount: {
+                              type: 'number'
+                            },
+                            hasMore: {
+                              type: 'boolean'
+                            }
+                          }
+                        },
+                        timeRange: {
+                          type: 'object',
+                          nullable: true,
+                          properties: {
+                            from: {
+                              type: 'number'
+                            },
+                            to: {
+                              type: 'number'
+                            },
+                            duration: {
+                              type: 'number'
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -524,6 +624,9 @@ export const swaggerDocument: OpenAPIV3.Document = {
                   type: 'object',
                   properties: {
                     error: {
+                      type: 'string'
+                    },
+                    details: {
                       type: 'string'
                     }
                   }

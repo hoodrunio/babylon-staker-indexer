@@ -1,4 +1,10 @@
 import mongoose from 'mongoose';
+import { StakerDocument } from '../../types';
+
+const finalityProviderStakeSchema = new mongoose.Schema({
+  address: { type: String, required: true },
+  stake: { type: Number, required: true }
+}, { _id: false });
 
 const transactionSchema = new mongoose.Schema({
   txid: { type: String, required: true },
@@ -6,11 +12,6 @@ const transactionSchema = new mongoose.Schema({
   timestamp: { type: Number, required: true },
   amount: { type: Number, required: true },
   finalityProvider: { type: String, required: true }
-}, { _id: false });
-
-const finalityProviderStakeSchema = new mongoose.Schema({
-  address: { type: String, required: true },
-  stake: { type: Number, required: true }
 }, { _id: false });
 
 const phaseStakeSchema = new mongoose.Schema({
@@ -24,9 +25,7 @@ const stakerSchema = new mongoose.Schema({
   address: { 
     type: String, 
     required: true, 
-    unique: true,
-    index: true,
-    collation: { locale: 'en', strength: 2 }
+    unique: true 
   },
   totalStake: { 
     type: Number, 
@@ -43,8 +42,12 @@ const stakerSchema = new mongoose.Schema({
     required: true, 
     default: 0 
   },
-  finalityProviders: { 
+  uniqueProviders: { 
     type: [String], 
+    default: [] 
+  },
+  versionsUsed: { 
+    type: [Number], 
     default: [] 
   },
   firstSeen: { 
@@ -55,21 +58,23 @@ const stakerSchema = new mongoose.Schema({
     type: Number, 
     required: true 
   },
-  transactions: {
-    type: [transactionSchema],
-    default: []
-  },
   phaseStakes: {
     type: [phaseStakeSchema],
     default: []
+  },
+  transactions: {
+    type: [transactionSchema],
+    default: []
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'stakers'
 });
 
-stakerSchema.index(
-  { address: 1, firstSeen: 1, lastSeen: 1 },
-  { collation: { locale: 'en', strength: 2 } }
-);
+// Create indexes
+stakerSchema.index({ address: 1 }, { unique: true });
+stakerSchema.index({ totalStake: -1 });
+stakerSchema.index({ firstSeen: 1 });
+stakerSchema.index({ lastSeen: 1 });
 
-export const Staker = mongoose.model('Staker', stakerSchema);
+export const Staker = mongoose.model<StakerDocument>('Staker', stakerSchema, 'stakers');

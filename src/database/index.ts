@@ -100,9 +100,11 @@ export class Database {
   async getStakerStats(
     address: string, 
     timeRange?: TimeRange,
-    includeTransactions: boolean = false
+    includeTransactions: boolean = false,
+    skip?: number,
+    limit?: number
   ): Promise<StakerStats> {
-    return this.stakerService.getStakerStats(address, timeRange, includeTransactions);
+    return this.stakerService.getStakerStats(address, timeRange, includeTransactions, skip, limit);
   }
 
   async getTopStakers(
@@ -110,9 +112,11 @@ export class Database {
     limit: number = 10,
     sortBy: string = 'totalStake',
     order: 'asc' | 'desc' = 'desc',
-    includeTransactions: boolean = false
+    includeTransactions: boolean = false,
+    transactionsSkip?: number,
+    transactionsLimit?: number
   ): Promise<StakerStats[]> {
-    return this.stakerService.getTopStakers(skip, limit, sortBy, order, includeTransactions);
+    return this.stakerService.getTopStakers(skip, limit, sortBy, order, includeTransactions, transactionsSkip, transactionsLimit);
   }
 
   async getStakersCount(): Promise<number> {
@@ -195,5 +199,12 @@ export class Database {
     timeRange?: TimeRange
   ): Promise<number> {
     return this.finalityProviderService.getFinalityProviderTotalStakers(address, timeRange);
+  }
+
+  async getStakerTotalTransactions(
+    address: string,
+    timeRange?: TimeRange
+  ): Promise<number> {
+    return this.stakerService.getStakerTotalTransactions(address, timeRange);
   }
 }

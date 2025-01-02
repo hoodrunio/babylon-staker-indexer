@@ -81,7 +81,7 @@ export interface FinalityProviderStats {
   }[];
 }
 
-export interface StakeTransactionInfo {
+export interface TransactionInfo {
   txid: string;
   timestamp: number;
   amount: number;
@@ -89,22 +89,33 @@ export interface StakeTransactionInfo {
   finalityProvider: string;
 }
 
-export interface PhaseTransactions {
-  phase: number;
-  transactions: StakeTransactionInfo[];
-}
-
 export interface StakerStats {
   address: string;
   totalStake: string;
   totalStakeBTC: number;
   transactionCount: number;
+  uniqueProviders: number;
   uniqueBlocks: number;
-  timeRange: TimeRange;
+  timeRange: {
+    firstTimestamp: number;
+    lastTimestamp: number;
+    durationSeconds: number;
+  };
+  averageStakeBTC: number;
+  versionsUsed: number[];
   finalityProviders: string[];
   activeStakes: number;
-  phaseStakes: PhaseStake[];
-  transactions?: PhaseTransactions[];
+  stats: Record<string, any>;
+  phaseStakes: {
+    phase: number;
+    totalStake: number;
+    transactionCount: number;
+    finalityProviders: Array<{
+      address: string;
+      stake: number;
+    }>;
+  }[];
+  transactions?: TransactionInfo[];
 }
 
 export interface TopFinalityProviderStats extends FinalityProviderStats {
@@ -149,4 +160,33 @@ export interface PhaseStake {
   totalStake: number;
   transactionCount: number;
   finalityProviders: FinalityProviderStake[];
+}
+
+export interface StakerDocument {
+  address: string;
+  totalStake: number;
+  transactionCount: number;
+  activeStakes: number;
+  uniqueProviders: string[];
+  versionsUsed: number[];
+  firstSeen: number;
+  lastSeen: number;
+  phaseStakes: Array<{
+    phase: number;
+    totalStake: number;
+    transactionCount: number;
+    finalityProviders: Array<{
+      address: string;
+      stake: number;
+    }>;
+  }>;
+  transactions?: Array<{
+    txid: string;
+    phase: number;
+    timestamp: number;
+    amount: number;
+    finalityProvider: string;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
 }

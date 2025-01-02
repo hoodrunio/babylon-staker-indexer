@@ -213,10 +213,22 @@ export class TransactionService {
       });
 
       // Group transactions by phase
-      const phaseTransactionsMap = new Map<number, Array<any>>();
+      const phaseTransactionsMap = new Map<number, Array<{
+        txid: string;
+        phase: number;
+        timestamp: number;
+        amount: number;
+        finalityProvider: string;
+      }>>();
 
       // Initialize with existing transactions
-      existingTransactions.forEach(tx => {
+      existingTransactions.forEach((tx: {
+        txid: string;
+        phase: number;
+        timestamp: number;
+        amount: number;
+        finalityProvider: string;
+      }) => {
         const phase = tx.phase || 0;
         if (!phaseTransactionsMap.has(phase)) {
           phaseTransactionsMap.set(phase, []);
