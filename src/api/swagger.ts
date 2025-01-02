@@ -9,6 +9,10 @@ export const swaggerDocument: OpenAPIV3.Document = {
   },
   servers: [
     {
+      url: 'https://bbn-indexer.hoodscan.io/api',
+      description: 'Production server'
+    },
+    {
       url: 'http://localhost:3000/api',
       description: 'Local development server'
     }
