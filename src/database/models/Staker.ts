@@ -24,8 +24,7 @@ const phaseStakeSchema = new mongoose.Schema({
 const stakerSchema = new mongoose.Schema({
   address: { 
     type: String, 
-    required: true, 
-    unique: true 
+    required: true
   },
   stakerPublicKey: {
     type: String,
@@ -80,5 +79,13 @@ stakerSchema.index({ address: 1 }, { unique: true });
 stakerSchema.index({ totalStake: -1 });
 stakerSchema.index({ firstSeen: 1 });
 stakerSchema.index({ lastSeen: 1 });
+
+// Compound indexes for common query patterns
+stakerSchema.index({ totalStake: -1, firstSeen: 1 }); // For sorting by stake with time filtering
+stakerSchema.index({ totalStake: -1, lastSeen: 1 }); // For sorting by stake with time filtering
+stakerSchema.index({ transactionCount: -1, totalStake: -1 }); // For sorting by transaction count and stake
+stakerSchema.index({ activeStakes: -1, totalStake: -1 }); // For sorting by active stakes and total stake
+stakerSchema.index({ 'phaseStakes.phase': 1, totalStake: -1 }); // For phase-based queries
+stakerSchema.index({ 'transactions.timestamp': -1 }); // For transaction time-based queries
 
 export const Staker = mongoose.model<StakerDocument>('Staker', stakerSchema, 'stakers');

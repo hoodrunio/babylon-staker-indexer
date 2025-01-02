@@ -1,6 +1,7 @@
 import { FinalityProvider } from '../models/FinalityProvider';
 import { Transaction } from '../models/Transaction';
 import { FinalityProviderStats, TimeRange, TopFinalityProviderStats } from '../../types';
+import { PipelineStage } from 'mongoose';
 
 interface QueryWithTimestamp {
   address: string;
@@ -152,52 +153,83 @@ export class FinalityProviderService {
     
     try {
       const sortOrder = order === 'asc' ? 1 : -1;
-      const collection = FinalityProvider.collection;
-
-      const fps = await FinalityProvider.find()
-        .sort({ [sortBy]: sortOrder })
-        .skip(skip)
-        .limit(limit)
-        .lean();
       
-      console.log('Found FPs:', fps.length);
+      const pipeline: PipelineStage[] = [
+        {
+          $group: {
+            _id: '$finalityProvider',
+            totalStake: { $sum: '$stakeAmount' },
+            transactionCount: { $sum: 1 },
+            uniqueStakers: { $addToSet: '$stakerAddress' },
+            uniqueBlocks: { $addToSet: '$blockHeight' },
+            firstSeen: { $min: '$timestamp' },
+            lastSeen: { $max: '$timestamp' },
+            versionsUsed: { $addToSet: '$version' }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            address: '$_id',
+            totalStake: 1,
+            totalStakeBTC: { $divide: ['$totalStake', 100000000] },
+            transactionCount: 1,
+            uniqueStakers: { $size: '$uniqueStakers' },
+            uniqueBlocks: { $size: '$uniqueBlocks' },
+            timeRange: {
+              firstTimestamp: '$firstSeen',
+              lastTimestamp: '$lastSeen',
+              durationSeconds: { $subtract: ['$lastSeen', '$firstSeen'] }
+            },
+            averageStakeBTC: {
+              $divide: [
+                { $divide: ['$totalStake', '$transactionCount'] },
+                100000000
+              ]
+            },
+            versionsUsed: 1
+          }
+        },
+        { $sort: { [sortBy]: sortOrder } },
+        { $skip: skip },
+        { $limit: limit }
+      ];
+
+      if (includeStakers) {
+        pipeline.push({
+          $lookup: {
+            from: 'transactions',
+            let: { fpAddress: '$address' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$finalityProvider', '$$fpAddress'] }
+                }
+              },
+              { $sort: { timestamp: -1 } },
+              { $skip: stakersSkip },
+              { $limit: stakersLimit },
+              {
+                $project: {
+                  _id: 0,
+                  stakerAddress: 1,
+                  stakeAmount: 1
+                }
+              }
+            ],
+            as: 'stakerAddresses'
+          }
+        });
+      }
+
+      const fps = await Transaction.aggregate(pipeline);
       
       return Promise.all(fps.map(async (fp) => {
-        const uniqueBlocks = await Transaction.distinct('blockHeight', {
-          finalityProvider: fp.address
-        });
-
-        let stakerAddresses: string[] = [];
-        if (includeStakers) {
-          const stakerTransactions = await Transaction.find(
-            { finalityProvider: fp.address },
-            { stakerAddress: 1 }
-          )
-          .skip(stakersSkip)
-          .limit(stakersLimit)
-          .lean();
-          stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
-        }
-
+        const fpDoc = await FinalityProvider.findOne({ address: fp.address }).lean();
+        
         return {
-          address: fp.address,
-          totalStake: fp.totalStake.toString(),
-          createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
-          updatedAt: Math.floor(new Date(fp.updatedAt || fp.lastSeen).getTime() / 1000),
-          totalStakeBTC: fp.totalStake / 100000000,
-          transactionCount: fp.transactionCount,
-          uniqueStakers: fp.uniqueStakers.length,
-          uniqueBlocks: uniqueBlocks.length,
-          timeRange: {
-            firstTimestamp: fp.firstSeen,
-            lastTimestamp: fp.lastSeen,
-            durationSeconds: fp.lastSeen - fp.firstSeen
-          },
-          averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
-          versionsUsed: fp.versionsUsed,
-          ...(includeStakers && { stakerAddresses }),
-          stats: {},
-          phaseStakes: fp.phaseStakes?.map(phase => ({
+          ...fp,
+          phaseStakes: fpDoc?.phaseStakes?.map(phase => ({
             phase: phase.phase,
             totalStake: phase.totalStake,
             transactionCount: phase.transactionCount,
@@ -210,7 +242,8 @@ export class FinalityProviderService {
                   stake: staker.stake
                 }))
             })
-          }))
+          })) || [],
+          stats: {}
         };
       }));
     } catch (error) {

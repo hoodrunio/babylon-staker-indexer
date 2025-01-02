@@ -62,4 +62,12 @@ const transactionSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Compound indexes for common query patterns
+transactionSchema.index({ stakerAddress: 1, timestamp: 1 }); // For staker queries with time range
+transactionSchema.index({ finalityProvider: 1, timestamp: 1 }); // For FP queries with time range
+transactionSchema.index({ blockHeight: 1, timestamp: 1 }); // For block height queries with time range
+transactionSchema.index({ version: 1, timestamp: 1 }); // For version queries with time range
+transactionSchema.index({ isOverflow: 1, timestamp: 1 }); // For overflow queries with time range
+transactionSchema.index({ stakerAddress: 1, finalityProvider: 1 }); // For staker-FP relationship queries
+
 export const Transaction = mongoose.model('Transaction', transactionSchema);

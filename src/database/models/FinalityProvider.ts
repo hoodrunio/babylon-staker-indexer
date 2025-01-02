@@ -16,8 +16,7 @@ const phaseStakeSchema = new mongoose.Schema({
 const finalityProviderSchema = new mongoose.Schema({
   address: { 
     type: String, 
-    required: true, 
-    unique: true 
+    required: true
   },
   totalStake: { 
     type: Number, 
@@ -61,5 +60,13 @@ finalityProviderSchema.index({ address: 1 }, { unique: true });
 finalityProviderSchema.index({ totalStake: -1 });
 finalityProviderSchema.index({ firstSeen: 1 });
 finalityProviderSchema.index({ lastSeen: 1 });
+
+// Compound indexes for common query patterns
+finalityProviderSchema.index({ totalStake: -1, firstSeen: 1 }); // For sorting by stake with time filtering
+finalityProviderSchema.index({ totalStake: -1, lastSeen: 1 }); // For sorting by stake with time filtering
+finalityProviderSchema.index({ transactionCount: -1, totalStake: -1 }); // For sorting by transaction count and stake
+finalityProviderSchema.index({ 'phaseStakes.phase': 1, totalStake: -1 }); // For phase-based queries
+finalityProviderSchema.index({ 'uniqueStakers': 1, totalStake: -1 }); // For staker count based queries
+finalityProviderSchema.index({ 'versionsUsed': 1, totalStake: -1 }); // For version based queries
 
 export const FinalityProvider = mongoose.model('FinalityProvider', finalityProviderSchema, 'finalityproviders');

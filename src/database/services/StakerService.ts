@@ -1,6 +1,7 @@
 import { Staker } from '../models/Staker';
 import { Transaction } from '../models/Transaction';
 import { StakerStats, TimeRange, TransactionInfo, StakerDocument } from '../../types';
+import { PipelineStage } from 'mongoose';
 
 interface QueryWithTimestamp {
   address: string;
@@ -18,61 +19,81 @@ export class StakerService {
     skip: number = 0,
     limit: number = 50
   ): Promise<StakerStats> {
-    const staker = await Staker.findOne({ address }).lean();
-    if (!staker) {
-      throw new Error(`Staker not found: ${address}`);
-    }
+    const matchStage: PipelineStage.Match = {
+      $match: { stakerAddress: address }
+    };
 
-    const query: any = { stakerAddress: address };
     if (timeRange) {
-      query.timestamp = {
+      matchStage.$match.timestamp = {
         $gte: timeRange.firstTimestamp,
         $lte: timeRange.lastTimestamp
       };
     }
 
-    const uniqueBlocks = await Transaction.distinct('blockHeight', query);
-
-    let transactions: TransactionInfo[] = [];
-    if (includeTransactions) {
-      const txs = await Transaction.find(
-        query,
-        { 
-          txid: 1, 
-          timestamp: 1, 
-          stakeAmount: 1, 
-          finalityProvider: 1 
+    const pipeline: PipelineStage[] = [
+      matchStage,
+      {
+        $facet: {
+          stats: [
+            {
+              $group: {
+                _id: '$stakerAddress',
+                totalStake: { $sum: '$stakeAmount' },
+                transactionCount: { $sum: 1 },
+                uniqueProviders: { $addToSet: '$finalityProvider' },
+                uniqueBlocks: { $addToSet: '$blockHeight' },
+                firstSeen: { $min: '$timestamp' },
+                lastSeen: { $max: '$timestamp' },
+                versionsUsed: { $addToSet: '$version' }
+              }
+            }
+          ],
+          transactions: [
+            { $sort: { timestamp: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                txid: 1,
+                timestamp: 1,
+                amount: '$stakeAmount',
+                amountBTC: { $divide: ['$stakeAmount', 100000000] },
+                finalityProvider: 1
+              }
+            }
+          ]
         }
-      )
-      .skip(skip)
-      .limit(limit)
-      .lean();
+      }
+    ];
 
-      transactions = txs.map(tx => ({
-        txid: tx.txid,
-        timestamp: tx.timestamp,
-        amount: tx.stakeAmount,
-        amountBTC: tx.stakeAmount / 100000000,
-        finalityProvider: tx.finalityProvider
-      }));
+    const [result] = await Transaction.aggregate(pipeline);
+    const stats = result.stats[0];
+
+    if (!stats) {
+      throw new Error(`Staker not found: ${address}`);
+    }
+
+    const staker = await Staker.findOne({ address }).lean();
+    if (!staker) {
+      throw new Error(`Staker document not found: ${address}`);
     }
 
     return {
       address: staker.address,
       stakerPublicKey: staker.stakerPublicKey,
-      totalStake: staker.totalStake.toString(),
-      totalStakeBTC: staker.totalStake / 100000000,
-      transactionCount: staker.transactionCount,
-      uniqueProviders: (staker as any).uniqueProviders?.length || 0,
-      uniqueBlocks: uniqueBlocks.length,
+      totalStake: stats.totalStake.toString(),
+      totalStakeBTC: stats.totalStake / 100000000,
+      transactionCount: stats.transactionCount,
+      uniqueProviders: stats.uniqueProviders.length,
+      uniqueBlocks: stats.uniqueBlocks.length,
       timeRange: {
-        firstTimestamp: staker.firstSeen,
-        lastTimestamp: staker.lastSeen,
-        durationSeconds: staker.lastSeen - staker.firstSeen
+        firstTimestamp: stats.firstSeen,
+        lastTimestamp: stats.lastSeen,
+        durationSeconds: stats.lastSeen - stats.firstSeen
       },
-      averageStakeBTC: (staker.totalStake / staker.transactionCount) / 100000000,
-      versionsUsed: (staker as any).versionsUsed || [],
-      finalityProviders: (staker as any).uniqueProviders || [],
+      averageStakeBTC: (stats.totalStake / stats.transactionCount) / 100000000,
+      versionsUsed: stats.versionsUsed,
+      finalityProviders: stats.uniqueProviders,
       activeStakes: staker.activeStakes,
       stats: {},
       phaseStakes: staker.phaseStakes?.map(phase => ({
@@ -81,7 +102,7 @@ export class StakerService {
         transactionCount: phase.transactionCount,
         finalityProviders: phase.finalityProviders
       })) || [],
-      ...(includeTransactions && { transactions })
+      ...(includeTransactions && { transactions: result.transactions })
     };
   }
 
