@@ -31,12 +31,17 @@ export class FinalityProviderService {
     skip: number = 0,
     limit: number = 50
   ): Promise<FinalityProviderStats> {
-    const query: QueryWithTimestamp = { address };
-    if (timeRange) {
-      query.timestamp = {
-        $gte: timeRange.firstTimestamp,
-        $lte: timeRange.lastTimestamp
-      };
+    const cacheKey = this.generateCacheKey('stats', {
+      address,
+      timeRange,
+      skip,
+      limit
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<FinalityProviderStats>(cacheKey);
+    if (cachedData) {
+      return cachedData;
     }
 
     const fp = await FinalityProvider.findOne({ address }).lean();
@@ -44,45 +49,61 @@ export class FinalityProviderService {
       throw new Error(`Finality Provider not found: ${address}`);
     }
 
-    const uniqueBlocks = await Transaction.distinct('blockHeight', {
-      finalityProvider: address,
-      ...(timeRange && {
-        timestamp: {
-          $gte: timeRange.firstTimestamp,
-          $lte: timeRange.lastTimestamp
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          finalityProvider: address,
+          ...(timeRange && {
+            timestamp: {
+              $gte: timeRange.firstTimestamp,
+              $lte: timeRange.lastTimestamp
+            }
+          })
         }
-      })
-    });
-
-    const stakerTransactions = await Transaction.find(
-      { 
-        finalityProvider: address,
-        ...(timeRange && {
-          timestamp: {
-            $gte: timeRange.firstTimestamp,
-            $lte: timeRange.lastTimestamp
-          }
-        })
       },
-      { stakerAddress: 1, timestamp: 1 }
-    )
-    .skip(skip)
-    .limit(limit)
-    .lean();
+      {
+        $group: {
+          _id: '$stakerAddress',
+          totalStake: { $sum: '$stakeAmount' },
+          transactions: {
+            $push: {
+              txid: '$txid',
+              timestamp: '$timestamp',
+              stakeAmount: '$stakeAmount'
+            }
+          },
+          lastTransaction: { $last: '$$ROOT' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          address: '$_id',
+          stake: '$totalStake',
+          lastTxId: '$lastTransaction.txid',
+          lastTimestamp: '$lastTransaction.timestamp',
+          transactions: 1
+        }
+      },
+      { $sort: { stake: -1 } },
+      { $skip: skip },
+      { $limit: limit }
+    ];
 
-    const stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
+    const stakerDetails = await Transaction.aggregate(pipeline);
 
     let phaseStakes = fp.phaseStakes?.map(phase => ({
       phase: phase.phase,
       totalStake: phase.totalStake,
       transactionCount: phase.transactionCount,
       stakerCount: phase.stakerCount,
-      stakers: phase.stakers
-        .slice(skip, skip + limit)
-        .map(staker => ({
-          address: staker.address,
-          stake: staker.stake
-        }))
+      stakers: stakerDetails.map(staker => ({
+        address: staker.address,
+        stake: staker.stake,
+        lastTxId: staker.lastTxId,
+        lastTimestamp: staker.lastTimestamp,
+        transactions: staker.transactions
+      }))
     }));
 
     if (timeRange) {
@@ -93,8 +114,7 @@ export class FinalityProviderService {
           $lte: timeRange.lastTimestamp
         }
       })
-      .skip(skip)
-      .limit(limit)
+      .sort({ timestamp: -1 })
       .lean();
 
       const phaseTransactions = new Map<number, any[]>();
@@ -109,11 +129,33 @@ export class FinalityProviderService {
       phaseStakes = Array.from(phaseTransactions.entries()).map(([phase, txs]) => {
         const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
         const uniqueStakers = new Set(txs.map(tx => tx.stakerAddress));
-        const stakerStakes = new Map<string, number>();
+        const stakerStakes = new Map<string, {
+          stake: number;
+          lastTxId: string;
+          lastTimestamp: number;
+          transactions: Array<{
+            txid: string;
+            timestamp: number;
+            stakeAmount: number;
+          }>;
+        }>();
         
         txs.forEach(tx => {
-          const currentStake = stakerStakes.get(tx.stakerAddress) || 0;
-          stakerStakes.set(tx.stakerAddress, currentStake + tx.stakeAmount);
+          if (!stakerStakes.has(tx.stakerAddress)) {
+            stakerStakes.set(tx.stakerAddress, {
+              stake: 0,
+              lastTxId: tx.txid,
+              lastTimestamp: tx.timestamp,
+              transactions: []
+            });
+          }
+          const staker = stakerStakes.get(tx.stakerAddress)!;
+          staker.stake += tx.stakeAmount;
+          staker.transactions.push({
+            txid: tx.txid,
+            timestamp: tx.timestamp,
+            stakeAmount: tx.stakeAmount
+          });
         });
 
         return {
@@ -122,16 +164,30 @@ export class FinalityProviderService {
           transactionCount: txs.length,
           stakerCount: uniqueStakers.size,
           stakers: Array.from(stakerStakes.entries())
+            .sort((a, b) => b[1].stake - a[1].stake)
             .slice(skip, skip + limit)
-            .map(([address, stake]) => ({
+            .map(([address, data]) => ({
               address,
-              stake
+              stake: data.stake,
+              lastTxId: data.lastTxId,
+              lastTimestamp: data.lastTimestamp,
+              transactions: data.transactions
             }))
         };
       });
     }
 
-    return {
+    const uniqueBlocks = await Transaction.distinct('blockHeight', {
+      finalityProvider: address,
+      ...(timeRange && {
+        timestamp: {
+          $gte: timeRange.firstTimestamp,
+          $lte: timeRange.lastTimestamp
+        }
+      })
+    });
+
+    const response = {
       address: fp.address,
       totalStake: fp.totalStake.toString(),
       createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
@@ -147,10 +203,14 @@ export class FinalityProviderService {
       },
       averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
       versionsUsed: fp.versionsUsed,
-      stakerAddresses,
       stats: {},
       phaseStakes
     };
+
+    // Save to cache
+    await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+    return response;
   }
 
   async getAllFPs(
