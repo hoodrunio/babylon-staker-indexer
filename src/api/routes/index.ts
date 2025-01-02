@@ -43,13 +43,39 @@ router.get('/finality-providers', paginationMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc', skip = 0 } = req.pagination!;
     const includeStakers = req.query.include_stakers === 'true';
+    const stakersLimit = parseInt(req.query.stakers_limit as string) || 50;
+    const stakersPage = parseInt(req.query.stakers_page as string) || 1;
     
     const [fps, total] = await Promise.all([
-      indexer.getAllFinalityProviders(skip, limit, sortBy, order, includeStakers),
+      indexer.getAllFinalityProviders(
+        skip, 
+        limit, 
+        sortBy, 
+        order, 
+        includeStakers,
+        (stakersPage - 1) * stakersLimit,
+        stakersLimit
+      ),
       indexer.getFinalityProvidersCount()
     ]);
 
-    res.json(formatPaginatedResponse(fps, total, page, limit));
+    res.json({ 
+      data: fps,
+      timestamp: Date.now(),
+      meta: {
+        pagination: {
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          totalCount: total,
+          hasMore: page < Math.ceil(total / limit)
+        },
+        stakers: includeStakers ? {
+          page: stakersPage,
+          limit: stakersLimit
+        } : null
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

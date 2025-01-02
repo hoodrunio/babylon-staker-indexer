@@ -65,11 +65,29 @@ export const swaggerDocument: OpenAPIV3.Document = {
               type: 'boolean',
               default: false
             }
+          },
+          {
+            name: 'stakers_page',
+            in: 'query',
+            description: 'Page number for stakers list (only when include_stakers=true)',
+            schema: {
+              type: 'integer',
+              default: 1
+            }
+          },
+          {
+            name: 'stakers_limit',
+            in: 'query',
+            description: 'Number of stakers per page (only when include_stakers=true)',
+            schema: {
+              type: 'integer',
+              default: 50
+            }
           }
         ],
         responses: {
           '200': {
-            description: 'List of all finality providers',
+            description: 'List of finality providers',
             content: {
               'application/json': {
                 schema: {
@@ -81,25 +99,45 @@ export const swaggerDocument: OpenAPIV3.Document = {
                         $ref: '#/components/schemas/FinalityProviderStats'
                       }
                     },
-                    metadata: {
-                      type: 'object',
-                      properties: {
-                        currentPage: {
-                          type: 'number'
-                        },
-                        totalPages: {
-                          type: 'number'
-                        },
-                        totalItems: {
-                          type: 'number'
-                        },
-                        itemsPerPage: {
-                          type: 'number'
-                        }
-                      }
-                    },
                     timestamp: {
                       type: 'number'
+                    },
+                    meta: {
+                      type: 'object',
+                      properties: {
+                        pagination: {
+                          type: 'object',
+                          properties: {
+                            page: {
+                              type: 'number'
+                            },
+                            limit: {
+                              type: 'number'
+                            },
+                            totalPages: {
+                              type: 'number'
+                            },
+                            totalCount: {
+                              type: 'number'
+                            },
+                            hasMore: {
+                              type: 'boolean'
+                            }
+                          }
+                        },
+                        stakers: {
+                          type: 'object',
+                          nullable: true,
+                          properties: {
+                            page: {
+                              type: 'number'
+                            },
+                            limit: {
+                              type: 'number'
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -239,6 +277,24 @@ export const swaggerDocument: OpenAPIV3.Document = {
             schema: {
               type: 'number'
             }
+          },
+          {
+            name: 'page',
+            in: 'query',
+            description: 'Page number for stakers list',
+            schema: {
+              type: 'integer',
+              default: 1
+            }
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            description: 'Number of stakers per page',
+            schema: {
+              type: 'integer',
+              default: 50
+            }
           }
         ],
         responses: {
@@ -254,6 +310,46 @@ export const swaggerDocument: OpenAPIV3.Document = {
                     },
                     timestamp: {
                       type: 'number'
+                    },
+                    meta: {
+                      type: 'object',
+                      properties: {
+                        pagination: {
+                          type: 'object',
+                          properties: {
+                            page: {
+                              type: 'number'
+                            },
+                            limit: {
+                              type: 'number'
+                            },
+                            totalPages: {
+                              type: 'number'
+                            },
+                            totalCount: {
+                              type: 'number'
+                            },
+                            hasMore: {
+                              type: 'boolean'
+                            }
+                          }
+                        },
+                        timeRange: {
+                          type: 'object',
+                          nullable: true,
+                          properties: {
+                            from: {
+                              type: 'number'
+                            },
+                            to: {
+                              type: 'number'
+                            },
+                            duration: {
+                              type: 'number'
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }

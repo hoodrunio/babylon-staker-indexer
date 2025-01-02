@@ -507,9 +507,11 @@ export class BabylonIndexer {
     limit: number = 10,
     sortBy: string = 'totalStake',
     order: 'asc' | 'desc' = 'desc',
-    includeStakers: boolean = false
+    includeStakers: boolean = false,
+    stakersSkip?: number,
+    stakersLimit?: number
   ): Promise<FinalityProviderStats[]> {
-    return this.db.getFinalityProviders(skip, limit, sortBy, order, includeStakers);
+    return this.db.getFinalityProviders(skip, limit, sortBy, order, includeStakers, stakersSkip, stakersLimit);
   }
 
   async getFinalityProvidersCount(): Promise<number> {

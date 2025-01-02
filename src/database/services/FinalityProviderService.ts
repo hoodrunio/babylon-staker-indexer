@@ -144,9 +144,11 @@ export class FinalityProviderService {
     limit: number = 10,
     sortBy: string = 'totalStake',
     order: 'asc' | 'desc' = 'desc',
-    includeStakers: boolean = false
+    includeStakers: boolean = false,
+    stakersSkip: number = 0,
+    stakersLimit: number = 50
   ): Promise<FinalityProviderStats[]> {
-    console.log('Getting all FPs with params:', { skip, limit, sortBy, order, includeStakers });
+    console.log('Getting all FPs with params:', { skip, limit, sortBy, order, includeStakers, stakersSkip, stakersLimit });
     
     try {
       const sortOrder = order === 'asc' ? 1 : -1;
@@ -170,7 +172,10 @@ export class FinalityProviderService {
           const stakerTransactions = await Transaction.find(
             { finalityProvider: fp.address },
             { stakerAddress: 1 }
-          ).lean();
+          )
+          .skip(stakersSkip)
+          .limit(stakersLimit)
+          .lean();
           stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
         }
 
@@ -198,10 +203,12 @@ export class FinalityProviderService {
             transactionCount: phase.transactionCount,
             stakerCount: phase.stakerCount,
             ...(includeStakers && {
-              stakers: phase.stakers.map(staker => ({
-                address: staker.address,
-                stake: staker.stake
-              }))
+              stakers: phase.stakers
+                .slice(stakersSkip, stakersSkip + stakersLimit)
+                .map(staker => ({
+                  address: staker.address,
+                  stake: staker.stake
+                }))
             })
           }))
         };
