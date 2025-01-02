@@ -49,62 +49,13 @@ export class FinalityProviderService {
       throw new Error(`Finality Provider not found: ${address}`);
     }
 
-    const pipeline: PipelineStage[] = [
-      {
-        $match: {
-          finalityProvider: address,
-          ...(timeRange && {
-            timestamp: {
-              $gte: timeRange.firstTimestamp,
-              $lte: timeRange.lastTimestamp
-            }
-          })
-        }
-      },
-      {
-        $group: {
-          _id: '$stakerAddress',
-          totalStake: { $sum: '$stakeAmount' },
-          transactions: {
-            $push: {
-              txid: '$txid',
-              timestamp: '$timestamp',
-              stakeAmount: '$stakeAmount'
-            }
-          },
-          lastTransaction: { $last: '$$ROOT' }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          address: '$_id',
-          stake: '$totalStake',
-          lastTxId: '$lastTransaction.txid',
-          lastTimestamp: '$lastTransaction.timestamp',
-          transactions: 1
-        }
-      },
-      { $sort: { stake: -1 } },
-      { $skip: skip },
-      { $limit: limit }
-    ];
-
-    const stakerDetails = await Transaction.aggregate(pipeline);
-
-    let phaseStakes = fp.phaseStakes?.map(phase => ({
+    let phaseStakes: FinalityProviderStats['phaseStakes'] = fp.phaseStakes?.map(phase => ({
       phase: phase.phase,
       totalStake: phase.totalStake,
       transactionCount: phase.transactionCount,
       stakerCount: phase.stakerCount,
-      stakers: stakerDetails.map(staker => ({
-        address: staker.address,
-        stake: staker.stake,
-        lastTxId: staker.lastTxId,
-        lastTimestamp: staker.lastTimestamp,
-        transactions: staker.transactions
-      }))
-    }));
+      stakers: []
+    })) || [];
 
     if (timeRange) {
       const transactions = await Transaction.find({
@@ -119,7 +70,7 @@ export class FinalityProviderService {
 
       const phaseTransactions = new Map<number, any[]>();
       transactions.forEach(tx => {
-        const phase = (tx as any).phase || 0;
+        const phase = (tx as any).paramsVersion + 1 || 0;
         if (!phaseTransactions.has(phase)) {
           phaseTransactions.set(phase, []);
         }
@@ -129,33 +80,11 @@ export class FinalityProviderService {
       phaseStakes = Array.from(phaseTransactions.entries()).map(([phase, txs]) => {
         const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
         const uniqueStakers = new Set(txs.map(tx => tx.stakerAddress));
-        const stakerStakes = new Map<string, {
-          stake: number;
-          lastTxId: string;
-          lastTimestamp: number;
-          transactions: Array<{
-            txid: string;
-            timestamp: number;
-            stakeAmount: number;
-          }>;
-        }>();
+        const stakerStakes = new Map<string, number>();
         
         txs.forEach(tx => {
-          if (!stakerStakes.has(tx.stakerAddress)) {
-            stakerStakes.set(tx.stakerAddress, {
-              stake: 0,
-              lastTxId: tx.txid,
-              lastTimestamp: tx.timestamp,
-              transactions: []
-            });
-          }
-          const staker = stakerStakes.get(tx.stakerAddress)!;
-          staker.stake += tx.stakeAmount;
-          staker.transactions.push({
-            txid: tx.txid,
-            timestamp: tx.timestamp,
-            stakeAmount: tx.stakeAmount
-          });
+          const currentStake = stakerStakes.get(tx.stakerAddress) || 0;
+          stakerStakes.set(tx.stakerAddress, currentStake + tx.stakeAmount);
         });
 
         return {
@@ -164,17 +93,58 @@ export class FinalityProviderService {
           transactionCount: txs.length,
           stakerCount: uniqueStakers.size,
           stakers: Array.from(stakerStakes.entries())
-            .sort((a, b) => b[1].stake - a[1].stake)
+            .sort((a, b) => b[1] - a[1])
             .slice(skip, skip + limit)
-            .map(([address, data]) => ({
+            .map(([address, stake]) => ({
               address,
-              stake: data.stake,
-              lastTxId: data.lastTxId,
-              lastTimestamp: data.lastTimestamp,
-              transactions: data.transactions
+              stake
             }))
         };
       });
+    } else {
+      // When no time range is specified, get stakers for each phase separately
+      const pipeline: PipelineStage[] = [
+        {
+          $match: {
+            finalityProvider: address
+          }
+        },
+        {
+          $group: {
+            _id: {
+              phase: { $add: ['$paramsVersion', 1] },
+              stakerAddress: '$stakerAddress'
+            },
+            stake: { $sum: '$stakeAmount' }
+          }
+        },
+        {
+          $group: {
+            _id: '$_id.phase',
+            totalStake: { $sum: '$stake' },
+            stakerCount: { $sum: 1 },
+            stakers: {
+              $push: {
+                address: '$_id.stakerAddress',
+                stake: '$stake'
+              }
+            }
+          }
+        },
+        { $sort: { '_id': 1 } }
+      ];
+
+      const phaseStakersResult = await Transaction.aggregate(pipeline);
+
+      phaseStakes = phaseStakersResult.map(phaseData => ({
+        phase: phaseData._id,
+        totalStake: phaseData.totalStake,
+        transactionCount: phaseData.stakerCount, // Using stakerCount as transactionCount since we don't have the actual count
+        stakerCount: phaseData.stakerCount,
+        stakers: phaseData.stakers
+          .sort((a: any, b: any) => b.stake - a.stake)
+          .slice(skip, skip + limit)
+      }));
     }
 
     const uniqueBlocks = await Transaction.distinct('blockHeight', {
@@ -187,7 +157,7 @@ export class FinalityProviderService {
       })
     });
 
-    const response = {
+    const response: FinalityProviderStats = {
       address: fp.address,
       totalStake: fp.totalStake.toString(),
       createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
