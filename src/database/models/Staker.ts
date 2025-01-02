@@ -27,6 +27,10 @@ const stakerSchema = new mongoose.Schema({
     required: true, 
     unique: true 
   },
+  stakerPublicKey: {
+    type: String,
+    sparse: true
+  },
   totalStake: { 
     type: Number, 
     required: true, 

@@ -300,7 +300,8 @@ export class TransactionService {
           $max: { lastSeen: Math.max(...timestamps) },
           $set: {
             transactions: transactions,
-            phaseStakes: phaseStakes
+            phaseStakes: phaseStakes,
+            stakerPublicKey: txs[0].stakerPublicKey
           }
         },
         { upsert: true }

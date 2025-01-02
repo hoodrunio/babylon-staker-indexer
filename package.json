@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "db:setup": "ts-node src/database/setup.ts",
     "db:migrate": "ts-node src/database/setup.ts",
-    "db:reset": "ts-node src/database/setup.ts --reset"
+    "db:reset": "ts-node src/database/setup.ts --reset",
+    "migrate-public-keys": "ts-node src/scripts/migrate-staker-public-keys.ts"
   },
   "dependencies": {
     "@types/cors": "^2.8.17",

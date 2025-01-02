@@ -59,6 +59,7 @@ export class StakerService {
 
     return {
       address: staker.address,
+      stakerPublicKey: staker.stakerPublicKey,
       totalStake: staker.totalStake.toString(),
       totalStakeBTC: staker.totalStake / 100000000,
       transactionCount: staker.transactionCount,
@@ -132,6 +133,7 @@ export class StakerService {
 
         return {
           address: staker.address,
+          stakerPublicKey: staker.stakerPublicKey,
           totalStake: staker.totalStake.toString(),
           totalStakeBTC: staker.totalStake / 100000000,
           transactionCount: staker.transactionCount,

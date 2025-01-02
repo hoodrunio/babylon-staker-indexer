@@ -932,6 +932,10 @@ export const swaggerDocument: OpenAPIV3.Document = {
           address: {
             type: 'string'
           },
+          stakerPublicKey: {
+            type: 'string',
+            description: 'Public key of the staker'
+          },
           totalStake: {
             type: 'string'
           },

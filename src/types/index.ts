@@ -91,6 +91,7 @@ export interface TransactionInfo {
 
 export interface StakerStats {
   address: string;
+  stakerPublicKey?: string;
   totalStake: string;
   totalStakeBTC: number;
   transactionCount: number;
@@ -164,6 +165,7 @@ export interface PhaseStake {
 
 export interface StakerDocument {
   address: string;
+  stakerPublicKey?: string;
   totalStake: number;
   transactionCount: number;
   activeStakes: number;
