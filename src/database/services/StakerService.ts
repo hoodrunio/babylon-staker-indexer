@@ -2,16 +2,21 @@ import { Staker } from '../models/Staker';
 import { Transaction } from '../models/Transaction';
 import { StakerStats, TimeRange, TransactionInfo, StakerDocument } from '../../types';
 import { PipelineStage } from 'mongoose';
-
-interface QueryWithTimestamp {
-  address: string;
-  timestamp?: {
-    $gte: number;
-    $lte: number;
-  };
-}
+import { CacheService } from '../../services/CacheService';
 
 export class StakerService {
+  private cache: CacheService;
+  private readonly CACHE_TTL = 300; // 5 minutes
+  private readonly CACHE_PREFIX = 'staker';
+
+  constructor() {
+    this.cache = CacheService.getInstance();
+  }
+
+  private generateCacheKey(method: string, params: Record<string, any>): string {
+    return this.cache.generateKey(`${this.CACHE_PREFIX}:${method}`, params);
+  }
+
   async getStakerStats(
     address: string, 
     timeRange?: TimeRange,
@@ -19,6 +24,20 @@ export class StakerService {
     skip: number = 0,
     limit: number = 50
   ): Promise<StakerStats> {
+    const cacheKey = this.generateCacheKey('stats', {
+      address,
+      timeRange,
+      includeTransactions,
+      skip,
+      limit
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<StakerStats>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
     const matchStage: PipelineStage.Match = {
       $match: { stakerAddress: address }
     };
@@ -78,7 +97,7 @@ export class StakerService {
       throw new Error(`Staker document not found: ${address}`);
     }
 
-    return {
+    const response = {
       address: staker.address,
       stakerPublicKey: staker.stakerPublicKey,
       totalStake: stats.totalStake.toString(),
@@ -104,6 +123,11 @@ export class StakerService {
       })) || [],
       ...(includeTransactions && { transactions: result.transactions })
     };
+
+    // Save to cache
+    await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+    return response;
   }
 
   async getTopStakers(
@@ -115,6 +139,22 @@ export class StakerService {
     transactionsSkip: number = 0,
     transactionsLimit: number = 50
   ): Promise<StakerStats[]> {
+    const cacheKey = this.generateCacheKey('top', {
+      skip,
+      limit,
+      sortBy,
+      order,
+      includeTransactions,
+      transactionsSkip,
+      transactionsLimit
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<StakerStats[]>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
     try {
       const sortOrder = order === 'asc' ? 1 : -1;
       const stakers = await Staker.find()
@@ -123,7 +163,7 @@ export class StakerService {
         .limit(limit)
         .lean();
 
-      return Promise.all(stakers.map(async (staker) => {
+      const response = await Promise.all(stakers.map(async (staker) => {
         const uniqueBlocks = await Transaction.distinct('blockHeight', {
           stakerAddress: staker.address
         });
@@ -179,10 +219,21 @@ export class StakerService {
           ...(includeTransactions && { transactions })
         };
       }));
+
+      // Save to cache
+      await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+      return response;
     } catch (error) {
       console.error('Error in getTopStakers:', error);
       throw error;
     }
+  }
+
+  // Cache invalidation methods
+  private async invalidateStakerCache(address: string): Promise<void> {
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:stats:address:${address}*`);
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:top:*`);
   }
 
   async reindexStakers(): Promise<void> {
@@ -286,6 +337,9 @@ export class StakerService {
           }
         );
       }
+      
+      // Clear all staker-related cache after reindexing
+      await this.cache.clearPattern(`${this.CACHE_PREFIX}:*`);
       
       console.log('Staker reindexing completed');
     } catch (error) {

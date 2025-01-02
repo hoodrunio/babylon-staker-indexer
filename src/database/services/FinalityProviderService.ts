@@ -2,6 +2,7 @@ import { FinalityProvider } from '../models/FinalityProvider';
 import { Transaction } from '../models/Transaction';
 import { FinalityProviderStats, TimeRange, TopFinalityProviderStats } from '../../types';
 import { PipelineStage } from 'mongoose';
+import { CacheService } from '../../services/CacheService';
 
 interface QueryWithTimestamp {
   address: string;
@@ -12,6 +13,18 @@ interface QueryWithTimestamp {
 }
 
 export class FinalityProviderService {
+  private cache: CacheService;
+  private readonly CACHE_TTL = 300; // 5 minutes
+  private readonly CACHE_PREFIX = 'fp';
+
+  constructor() {
+    this.cache = CacheService.getInstance();
+  }
+
+  private generateCacheKey(method: string, params: Record<string, any>): string {
+    return this.cache.generateKey(`${this.CACHE_PREFIX}:${method}`, params);
+  }
+
   async getFPStats(
     address: string, 
     timeRange?: TimeRange,
@@ -149,8 +162,22 @@ export class FinalityProviderService {
     stakersSkip: number = 0,
     stakersLimit: number = 50
   ): Promise<FinalityProviderStats[]> {
-    console.log('Getting all FPs with params:', { skip, limit, sortBy, order, includeStakers, stakersSkip, stakersLimit });
-    
+    const cacheKey = this.generateCacheKey('all', {
+      skip,
+      limit,
+      sortBy,
+      order,
+      includeStakers,
+      stakersSkip,
+      stakersLimit
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<FinalityProviderStats[]>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
     try {
       const sortOrder = order === 'asc' ? 1 : -1;
       
@@ -224,7 +251,7 @@ export class FinalityProviderService {
 
       const fps = await Transaction.aggregate(pipeline);
       
-      return Promise.all(fps.map(async (fp) => {
+      const response = await Promise.all(fps.map(async (fp) => {
         const fpDoc = await FinalityProvider.findOne({ address: fp.address }).lean();
         
         return {
@@ -246,6 +273,11 @@ export class FinalityProviderService {
           stats: {}
         };
       }));
+
+      // Save to cache
+      await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+      return response;
     } catch (error) {
       console.error('Error in getAllFPs:', error);
       throw error;
@@ -264,6 +296,14 @@ export class FinalityProviderService {
   }
 
   async getTopFPs(limit: number = 10): Promise<TopFinalityProviderStats[]> {
+    const cacheKey = this.generateCacheKey('top', { limit });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<TopFinalityProviderStats[]>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
     const fps = await FinalityProvider.find()
       .sort({ totalStake: -1 })
       .limit(limit)
@@ -271,7 +311,7 @@ export class FinalityProviderService {
 
     const totalStake = fps.reduce((sum, fp) => sum + fp.totalStake, 0);
 
-    const results = await Promise.all(fps.map(async (fp, index) => {
+    const response = await Promise.all(fps.map(async (fp, index) => {
       const uniqueBlocks = await Transaction.distinct('blockHeight', {
         finalityProvider: fp.address
       });
@@ -311,7 +351,10 @@ export class FinalityProviderService {
       };
     }));
 
-    return results;
+    // Save to cache
+    await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+    return response;
   }
 
   async reindexFinalityProviders(): Promise<void> {
@@ -402,6 +445,9 @@ export class FinalityProviderService {
         );
       }
       
+      // Clear all FP-related cache after reindexing
+      await this.cache.clearPattern(`${this.CACHE_PREFIX}:*`);
+      
       console.log('Finality provider reindexing completed');
     } catch (error) {
       console.error('Error reindexing finality providers:', error);
@@ -424,5 +470,12 @@ export class FinalityProviderService {
 
     const uniqueStakers = await Transaction.distinct('stakerAddress', query);
     return uniqueStakers.length;
+  }
+
+  // Cache invalidation methods
+  private async invalidateFPCache(address: string): Promise<void> {
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:*:address:${address}*`);
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:all:*`);
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:top:*`);
   }
 }
