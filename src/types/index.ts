@@ -77,6 +77,8 @@ export interface FinalityProviderStats {
     stakers?: {
       address: string;
       stake: number;
+      timestamp?: number;
+      txId?: string;
     }[];
   }[];
 }

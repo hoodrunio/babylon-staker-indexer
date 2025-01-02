@@ -80,11 +80,27 @@ export class FinalityProviderService {
       phaseStakes = Array.from(phaseTransactions.entries()).map(([phase, txs]) => {
         const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
         const uniqueStakers = new Set(txs.map(tx => tx.stakerAddress));
-        const stakerStakes = new Map<string, number>();
+        const stakerStakes = new Map<string, {
+          stake: number;
+          timestamp: number;
+          txId: string;
+        }>();
         
         txs.forEach(tx => {
-          const currentStake = stakerStakes.get(tx.stakerAddress) || 0;
-          stakerStakes.set(tx.stakerAddress, currentStake + tx.stakeAmount);
+          if (!stakerStakes.has(tx.stakerAddress)) {
+            stakerStakes.set(tx.stakerAddress, {
+              stake: 0,
+              timestamp: tx.timestamp,
+              txId: tx.txid
+            });
+          }
+          const staker = stakerStakes.get(tx.stakerAddress)!;
+          staker.stake += tx.stakeAmount;
+          // Update timestamp and txId only if this transaction is newer
+          if (tx.timestamp > staker.timestamp) {
+            staker.timestamp = tx.timestamp;
+            staker.txId = tx.txid;
+          }
         });
 
         return {
@@ -93,11 +109,13 @@ export class FinalityProviderService {
           transactionCount: txs.length,
           stakerCount: uniqueStakers.size,
           stakers: Array.from(stakerStakes.entries())
-            .sort((a, b) => b[1] - a[1])
+            .sort((a, b) => b[1].stake - a[1].stake)
             .slice(skip, skip + limit)
-            .map(([address, stake]) => ({
+            .map(([address, data]) => ({
               address,
-              stake
+              stake: data.stake,
+              timestamp: data.timestamp,
+              txId: data.txId
             }))
         };
       });
@@ -115,7 +133,8 @@ export class FinalityProviderService {
               phase: { $add: ['$paramsVersion', 1] },
               stakerAddress: '$stakerAddress'
             },
-            stake: { $sum: '$stakeAmount' }
+            stake: { $sum: '$stakeAmount' },
+            lastTransaction: { $last: '$$ROOT' }
           }
         },
         {
@@ -126,7 +145,9 @@ export class FinalityProviderService {
             stakers: {
               $push: {
                 address: '$_id.stakerAddress',
-                stake: '$stake'
+                stake: '$stake',
+                timestamp: '$lastTransaction.timestamp',
+                txId: '$lastTransaction.txid'
               }
             }
           }
