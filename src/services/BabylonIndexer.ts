@@ -526,8 +526,13 @@ export class BabylonIndexer {
     return this.db.getFinalityProviders(skip, limit, sortBy, order, includeStakers);
   }
 
-  async getFinalityProviderStats(address: string, timeRange?: TimeRange): Promise<FinalityProviderStats> {
-    return this.db.getFPStats(address, timeRange);
+  async getFinalityProviderStats(
+    address: string, 
+    timeRange?: TimeRange,
+    skip?: number,
+    limit?: number
+  ): Promise<FinalityProviderStats> {
+    return this.db.getFPStats(address, timeRange, skip, limit);
   }
 
   async getTopStakers(
@@ -558,5 +563,12 @@ export class BabylonIndexer {
 
   async getGlobalStats() {
     return this.db.getGlobalStats();
+  }
+
+  async getFinalityProviderTotalStakers(
+    address: string,
+    timeRange?: TimeRange
+  ): Promise<number> {
+    return this.db.getFinalityProviderTotalStakers(address, timeRange);
   }
 } 

@@ -74,6 +74,8 @@ router.get('/finality-providers/top', paginationMiddleware, async (req, res) => 
 router.get('/finality-providers/:address', async (req, res) => {
   const { address } = req.params;
   const { from, to } = req.query;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 50;
   
   try {
     const timeRange = from && to ? {
@@ -82,10 +84,32 @@ router.get('/finality-providers/:address', async (req, res) => {
       durationSeconds: Number(to) - Number(from),
     } : undefined;
 
-    const stats = await indexer.getFinalityProviderStats(address, timeRange);
+    const skip = (page - 1) * limit;
+
+    const [stats, totalCount] = await Promise.all([
+      indexer.getFinalityProviderStats(address, timeRange, skip, limit),
+      indexer.getFinalityProviderTotalStakers(address, timeRange)
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
     res.json({ 
       data: stats,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      meta: {
+        pagination: {
+          page,
+          limit,
+          totalPages,
+          totalCount,
+          hasMore: page < totalPages
+        },
+        timeRange: timeRange ? {
+          from: timeRange.firstTimestamp,
+          to: timeRange.lastTimestamp,
+          duration: timeRange.durationSeconds
+        } : null
+      }
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });

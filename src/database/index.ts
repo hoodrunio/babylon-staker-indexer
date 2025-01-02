@@ -79,8 +79,13 @@ export class Database {
   }
 
   // FinalityProvider methods
-  async getFPStats(address: string, timeRange?: any): Promise<any> {
-    return this.finalityProviderService.getFPStats(address, timeRange);
+  async getFPStats(
+    address: string, 
+    timeRange?: TimeRange,
+    skip?: number,
+    limit?: number
+  ): Promise<FinalityProviderStats> {
+    return this.finalityProviderService.getFPStats(address, timeRange, skip, limit);
   }
 
   async getAllFPs(): Promise<any[]> {
@@ -181,5 +186,12 @@ export class Database {
 
   async getFinalityProvidersCount(): Promise<number> {
     return this.finalityProviderService.getFinalityProvidersCount();
+  }
+
+  async getFinalityProviderTotalStakers(
+    address: string,
+    timeRange?: TimeRange
+  ): Promise<number> {
+    return this.finalityProviderService.getFinalityProviderTotalStakers(address, timeRange);
   }
 }

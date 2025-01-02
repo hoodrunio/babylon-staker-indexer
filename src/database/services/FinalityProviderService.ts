@@ -11,7 +11,12 @@ interface QueryWithTimestamp {
 }
 
 export class FinalityProviderService {
-  async getFPStats(address: string, timeRange?: TimeRange): Promise<FinalityProviderStats> {
+  async getFPStats(
+    address: string, 
+    timeRange?: TimeRange,
+    skip: number = 0,
+    limit: number = 50
+  ): Promise<FinalityProviderStats> {
     const query: QueryWithTimestamp = { address };
     if (timeRange) {
       query.timestamp = {
@@ -46,7 +51,10 @@ export class FinalityProviderService {
         })
       },
       { stakerAddress: 1, timestamp: 1 }
-    ).lean();
+    )
+    .skip(skip)
+    .limit(limit)
+    .lean();
 
     const stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
 
@@ -55,10 +63,12 @@ export class FinalityProviderService {
       totalStake: phase.totalStake,
       transactionCount: phase.transactionCount,
       stakerCount: phase.stakerCount,
-      stakers: phase.stakers.map(staker => ({
-        address: staker.address,
-        stake: staker.stake
-      }))
+      stakers: phase.stakers
+        .slice(skip, skip + limit)
+        .map(staker => ({
+          address: staker.address,
+          stake: staker.stake
+        }))
     }));
 
     if (timeRange) {
@@ -68,7 +78,10 @@ export class FinalityProviderService {
           $gte: timeRange.firstTimestamp,
           $lte: timeRange.lastTimestamp
         }
-      }).lean();
+      })
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
       const phaseTransactions = new Map<number, any[]>();
       transactions.forEach(tx => {
@@ -94,10 +107,12 @@ export class FinalityProviderService {
           totalStake,
           transactionCount: txs.length,
           stakerCount: uniqueStakers.size,
-          stakers: Array.from(stakerStakes.entries()).map(([address, stake]) => ({
-            address,
-            stake
-          }))
+          stakers: Array.from(stakerStakes.entries())
+            .slice(skip, skip + limit)
+            .map(([address, stake]) => ({
+              address,
+              stake
+            }))
         };
       });
     }
@@ -352,5 +367,22 @@ export class FinalityProviderService {
       console.error('Error reindexing finality providers:', error);
       throw error;
     }
+  }
+
+  async getFinalityProviderTotalStakers(
+    address: string,
+    timeRange?: TimeRange
+  ): Promise<number> {
+    const query: any = { finalityProvider: address };
+    
+    if (timeRange) {
+      query.timestamp = {
+        $gte: timeRange.firstTimestamp,
+        $lte: timeRange.lastTimestamp
+      };
+    }
+
+    const uniqueStakers = await Transaction.distinct('stakerAddress', query);
+    return uniqueStakers.length;
   }
 }
