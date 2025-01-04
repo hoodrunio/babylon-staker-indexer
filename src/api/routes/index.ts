@@ -99,7 +99,7 @@ router.get('/finality-providers/top', paginationMiddleware, async (req, res) => 
 
 router.get('/finality-providers/:address', async (req, res) => {
   const { address } = req.params;
-  const { from, to } = req.query;
+  const { from, to, search, sort_by = 'stake', sort_order = 'desc' } = req.query;
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 50;
   
@@ -112,8 +112,27 @@ router.get('/finality-providers/:address', async (req, res) => {
 
     const skip = (page - 1) * limit;
 
+    // Validate sort_order
+    if (sort_order && !['asc', 'desc'].includes(sort_order as string)) {
+      throw new Error('Invalid sort_order. Must be either "asc" or "desc".');
+    }
+
+    // Validate sort_by
+    const allowedSortFields = ['stake', 'address', 'timestamp', 'txId'];
+    if (sort_by && !allowedSortFields.includes(sort_by as string)) {
+      throw new Error(`Invalid sort_by. Must be one of: ${allowedSortFields.join(', ')}`);
+    }
+
     const [stats, totalCount] = await Promise.all([
-      indexer.getFinalityProviderStats(address, timeRange, skip, limit),
+      indexer.getFinalityProviderStats(
+        address, 
+        timeRange, 
+        skip, 
+        limit,
+        search as string,
+        sort_by as string,
+        sort_order as 'asc' | 'desc'
+      ),
       indexer.getFinalityProviderTotalStakers(address, timeRange)
     ]);
 

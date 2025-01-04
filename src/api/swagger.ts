@@ -254,66 +254,178 @@ export const swaggerDocument: OpenAPIV3.Document = {
     },
     '/finality-providers/{address}': {
       get: {
-        tags: ['Finality Providers'],
-        summary: 'Get finality provider stats by address',
+        summary: 'Get finality provider details by address',
         parameters: [
           {
             name: 'address',
             in: 'path',
             required: true,
-            description: 'Finality provider address',
             schema: {
               type: 'string'
-            }
+            },
+            description: 'Finality provider address'
           },
           {
             name: 'from',
             in: 'query',
-            description: 'Start timestamp for time range',
             schema: {
-              type: 'number'
-            }
+              type: 'integer'
+            },
+            description: 'Start timestamp for time range filter'
           },
           {
             name: 'to',
             in: 'query',
-            description: 'End timestamp for time range',
             schema: {
-              type: 'number'
-            }
+              type: 'integer'
+            },
+            description: 'End timestamp for time range filter'
           },
           {
             name: 'page',
             in: 'query',
-            description: 'Page number for stakers list',
             schema: {
               type: 'integer',
               default: 1
-            }
+            },
+            description: 'Page number for pagination'
           },
           {
             name: 'limit',
             in: 'query',
-            description: 'Number of stakers per page',
             schema: {
               type: 'integer',
               default: 50
-            }
+            },
+            description: 'Number of items per page'
+          },
+          {
+            name: 'search',
+            in: 'query',
+            schema: {
+              type: 'string'
+            },
+            description: 'Search term to filter stakers by address or transaction ID'
+          },
+          {
+            name: 'sort_by',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['stake', 'address', 'timestamp', 'txId'],
+              default: 'stake'
+            },
+            description: 'Field to sort stakers by'
+          },
+          {
+            name: 'sort_order',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+              default: 'desc'
+            },
+            description: 'Sort order (ascending or descending)'
           }
         ],
         responses: {
           '200': {
-            description: 'Finality provider statistics',
+            description: 'Finality provider details',
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
                   properties: {
                     data: {
-                      $ref: '#/components/schemas/FinalityProviderStats'
+                      type: 'object',
+                      properties: {
+                        address: {
+                          type: 'string'
+                        },
+                        totalStake: {
+                          type: 'string'
+                        },
+                        totalStakeBTC: {
+                          type: 'number'
+                        },
+                        transactionCount: {
+                          type: 'integer'
+                        },
+                        uniqueStakers: {
+                          type: 'integer'
+                        },
+                        uniqueBlocks: {
+                          type: 'integer'
+                        },
+                        timeRange: {
+                          type: 'object',
+                          properties: {
+                            firstTimestamp: {
+                              type: 'integer'
+                            },
+                            lastTimestamp: {
+                              type: 'integer'
+                            },
+                            durationSeconds: {
+                              type: 'integer'
+                            }
+                          }
+                        },
+                        averageStakeBTC: {
+                          type: 'number'
+                        },
+                        versionsUsed: {
+                          type: 'array',
+                          items: {
+                            type: 'integer'
+                          }
+                        },
+                        phaseStakes: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              phase: {
+                                type: 'integer'
+                              },
+                              totalStake: {
+                                type: 'number'
+                              },
+                              transactionCount: {
+                                type: 'integer'
+                              },
+                              stakerCount: {
+                                type: 'integer'
+                              },
+                              stakers: {
+                                type: 'array',
+                                items: {
+                                  type: 'object',
+                                  properties: {
+                                    address: {
+                                      type: 'string'
+                                    },
+                                    stake: {
+                                      type: 'number'
+                                    },
+                                    timestamp: {
+                                      type: 'integer',
+                                      description: 'Last transaction timestamp'
+                                    },
+                                    txId: {
+                                      type: 'string',
+                                      description: 'Last transaction ID'
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
                     },
                     timestamp: {
-                      type: 'number'
+                      type: 'integer'
                     },
                     meta: {
                       type: 'object',
@@ -322,16 +434,16 @@ export const swaggerDocument: OpenAPIV3.Document = {
                           type: 'object',
                           properties: {
                             page: {
-                              type: 'number'
+                              type: 'integer'
                             },
                             limit: {
-                              type: 'number'
+                              type: 'integer'
                             },
                             totalPages: {
-                              type: 'number'
+                              type: 'integer'
                             },
                             totalCount: {
-                              type: 'number'
+                              type: 'integer'
                             },
                             hasMore: {
                               type: 'boolean'
@@ -343,13 +455,13 @@ export const swaggerDocument: OpenAPIV3.Document = {
                           nullable: true,
                           properties: {
                             from: {
-                              type: 'number'
+                              type: 'integer'
                             },
                             to: {
-                              type: 'number'
+                              type: 'integer'
                             },
                             duration: {
-                              type: 'number'
+                              type: 'integer'
                             }
                           }
                         }
@@ -361,7 +473,19 @@ export const swaggerDocument: OpenAPIV3.Document = {
             }
           },
           '500': {
-            $ref: '#/components/responses/Error500'
+            description: 'Server error',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    error: {
+                      type: 'string'
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

@@ -29,13 +29,19 @@ export class FinalityProviderService {
     address: string, 
     timeRange?: TimeRange,
     skip: number = 0,
-    limit: number = 50
+    limit: number = 50,
+    search?: string,
+    sortBy: string = 'stake',
+    sortOrder: 'asc' | 'desc' = 'desc'
   ): Promise<FinalityProviderStats> {
     const cacheKey = this.generateCacheKey('stats', {
       address,
       timeRange,
       skip,
-      limit
+      limit,
+      search,
+      sortBy,
+      sortOrder
     });
 
     // Try to get from cache
@@ -103,20 +109,45 @@ export class FinalityProviderService {
           }
         });
 
+        let stakers = Array.from(stakerStakes.entries())
+          .map(([address, data]) => ({
+            address,
+            stake: data.stake,
+            timestamp: data.timestamp,
+            txId: data.txId
+          }));
+
+        // Apply search filter if provided
+        if (search) {
+          const searchLower = search.toLowerCase();
+          stakers = stakers.filter(staker => 
+            staker.address.toLowerCase().includes(searchLower) || 
+            staker.txId.toLowerCase().includes(searchLower)
+          );
+        }
+
+        // Apply sorting
+        stakers.sort((a, b) => {
+          const aValue = a[sortBy as keyof typeof a];
+          const bValue = b[sortBy as keyof typeof b];
+          
+          if (typeof aValue === 'string' && typeof bValue === 'string') {
+            return sortOrder === 'asc' ? 
+              aValue.localeCompare(bValue) : 
+              bValue.localeCompare(aValue);
+          }
+          
+          return sortOrder === 'asc' ? 
+            (aValue as number) - (bValue as number) : 
+            (bValue as number) - (aValue as number);
+        });
+
         return {
           phase,
           totalStake,
           transactionCount: txs.length,
           stakerCount: uniqueStakers.size,
-          stakers: Array.from(stakerStakes.entries())
-            .sort((a, b) => b[1].stake - a[1].stake)
-            .slice(skip, skip + limit)
-            .map(([address, data]) => ({
-              address,
-              stake: data.stake,
-              timestamp: data.timestamp,
-              txId: data.txId
-            }))
+          stakers: stakers.slice(skip, skip + limit)
         };
       });
     } else {
@@ -124,7 +155,13 @@ export class FinalityProviderService {
       const pipeline: PipelineStage[] = [
         {
           $match: {
-            finalityProvider: address
+            finalityProvider: address,
+            ...(search && {
+              $or: [
+                { stakerAddress: { $regex: search, $options: 'i' } },
+                { txid: { $regex: search, $options: 'i' } }
+              ]
+            })
           }
         },
         {
@@ -157,15 +194,33 @@ export class FinalityProviderService {
 
       const phaseStakersResult = await Transaction.aggregate(pipeline);
 
-      phaseStakes = phaseStakersResult.map(phaseData => ({
-        phase: phaseData._id,
-        totalStake: phaseData.totalStake,
-        transactionCount: phaseData.stakerCount, // Using stakerCount as transactionCount since we don't have the actual count
-        stakerCount: phaseData.stakerCount,
-        stakers: phaseData.stakers
-          .sort((a: any, b: any) => b.stake - a.stake)
-          .slice(skip, skip + limit)
-      }));
+      phaseStakes = phaseStakersResult.map(phaseData => {
+        let stakers = phaseData.stakers;
+
+        // Apply sorting
+        stakers.sort((a: any, b: any) => {
+          const aValue = a[sortBy];
+          const bValue = b[sortBy];
+          
+          if (typeof aValue === 'string' && typeof bValue === 'string') {
+            return sortOrder === 'asc' ? 
+              aValue.localeCompare(bValue) : 
+              bValue.localeCompare(aValue);
+          }
+          
+          return sortOrder === 'asc' ? 
+            aValue - bValue : 
+            bValue - aValue;
+        });
+
+        return {
+          phase: phaseData._id,
+          totalStake: phaseData.totalStake,
+          transactionCount: phaseData.stakerCount,
+          stakerCount: phaseData.stakerCount,
+          stakers: stakers.slice(skip, skip + limit)
+        };
+      });
     }
 
     const uniqueBlocks = await Transaction.distinct('blockHeight', {

@@ -83,9 +83,12 @@ export class Database {
     address: string, 
     timeRange?: TimeRange,
     skip?: number,
-    limit?: number
+    limit?: number,
+    search?: string,
+    sortBy?: string,
+    sortOrder?: 'asc' | 'desc'
   ): Promise<FinalityProviderStats> {
-    return this.finalityProviderService.getFPStats(address, timeRange, skip, limit);
+    return this.finalityProviderService.getFPStats(address, timeRange, skip, limit, search, sortBy, sortOrder);
   }
 
   async getAllFPs(): Promise<any[]> {
