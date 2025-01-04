@@ -10,6 +10,8 @@ import {
   corsMiddleware 
 } from '../middleware';
 import dotenv from 'dotenv';
+import { Router } from 'express';
+import pointsRouter from './points';
 
 dotenv.config();
 const router = express.Router();
@@ -343,5 +345,8 @@ router.get('/', (req, res) => {
     </html>
   `);
 });
+
+// Points proxy routes
+router.use('/points', pointsRouter);
 
 export default router; 
