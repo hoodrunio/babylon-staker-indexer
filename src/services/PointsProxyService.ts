@@ -20,8 +20,8 @@ export class PointsProxyService {
   private readonly baseUrl = process.env.POINTS_PROXY_URL;
   private readonly cacheService: CacheService;
   private readonly finalityProviderService: FinalityProviderService;
-  private readonly cacheTTL = 3600; // 1 saat cache
-  private readonly noDataCacheTTL = 7200; // 2 saat cache (veri olmayan durumlar için)
+  private readonly cacheTTL = 21600; // 6 saat cache
+  private readonly noDataCacheTTL = 43200; // 12 saat cache (veri olmayan durumlar için)
   private readonly requestDelay = 2000; // 2 saniye bekleme
   private readonly updateInterval = 3600000; // 1 saat
   private readonly maxRetries = 3;
