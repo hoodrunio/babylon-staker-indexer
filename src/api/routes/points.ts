@@ -17,17 +17,24 @@ router.get('/finality-providers', async (req, res) => {
     // Get points for all FPs
     const results = await pointsProxyService.getFinalityProvidersPoints(fpAddresses);
     
-    // Format the response
+    // Format and sort the response
+    const successfulResults = results
+      .filter(r => r.success && r.data?.exists)
+      .map(r => r.data)
+      .sort((a, b) => (b?.points || 0) - (a?.points || 0));
+
     const response = {
-      data: results.filter(r => r.success).map(r => r.data),
+      data: successfulResults,
       meta: {
         total: results.length,
-        successful: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length,
-        errors: results.filter(r => !r.success).map(r => ({
-          fpPkHex: r.fpPkHex,
-          error: r.error
-        }))
+        successful: successfulResults.length,
+        failed: results.filter(r => !r.success || !r.data?.exists).length,
+        errors: results
+          .filter(r => !r.success || !r.data?.exists)
+          .map(r => ({
+            fpPkHex: r.fpPkHex,
+            error: r.error || 'No points data available'
+          }))
       }
     };
 
@@ -44,7 +51,7 @@ router.get('/finality-providers/:fpPkHex', async (req, res) => {
     const { fpPkHex } = req.params;
     const points = await pointsProxyService.getFinalityProviderPoints(fpPkHex);
     
-    if (!points) {
+    if (!points || !points.exists) {
       return res.status(404).json({ 
         error: 'Points not found',
         message: 'No points data available for this finality provider'
@@ -73,17 +80,24 @@ router.post('/finality-providers/batch', async (req, res) => {
 
     const results = await pointsProxyService.getFinalityProvidersPoints(finality_provider_pks);
     
-    // Format the response
+    // Format and sort the response
+    const successfulResults = results
+      .filter(r => r.success && r.data?.exists)
+      .map(r => r.data)
+      .sort((a, b) => (b?.points || 0) - (a?.points || 0));
+
     const response = {
-      data: results.filter(r => r.success).map(r => r.data),
+      data: successfulResults,
       meta: {
         total: results.length,
-        successful: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length,
-        errors: results.filter(r => !r.success).map(r => ({
-          fpPkHex: r.fpPkHex,
-          error: r.error
-        }))
+        successful: successfulResults.length,
+        failed: results.filter(r => !r.success || !r.data?.exists).length,
+        errors: results
+          .filter(r => !r.success || !r.data?.exists)
+          .map(r => ({
+            fpPkHex: r.fpPkHex,
+            error: r.error || 'No points data available'
+          }))
       }
     };
 
