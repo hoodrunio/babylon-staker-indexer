@@ -164,7 +164,13 @@ export class StakerService {
         .lean();
 
       const response = await Promise.all(stakers.map(async (staker) => {
+        // Get unique blocks
         const uniqueBlocks = await Transaction.distinct('blockHeight', {
+          stakerAddress: staker.address
+        });
+
+        // Get unique providers
+        const uniqueProviders = await Transaction.distinct('finalityProvider', {
           stakerAddress: staker.address
         });
 
@@ -198,7 +204,7 @@ export class StakerService {
           totalStake: staker.totalStake.toString(),
           totalStakeBTC: staker.totalStake / 100000000,
           transactionCount: staker.transactionCount,
-          uniqueProviders: (staker as any).uniqueProviders?.length || 0,
+          uniqueProviders: uniqueProviders.length,
           uniqueBlocks: uniqueBlocks.length,
           timeRange: {
             firstTimestamp: staker.firstSeen,
@@ -206,8 +212,8 @@ export class StakerService {
             durationSeconds: staker.lastSeen - staker.firstSeen
           },
           averageStakeBTC: (staker.totalStake / staker.transactionCount) / 100000000,
-          versionsUsed: (staker as any).versionsUsed || [],
-          finalityProviders: (staker as any).uniqueProviders || [],
+          versionsUsed: staker.versionsUsed || [],
+          finalityProviders: uniqueProviders,
           activeStakes: staker.activeStakes,
           stats: {},
           phaseStakes: staker.phaseStakes?.map(phase => ({
