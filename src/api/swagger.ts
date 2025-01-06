@@ -490,6 +490,165 @@ export const swaggerDocument: OpenAPIV3.Document = {
         }
       }
     },
+    '/finality-providers/{address}/grouped-stakers': {
+      get: {
+        tags: ['Finality Providers'],
+        summary: 'Get grouped stakers for a finality provider',
+        description: 'Returns a list of stakers grouped by their total stake across all phases',
+        parameters: [
+          {
+            name: 'address',
+            in: 'path',
+            required: true,
+            description: 'Finality provider address',
+            schema: {
+              type: 'string'
+            }
+          },
+          {
+            name: 'page',
+            in: 'query',
+            description: 'Page number',
+            schema: {
+              type: 'integer',
+              default: 1
+            }
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            description: 'Number of items per page',
+            schema: {
+              type: 'integer',
+              default: 10
+            }
+          },
+          {
+            name: 'sortBy',
+            in: 'query',
+            description: 'Field to sort by',
+            schema: {
+              type: 'string',
+              enum: ['totalStake', 'lastStakedAt'],
+              default: 'totalStake'
+            }
+          },
+          {
+            name: 'order',
+            in: 'query',
+            description: 'Sort order',
+            schema: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+              default: 'desc'
+            }
+          },
+          {
+            name: 'search',
+            in: 'query',
+            description: 'Search term for staker address or transaction hash (case-insensitive)',
+            schema: {
+              type: 'string'
+            }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'Successful response',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    data: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          _id: {
+                            type: 'string',
+                            description: 'Staker address'
+                          },
+                          totalStake: {
+                            type: 'number',
+                            description: 'Total stake amount across all phases'
+                          },
+                          lastTxId: {
+                            type: 'string',
+                            description: 'Last transaction ID'
+                          },
+                          lastStakedAt: {
+                            type: 'number',
+                            description: 'Timestamp of last stake'
+                          },
+                          phases: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                phase: {
+                                  type: 'number',
+                                  description: 'Phase number'
+                                },
+                                stake: {
+                                  type: 'number',
+                                  description: 'Stake amount in this phase'
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    metadata: {
+                      type: 'object',
+                      properties: {
+                        currentPage: {
+                          type: 'number',
+                          description: 'Current page number'
+                        },
+                        totalPages: {
+                          type: 'number',
+                          description: 'Total number of pages'
+                        },
+                        totalItems: {
+                          type: 'number',
+                          description: 'Total number of items'
+                        },
+                        itemsPerPage: {
+                          type: 'number',
+                          description: 'Number of items per page'
+                        }
+                      }
+                    },
+                    timestamp: {
+                      type: 'number',
+                      description: 'Response timestamp'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          '500': {
+            description: 'Internal server error',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    error: {
+                      type: 'string',
+                      description: 'Error message'
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     '/stakers': {
       get: {
         tags: ['Stakers'],
