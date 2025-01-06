@@ -562,9 +562,11 @@ export class BabylonIndexer {
     timeRange?: TimeRange,
     includeTransactions: boolean = false,
     skip?: number,
-    limit?: number
+    limit?: number,
+    sortBy: string = 'timestamp',
+    sortOrder: 'asc' | 'desc' = 'desc'
   ): Promise<StakerStats> {
-    return this.db.getStakerStats(address, timeRange, includeTransactions, skip, limit);
+    return this.db.getStakerStats(address, timeRange, includeTransactions, skip, limit, sortBy, sortOrder);
   }
 
   async getVersionStats(version: number, timeRange?: TimeRange): Promise<VersionStats> {

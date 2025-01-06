@@ -105,9 +105,11 @@ export class Database {
     timeRange?: TimeRange,
     includeTransactions: boolean = false,
     skip?: number,
-    limit?: number
+    limit?: number,
+    sortBy: string = 'totalStake',
+    sortOrder: 'asc' | 'desc' = 'desc'
   ): Promise<StakerStats> {
-    return this.stakerService.getStakerStats(address, timeRange, includeTransactions, skip, limit);
+    return this.stakerService.getStakerStats(address, timeRange, includeTransactions, skip, limit, sortBy, sortOrder);
   }
 
   async getTopStakers(

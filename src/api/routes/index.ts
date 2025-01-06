@@ -254,6 +254,8 @@ router.get('/stakers/:address', async (req, res) => {
   const includeTransactions = req.query.include_transactions === 'true';
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 50;
+  const sortBy = (req.query.sort_by as string) || 'timestamp';
+  const sortOrder = (req.query.sort_order as string || 'desc') as 'asc' | 'desc';
   
   try {
     const timeRange = from && to ? {
@@ -272,6 +274,17 @@ router.get('/stakers/:address', async (req, res) => {
       }
     }
 
+    // Validate sort_order
+    if (sortOrder && !['asc', 'desc'].includes(sortOrder)) {
+      throw new Error('Invalid sort_order. Must be either "asc" or "desc".');
+    }
+
+    // Validate sort_by
+    const allowedSortFields = ['timestamp', 'totalStake'];
+    if (sortBy && !allowedSortFields.includes(sortBy)) {
+      throw new Error(`Invalid sort_by. Must be one of: ${allowedSortFields.join(', ')}`);
+    }
+
     const skip = (page - 1) * limit;
 
     const [stats, totalTransactions] = await Promise.all([
@@ -280,7 +293,9 @@ router.get('/stakers/:address', async (req, res) => {
         timeRange, 
         includeTransactions,
         skip,
-        limit
+        limit,
+        sortBy,
+        sortOrder
       ),
       indexer.getStakerTotalTransactions(address, timeRange)
     ]);
@@ -302,7 +317,11 @@ router.get('/stakers/:address', async (req, res) => {
           from: timeRange.firstTimestamp,
           to: timeRange.lastTimestamp,
           duration: timeRange.durationSeconds
-        } : null
+        } : null,
+        sorting: {
+          sortBy,
+          sortOrder
+        }
       }
     });
   } catch (error) {

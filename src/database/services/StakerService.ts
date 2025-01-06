@@ -22,14 +22,18 @@ export class StakerService {
     timeRange?: TimeRange,
     includeTransactions: boolean = false,
     skip: number = 0,
-    limit: number = 50
+    limit: number = 50,
+    sortBy: string = 'totalStake',
+    sortOrder: 'asc' | 'desc' = 'desc'
   ): Promise<StakerStats> {
     const cacheKey = this.generateCacheKey('stats', {
       address,
       timeRange,
       includeTransactions,
       skip,
-      limit
+      limit,
+      sortBy,
+      sortOrder
     });
 
     // Try to get from cache
@@ -68,7 +72,11 @@ export class StakerService {
             }
           ],
           transactions: [
-            { $sort: { timestamp: -1 } },
+            { 
+              $sort: { 
+                [sortBy === 'totalStake' ? 'stakeAmount' : sortBy]: sortOrder === 'asc' ? 1 : -1 
+              } 
+            },
             { $skip: skip },
             { $limit: limit },
             {
