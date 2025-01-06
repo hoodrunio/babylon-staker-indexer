@@ -194,3 +194,17 @@ export interface StakerDocument {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface GroupedStakersResponse {
+  total: number;
+  stakers: Array<{
+    _id: string;
+    totalStake: number;
+    lastTxId: string;
+    lastStakedAt: number;
+    phases: Array<{
+      phase: number;
+      stake: number;
+    }>;
+  }>;
+}

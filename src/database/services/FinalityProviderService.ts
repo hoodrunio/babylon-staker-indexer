@@ -1,6 +1,6 @@
 import { FinalityProvider } from '../models/FinalityProvider';
 import { Transaction } from '../models/Transaction';
-import { FinalityProviderStats, TimeRange, TopFinalityProviderStats } from '../../types';
+import { FinalityProviderStats, TimeRange, TopFinalityProviderStats, GroupedStakersResponse } from '../../types';
 import { PipelineStage } from 'mongoose';
 import { CacheService } from '../../services/CacheService';
 
@@ -583,5 +583,94 @@ export class FinalityProviderService {
     await this.cache.clearPattern(`${this.CACHE_PREFIX}:*:address:${address}*`);
     await this.cache.clearPattern(`${this.CACHE_PREFIX}:all:*`);
     await this.cache.clearPattern(`${this.CACHE_PREFIX}:top:*`);
+  }
+
+  async getGroupedStakers(
+    address: string,
+    skip: number = 0,
+    limit: number = 10,
+    sortOrder: 'asc' | 'desc' = 'desc',
+    sortBy: string = 'totalStake',
+    search?: string
+  ): Promise<GroupedStakersResponse> {
+    const cacheKey = this.generateCacheKey('groupedStakers', {
+      address,
+      skip,
+      limit,
+      sortOrder,
+      sortBy,
+      search
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<GroupedStakersResponse>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
+    const sortStage: PipelineStage = {
+      $sort: { [sortBy]: sortOrder === 'desc' ? -1 : 1 } as Record<string, 1 | -1>
+    };
+
+    const matchStage: PipelineStage = {
+      $match: {
+        finalityProvider: address,
+        ...(search && {
+          $or: [
+            { stakerAddress: { $regex: search, $options: 'i' } },
+            { txid: { $regex: search, $options: 'i' } }
+          ]
+        })
+      }
+    };
+
+    const pipeline: PipelineStage[] = [
+      matchStage,
+      {
+        $group: {
+          _id: {
+            staker: '$stakerAddress',
+            phase: { $add: ['$paramsVersion', 1] }
+          },
+          phaseStake: { $sum: '$stakeAmount' },
+          lastTxId: { $first: '$txid' },
+          lastStakedAt: { $max: '$timestamp' }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.staker',
+          totalStake: { $sum: '$phaseStake' },
+          lastTxId: { $first: '$lastTxId' },
+          lastStakedAt: { $max: '$lastStakedAt' },
+          phases: {
+            $push: {
+              phase: '$_id.phase',
+              stake: '$phaseStake'
+            }
+          }
+        }
+      },
+      sortStage,
+      {
+        $facet: {
+          metadata: [{ $count: 'total' }],
+          data: [
+            { $skip: skip },
+            { $limit: limit }
+          ]
+        }
+      }
+    ];
+
+    const result = await Transaction.aggregate(pipeline);
+    const response: GroupedStakersResponse = {
+      total: result[0].metadata[0]?.total || 0,
+      stakers: result[0].data || []
+    };
+
+    // Cache the results
+    await this.cache.set(cacheKey, response, this.CACHE_TTL);
+    return response;
   }
 }

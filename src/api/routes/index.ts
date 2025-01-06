@@ -12,6 +12,7 @@ import {
 import dotenv from 'dotenv';
 import { Router } from 'express';
 import pointsRouter from './points';
+import { FinalityProviderService } from '../../database/services/FinalityProviderService';
 
 dotenv.config();
 const router = express.Router();
@@ -159,6 +160,45 @@ router.get('/finality-providers/:address', async (req, res) => {
       }
     });
   } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+router.get('/finality-providers/:address/grouped-stakers', paginationMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc' } = req.pagination!;
+    const search = req.query.search as string;
+    const skip = (page - 1) * limit;
+    const address = req.params.address;
+
+    // Validate sort_by
+    const allowedSortFields = ['totalStake', 'lastStakedAt'];
+    if (sortBy && !allowedSortFields.includes(sortBy)) {
+      throw new Error(`Invalid sortBy. Must be one of: ${allowedSortFields.join(', ')}`);
+    }
+
+    const fpService = new FinalityProviderService();
+    const result = await fpService.getGroupedStakers(
+      address, 
+      skip, 
+      limit, 
+      order as 'asc' | 'desc',
+      sortBy,
+      search
+    );
+
+    return res.json({
+      data: result.stakers,
+      metadata: {
+        currentPage: page,
+        totalPages: Math.ceil(result.total / limit),
+        totalItems: result.total,
+        itemsPerPage: limit
+      },
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Error fetching grouped stakers:', error);
     res.status(500).json({ error: (error as Error).message });
   }
 });
