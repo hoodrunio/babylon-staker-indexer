@@ -652,7 +652,7 @@ export const swaggerDocument: OpenAPIV3.Document = {
     '/stakers': {
       get: {
         tags: ['Stakers'],
-        summary: 'Get all stakers',
+        summary: 'Get all stakers with global statistics',
         parameters: [
           {
             name: 'page',
@@ -722,7 +722,7 @@ export const swaggerDocument: OpenAPIV3.Document = {
         ],
         responses: {
           '200': {
-            description: 'List of all stakers',
+            description: 'List of all stakers with global statistics',
             content: {
               'application/json': {
                 schema: {
@@ -773,6 +773,9 @@ export const swaggerDocument: OpenAPIV3.Document = {
                           }
                         }
                       }
+                    },
+                    globalStats: {
+                      $ref: '#/components/schemas/GlobalStakerStats'
                     }
                   }
                 }
@@ -1384,6 +1387,43 @@ export const swaggerDocument: OpenAPIV3.Document = {
           stats: {
             type: 'object',
             description: 'Phase statistics'
+          }
+        }
+      },
+      GlobalStakerStats: {
+        type: 'object',
+        properties: {
+          totalStake: {
+            type: 'string',
+            description: 'Total stake amount across all stakers'
+          },
+          totalStakeBTC: {
+            type: 'number',
+            description: 'Total stake amount in BTC'
+          },
+          averageStake: {
+            type: 'string',
+            description: 'Average stake amount per transaction'
+          },
+          averageStakeBTC: {
+            type: 'number',
+            description: 'Average stake amount per transaction in BTC'
+          },
+          uniqueProviders: {
+            type: 'number',
+            description: 'Total number of unique finality providers'
+          },
+          totalTransactions: {
+            type: 'number',
+            description: 'Total number of stake transactions'
+          },
+          activeStakers: {
+            type: 'number',
+            description: 'Number of stakers with active stakes'
+          },
+          totalStakers: {
+            type: 'number',
+            description: 'Total number of unique stakers'
           }
         }
       }

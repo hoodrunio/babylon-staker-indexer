@@ -211,7 +211,7 @@ router.get('/stakers', paginationMiddleware, async (req, res) => {
     const transactionsLimit = parseInt(req.query.transactions_limit as string) || 50;
     const transactionsPage = parseInt(req.query.transactions_page as string) || 1;
     
-    const [stakers, total] = await Promise.all([
+    const [stakers, total, globalStats] = await Promise.all([
       indexer.getTopStakers(
         skip, 
         limit, 
@@ -221,7 +221,8 @@ router.get('/stakers', paginationMiddleware, async (req, res) => {
         (transactionsPage - 1) * transactionsLimit,
         transactionsLimit
       ),
-      indexer.getStakersCount()
+      indexer.getStakersCount(),
+      indexer.getStakerGlobalStats()
     ]);
 
     res.json({ 
@@ -239,7 +240,8 @@ router.get('/stakers', paginationMiddleware, async (req, res) => {
           page: transactionsPage,
           limit: transactionsLimit
         } : null
-      }
+      },
+      globalStats
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });

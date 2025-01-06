@@ -1,9 +1,10 @@
-import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, TopFinalityProviderStats, FinalityProvider } from '../types';
+import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, TopFinalityProviderStats, FinalityProvider, GlobalStakerStats } from '../types';
 import { BitcoinRPC } from '../utils/bitcoin-rpc';
 import { Database } from '../database';
 import { parseOpReturn } from '../utils/op-return-parser';
 import { getParamsForHeight } from '../utils/params-validator';
 import { validateStakeTransaction } from '../utils/stake-validator';
+import { StakerService } from '../database/services/StakerService';
 
 export class BabylonIndexer {
   private rpc: BitcoinRPC;
@@ -586,5 +587,10 @@ export class BabylonIndexer {
     timeRange?: TimeRange
   ): Promise<number> {
     return this.db.getStakerTotalTransactions(address, timeRange);
+  }
+
+  async getStakerGlobalStats(): Promise<GlobalStakerStats> {
+    const stakerService = new StakerService();
+    return stakerService.getGlobalStats();
   }
 } 

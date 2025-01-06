@@ -208,3 +208,14 @@ export interface GroupedStakersResponse {
     }>;
   }>;
 }
+
+export interface GlobalStakerStats {
+  totalStake: string;
+  totalStakeBTC: number;
+  averageStake: string;
+  averageStakeBTC: number;
+  uniqueProviders: number;
+  totalTransactions: number;
+  activeStakers: number;
+  totalStakers: number;
+}

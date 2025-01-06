@@ -1,6 +1,6 @@
 import { Staker } from '../models/Staker';
 import { Transaction } from '../models/Transaction';
-import { StakerStats, TimeRange, TransactionInfo, StakerDocument } from '../../types';
+import { StakerStats, TimeRange, TransactionInfo, StakerDocument, GlobalStakerStats } from '../../types';
 import { PipelineStage } from 'mongoose';
 import { CacheService } from '../../services/CacheService';
 
@@ -393,5 +393,34 @@ export class StakerService {
     }
 
     return Transaction.countDocuments(query);
+  }
+
+  async getGlobalStats(): Promise<GlobalStakerStats> {
+    const pipeline: PipelineStage[] = [
+      {
+        $group: {
+          _id: null,
+          totalStake: { $sum: '$stakeAmount' },
+          totalTransactions: { $sum: 1 },
+          uniqueProviders: { $addToSet: '$finalityProvider' },
+          uniqueStakers: { $addToSet: '$stakerAddress' }
+        }
+      }
+    ];
+
+    const [result] = await Transaction.aggregate(pipeline);
+    const activeStakers = await Staker.countDocuments({ activeStakes: { $gt: 0 } });
+    const totalStakers = await Staker.countDocuments();
+
+    return {
+      totalStake: result.totalStake.toString(),
+      totalStakeBTC: result.totalStake / 100000000,
+      averageStake: (result.totalStake / result.totalTransactions).toString(),
+      averageStakeBTC: (result.totalStake / result.totalTransactions) / 100000000,
+      uniqueProviders: result.uniqueProviders.length,
+      totalTransactions: result.totalTransactions,
+      activeStakers,
+      totalStakers
+    };
   }
 }
