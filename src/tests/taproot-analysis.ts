@@ -243,13 +243,122 @@ function getRPC(): BitcoinRPC {
   return rpcInstance;
 }
 
-async function main() {
+/* async function main() {
   console.log('Starting Taproot transaction analysis...');
   console.log('Bitcoin RPC URL:', process.env.BTC_RPC_URL);
   
   for (const txid of TEST_TXIDS) {
     await analyzeTaprootTransaction(txid);
   }
+} */
+/* async function analyzeStakingUnbondingPair(stakingTxHash: string, unbondingTxHash: string) {
+  const rpc = getRPC();
+  
+  try {
+    console.log('\n=== Staking & Unbonding Transaction Analysis ===');
+    
+    // 1. Staking Transaction'ı analiz et
+    console.log('\n1. Staking Transaction Analysis:', stakingTxHash);
+    const stakingTx = await rpc.call('getrawtransaction', [stakingTxHash, true]);
+    
+    // OP_RETURN çıktısını bul ve parse et
+    const opReturnOutput = stakingTx.vout.find((out: any) => out.scriptPubKey.type === 'nulldata');
+    const opReturnData = opReturnOutput ? parseOpReturn(opReturnOutput.scriptPubKey.hex) : null;
+    
+    // Taproot çıktılarını bul
+    const taprootOutputs = stakingTx.vout.filter((out: any) => out.scriptPubKey.type === 'witness_v1_taproot');
+    
+    console.log('\nStaking TX Details:');
+    console.log('- Total outputs:', stakingTx.vout.length);
+    console.log('- Taproot outputs:', taprootOutputs.length);
+    console.log('- Has OP_RETURN:', !!opReturnOutput);
+    
+    // Her bir output'u detaylı göster
+    stakingTx.vout.forEach((out: any, index: number) => {
+      console.log(`\nOutput #${index}:`);
+      console.log('- Type:', out.scriptPubKey.type);
+      console.log('- Value:', out.value, 'BTC');
+      if (out.scriptPubKey.type === 'witness_v1_taproot') {
+        console.log('- Taproot Address:', out.scriptPubKey.address);
+      }
+    });
+
+    // 2. Unbonding Transaction'ı analiz et
+    console.log('\n2. Unbonding Transaction Analysis:', unbondingTxHash);
+    const unbondingTx = await rpc.call('getrawtransaction', [unbondingTxHash, true]);
+    
+    console.log('\nUnbonding TX Details:');
+    console.log('- Input count:', unbondingTx.vin.length);
+    console.log('- Output count:', unbondingTx.vout.length);
+    
+    // Input analizi
+    for (const [index, input] of unbondingTx.vin.entries()) {
+      console.log(`\nInput #${index}:`);
+      console.log('- Previous TX:', input.txid);
+      console.log('- Previous Output Index:', input.vout);
+      
+      // Input'un referans verdiği transaction'ı kontrol et
+      const prevTx = await rpc.call('getrawtransaction', [input.txid, true]);
+      const referencedOutput = prevTx.vout[input.vout];
+      
+      console.log('\nReferenced Output Details:');
+      console.log('- Type:', referencedOutput.scriptPubKey.type);
+      console.log('- Value:', referencedOutput.value, 'BTC');
+      
+      // Eğer staking tx'e referans veriyorsa
+      if (input.txid === stakingTxHash) {
+        console.log('\n🔍 STAKING CONNECTION FOUND!');
+        console.log(`This unbonding transaction spends output #${input.vout} of the staking transaction`);
+        
+        // Babylon API ile doğrula
+        const babylonData = await validateWithBabylonAPI(stakingTxHash);
+        if (babylonData) {
+          console.log('\nBabylon API Validation:');
+          console.log('Expected staking output index:', babylonData.staking_tx.output_index);
+          console.log('Actual referenced output index:', input.vout);
+          console.log(babylonData.staking_tx.output_index === input.vout 
+            ? '✅ Output index matches Babylon API'
+            : '❌ Output index does not match Babylon API');
+        }
+      }
+    }
+    
+    // Output analizi
+    unbondingTx.vout.forEach((out: any, index: number) => {
+      console.log(`\nOutput #${index}:`);
+      console.log('- Type:', out.scriptPubKey.type);
+      console.log('- Value:', out.value, 'BTC');
+      if (out.scriptPubKey.type === 'witness_v1_taproot') {
+        console.log('- Taproot Address:', out.scriptPubKey.address);
+      }
+    });
+
+  } catch (error) {
+    console.error('Error in analysis:', error);
+  }
+}
+
+// Test transaction çiftlerini ekle
+const TEST_PAIRS = [
+  {
+    staking: '919188ba1625f49a4304780c5ab0e557cbbb75ffc7ad237cc5743724f7524e56',
+    unbonding: 'a20f213e54962d4567117790eaf8d110c534a0e8ef0c1fbfd741ba2c3b27bdff'
+  }
+]; */
+
+// Main fonksiyonunu güncelle
+async function main() {
+  console.log('Starting Taproot transaction analysis...');
+  
+  // Mevcut test transaction'ları analiz et
+  for (const txid of TEST_TXIDS) {
+    await analyzeTaprootTransaction(txid);
+  }
+  
+  // Staking-Unbonding çiftlerini analiz et
+ /*  for (const pair of TEST_PAIRS) {
+    await analyzeStakingUnbondingPair(pair.staking, pair.unbonding);
+  } */
 }
 
 // Run analysis

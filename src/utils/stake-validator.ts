@@ -25,9 +25,6 @@ const OP_RETURN_PREFIX = '6a47';
 const BABYLON_TAG = '62626e31';
 const EXPECTED_LENGTH = 146; // 73 bytes in hex
 
-// The internal public key for Babylon staking transactions (NUMS point)
-const BABYLON_INTERNAL_KEY = '50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0';
-
 function validateOpReturnFormat(hexData: string, params: VersionParams): string[] {
     const errors: string[] = [];
 
