@@ -12,6 +12,7 @@ import {
 import dotenv from 'dotenv';
 import { Router } from 'express';
 import pointsRouter from './points';
+import finalityRouter from './finality';
 import { FinalityProviderService } from '../../database/services/FinalityProviderService';
 
 dotenv.config();
@@ -22,6 +23,10 @@ const indexer = new BabylonIndexer();
 router.use(corsMiddleware);
 router.use(compressionMiddleware);
 router.use(rateLimiter);
+
+// Route handlers
+router.use('/points', pointsRouter);
+router.use('/finality', finalityRouter);
 
 // Swagger documentation route
 router.use('/api-docs', corsMiddleware, swaggerUi.serve);
@@ -406,8 +411,5 @@ router.get('/', (req, res) => {
     </html>
   `);
 });
-
-// Points proxy routes
-router.use('/points', pointsRouter);
 
 export default router; 
