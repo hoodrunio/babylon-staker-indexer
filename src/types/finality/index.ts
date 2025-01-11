@@ -2,7 +2,7 @@ export interface BlockSignatureInfo {
     height: number;
     signed: boolean;
     timestamp: Date;
-    epochNumber: number;  // Epoch bilgisini de ekleyelim
+    epochNumber: number;
 }
 
 export interface SignatureStats {
@@ -16,7 +16,16 @@ export interface SignatureStats {
     signatureRate: number;
     missedBlockHeights: number[];
     signatureHistory: BlockSignatureInfo[];
-    epochStats: { [epochNumber: number]: any };
+    epochStats: { 
+        [epochNumber: number]: {
+            totalBlocks: number;
+            signedBlocks: number;
+            missedBlocks: number;
+            signatureRate: number;
+            firstBlockHeight: number;
+            epochInterval: number;
+        } 
+    };
     lastSignedBlock?: BlockSignatureInfo;
 }
 
@@ -25,4 +34,10 @@ export interface SignatureStatsParams {
     startHeight?: number;
     endHeight?: number;
     lastNBlocks?: number;
+}
+
+export interface EpochInfo {
+    epochNumber: number;
+    startHeight: number;
+    interval: number;
 } 
