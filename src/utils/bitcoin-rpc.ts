@@ -38,11 +38,11 @@ export class BitcoinRPC {
         method,
         params
       });
-      
+
       if (response.data.error) {
         throw new Error(response.data.error.message);
       }
-      
+
       return response.data.result;
     } catch (error: any) {
       if (error.response?.status === 429 && retryCount < this.RETRY_DELAYS.length) {
@@ -73,4 +73,8 @@ export class BitcoinRPC {
     const hash = await this.call('getblockhash', [height]);
     return this.call('getblock', [hash, 3]); // Use verbosity 3 to get prevout info
   }
-} 
+
+  async getRawTransaction(txid: string): Promise<any> {
+    return this.call('getrawtransaction', [txid, 1]);
+  }
+}
