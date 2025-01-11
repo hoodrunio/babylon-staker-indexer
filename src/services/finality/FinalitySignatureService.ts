@@ -1,23 +1,29 @@
 import WebSocket from 'ws';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { BlockSignatureInfo, SignatureStats, SignatureStatsParams, EpochInfo } from '../../types/finality';
+import { Response } from 'express';
 
 export class FinalitySignatureService {
     private static instance: FinalitySignatureService | null = null;
     private signatureCache: Map<number, Set<string>> = new Map();
     private timestampCache: Map<number, Date> = new Map();
+    private requestLocks: Set<number> = new Set();
     private ws: WebSocket | null = null;
     private lastProcessedHeight: number = 0;
     private isRunning: boolean = false;
     private readonly MAX_CACHE_SIZE = 1000;
     private readonly RECONNECT_INTERVAL = 5000;
-    private readonly UPDATE_INTERVAL = 1000; // Her 1 saniyede bir kontrol et
+    private readonly UPDATE_INTERVAL = 1000;
     private readonly DEFAULT_LAST_N_BLOCKS = 100;
     private readonly MAX_LAST_N_BLOCKS = 200;
     private babylonClient: BabylonClient;
     private updateInterval: NodeJS.Timeout | null = null;
     private epochCache: Map<number, EpochInfo> = new Map();
     private currentEpochInfo: { epochNumber: number; boundary: number } | null = null;
+    
+    // SSE için yeni özellikler
+    private sseClients: Map<string, { res: Response; fpBtcPkHex: string }> = new Map();
+    private readonly SSE_RETRY_INTERVAL = 3000;
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -85,59 +91,60 @@ export class FinalitySignatureService {
         }, this.UPDATE_INTERVAL);
     }
 
-    private async initializeWebSocket() {
+    private async initializeWebSocket(): Promise<void> {
         if (this.ws) {
             console.debug('[WebSocket] Closing existing connection');
             this.ws.close();
+            this.ws = null;
         }
 
         try {
             const currentHeight = await this.babylonClient.getCurrentHeight();
-            this.lastProcessedHeight = currentHeight - 1;
+            // Son 100 blok yerine sadece eksik blokları işle
+            const lastProcessedBlock = this.lastProcessedHeight || (currentHeight - this.DEFAULT_LAST_N_BLOCKS);
+            const startHeight = Math.max(lastProcessedBlock, currentHeight - this.DEFAULT_LAST_N_BLOCKS);
             
-            console.debug(`[WebSocket] Initializing with current height: ${currentHeight}, processing from: ${this.lastProcessedHeight - 100}`);
-            
-            // Son birkaç bloğu hemen işle
-            for (let height = this.lastProcessedHeight - 100; height <= this.lastProcessedHeight; height++) {
-                await this.fetchAndCacheSignatures(height);
-            }
-        } catch (error) {
-            console.error('[WebSocket] Error getting current height:', error);
-        }
+            console.debug(`[WebSocket] Initializing with current height: ${currentHeight}, processing from: ${startHeight}`);
 
-        console.debug('[WebSocket] Creating new connection');
-        this.ws = new WebSocket(this.babylonClient.getWsEndpoint());
-
-        this.ws.on('open', () => {
-            console.debug('[WebSocket] Connected successfully');
-            this.subscribeToNewBlocks();
-        });
-
-        this.ws.on('message', async (data) => {
-            if (!this.isRunning) return;
-
-            try {
-                const event = JSON.parse(data.toString());
-                if (event.type === 'tendermint/event/NewBlock') {
-                    const height = parseInt(event.data.value.block.header.height);
-                    console.debug(`[WebSocket] 📦 New block received: ${height}, processing signatures for height ${height - 1}`);
-                    await this.fetchAndCacheSignatures(height - 1);
+            // Eksik blokları bul
+            const missingBlocks = [];
+            for (let height = startHeight; height < currentHeight; height++) {
+                if (!this.signatureCache.has(height)) {
+                    missingBlocks.push(height);
                 }
-            } catch (error) {
-                console.error('[WebSocket] Error processing message:', error);
             }
-        });
 
-        this.ws.on('close', () => {
-            if (this.isRunning) {
-                console.debug('[WebSocket] Disconnected, reconnecting...');
+            // Sadece eksik blokları işle
+            if (missingBlocks.length > 0) {
+                console.debug(`[WebSocket] Processing ${missingBlocks.length} missing blocks`);
+                await Promise.all(
+                    missingBlocks.map(height => this.fetchAndCacheSignatures(height))
+                );
+            }
+
+            this.ws = new WebSocket(`${process.env.BABYLON_RPC_URL!.replace('http', 'ws')}/websocket`);
+
+            this.ws.on('open', () => {
+                console.debug('[WebSocket] Connected successfully');
+                this.subscribeToNewBlocks();
+            });
+
+            this.ws.on('message', (data: Buffer) => this.onWebSocketMessage(data));
+
+            this.ws.on('close', () => {
+                console.warn('[WebSocket] Disconnected, reconnecting...');
                 setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
-            }
-        });
+            });
 
-        this.ws.on('error', (error) => {
-            console.error('[WebSocket] Connection error:', error);
-        });
+            this.ws.on('error', (error) => {
+                console.error('[WebSocket] Connection error:', error);
+                this.ws?.close();
+            });
+
+        } catch (error) {
+            console.error('[WebSocket] Initialization error:', error);
+            setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
+        }
     }
 
     private subscribeToNewBlocks() {
@@ -156,35 +163,33 @@ export class FinalitySignatureService {
     }
 
     private async fetchAndCacheSignatures(height: number, retryCount = 0): Promise<void> {
+        if (this.requestLocks.has(height)) {
+            console.debug(`[Cache] Request already in progress for block ${height}, skipping`);
+            return;
+        }
+
+        this.requestLocks.add(height);
         const MAX_RETRIES = 3;
-        const RETRY_DELAY = 1000; // 1 saniye
+        const RETRY_DELAY = 1000;
 
         try {
             console.debug(`[Cache] Fetching signatures for finalized block ${height}`);
             const votes = await this.babylonClient.getVotesAtHeight(height);
             
-            // Eğer oy sayısı 0 ve yeniden deneme hakkımız varsa
             if (votes.length === 0 && retryCount < MAX_RETRIES) {
                 console.warn(`[Cache] No votes found for block ${height}, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                this.requestLocks.delete(height);
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
 
-            // Eğer hala oy yoksa ve yeniden deneme hakkımız bittiyse
             if (votes.length === 0) {
                 console.error(`[Cache] No votes found for block ${height} after ${MAX_RETRIES} attempts`);
+                this.requestLocks.delete(height);
                 return;
             }
 
             const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
-            
-            // Cache'de zaten varsa ve yeni veri daha az imza içeriyorsa güncelleme
-            const existingSigners = this.signatureCache.get(height);
-            if (existingSigners && existingSigners.size > signers.size) {
-                console.warn(`[Cache] Skipping update for block ${height} - existing signatures (${existingSigners.size}) > new signatures (${signers.size})`);
-                return;
-            }
-            
             await this.processBlock(height, signers);
             this.lastProcessedHeight = Math.max(this.lastProcessedHeight, height);
             
@@ -193,9 +198,12 @@ export class FinalitySignatureService {
             if (retryCount < MAX_RETRIES) {
                 console.warn(`[Cache] Error processing block ${height}, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES}):`, error);
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                this.requestLocks.delete(height);
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
             console.error(`[Cache] ❌ Error processing block ${height} after ${MAX_RETRIES} attempts:`, error);
+        } finally {
+            this.requestLocks.delete(height);
         }
     }
 
@@ -410,5 +418,111 @@ export class FinalitySignatureService {
         this.epochCache.set(height, epochData);
         
         return epochData;
+    }
+
+    public addSSEClient(clientId: string, res: Response, fpBtcPkHex: string): void {
+        // SSE başlık ayarları
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+        });
+
+        // Retry interval ayarla
+        res.write(`retry: ${this.SSE_RETRY_INTERVAL}\n\n`);
+
+        // Client'ı kaydet
+        this.sseClients.set(clientId, { res, fpBtcPkHex });
+
+        // Initial data olarak son 100 bloğu gönder
+        this.sendInitialDataToClient(clientId);
+
+        // Client bağlantısı kapandığında temizle
+        res.on('close', () => {
+            console.log(`[SSE] Client disconnected: ${clientId}`);
+            this.sseClients.delete(clientId);
+        });
+    }
+
+    private async sendInitialDataToClient(clientId: string): Promise<void> {
+        const client = this.sseClients.get(clientId);
+        if (!client) return;
+
+        try {
+            const stats = await this.getSignatureStats({
+                fpBtcPkHex: client.fpBtcPkHex,
+                lastNBlocks: this.DEFAULT_LAST_N_BLOCKS
+            });
+
+            this.sendSSEEvent(clientId, 'initial', stats);
+        } catch (error) {
+            console.error(`[SSE] Error sending initial data to client ${clientId}:`, error);
+        }
+    }
+
+    private sendSSEEvent(clientId: string, event: string, data: any): void {
+        const client = this.sseClients.get(clientId);
+        if (!client) return;
+
+        try {
+            client.res.write(`event: ${event}\n`);
+            client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+        } catch (error) {
+            console.error(`[SSE] Error sending event to client ${clientId}:`, error);
+            this.sseClients.delete(clientId);
+        }
+    }
+
+    private async broadcastNewBlock(height: number): Promise<void> {
+        const signers = this.signatureCache.get(height);
+        const timestamp = this.timestampCache.get(height) || new Date();
+        
+        // Her client için son blok bilgisini gönder
+        for (const [clientId, client] of this.sseClients.entries()) {
+            try {
+                const normalizedPk = client.fpBtcPkHex.toLowerCase();
+                const blockInfo: BlockSignatureInfo = {
+                    height,
+                    signed: signers ? signers.has(normalizedPk) : false,
+                    status: !signers ? 'unknown' : (signers.has(normalizedPk) ? 'signed' : 'missed'),
+                    timestamp,
+                    epochNumber: (await this.getCurrentEpochInfo()).epochNumber
+                };
+
+                this.sendSSEEvent(clientId, 'block', blockInfo);
+            } catch (error) {
+                console.error(`[SSE] Error broadcasting to client ${clientId}:`, error);
+            }
+        }
+    }
+
+    // WebSocket message handler'ını güncelle
+    private async handleNewBlock(height: number): Promise<void> {
+        try {
+            // Önceki bloku işle (finalize olmuş)
+            const previousHeight = height - 1;
+            await this.fetchAndCacheSignatures(previousHeight);
+            
+            // SSE client'larına sadece son blok bilgisini gönder
+            await this.broadcastNewBlock(previousHeight);
+        } catch (error) {
+            console.error('[WebSocket] Error processing new block:', error);
+        }
+    }
+
+    // WebSocket message handler'ını güncelle
+    private async onWebSocketMessage(data: Buffer): Promise<void> {
+        try {
+            const message = JSON.parse(data.toString());
+            if (message.result?.data?.value?.block) {
+                const height = parseInt(message.result.data.value.block.header.height);
+                if (height > this.lastProcessedHeight) {
+                    await this.handleNewBlock(height);
+                }
+            }
+        } catch (error) {
+            console.error('[WebSocket] Error processing message:', error);
+        }
     }
 } 

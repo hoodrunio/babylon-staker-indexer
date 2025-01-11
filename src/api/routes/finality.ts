@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { FinalitySignatureService } from '../../services/finality/FinalitySignatureService';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
@@ -58,6 +59,27 @@ router.get('/signatures/:fpBtcPkHex/stats', async (req, res) => {
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
         });
+    }
+});
+
+// SSE endpoint for real-time signature updates
+router.get('/signatures/:fpBtcPkHex/stream', (req, res) => {
+    try {
+        const { fpBtcPkHex } = req.params;
+        const clientId = uuidv4();
+
+        console.log(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
+
+        // SSE bağlantısını başlat
+        finalitySignatureService.addSSEClient(clientId, res, fpBtcPkHex);
+
+        // Client bağlantısı kapandığında cleanup yap
+        req.on('close', () => {
+            console.log(`[SSE] Client connection closed: ${clientId}`);
+        });
+    } catch (error) {
+        console.error('[SSE] Error setting up SSE connection:', error);
+        res.status(500).end();
     }
 });
 
