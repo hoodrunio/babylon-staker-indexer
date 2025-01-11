@@ -10,8 +10,7 @@ interface Vote {
 
 interface CurrentEpochResponse {
     current_epoch: number;
-    first_block_height: number;
-    current_epoch_interval: number;
+    epoch_boundary: number;
 }
 
 export class BabylonClient {
@@ -19,6 +18,7 @@ export class BabylonClient {
     private readonly client: AxiosInstance;
     private readonly wsEndpoint: string;
     private epochCache: Map<number, EpochInfo> = new Map();
+    private currentEpochInfo: CurrentEpochResponse | null = null;
 
     private constructor(babylonNodeUrl: string, babylonRpcUrl: string) {
         this.client = axios.create({
@@ -71,44 +71,60 @@ export class BabylonClient {
     }
 
     async getCurrentEpoch(): Promise<CurrentEpochResponse> {
-        const response = await this.client.get('/babylon/epoching/v1/current_epoch');
-        return {
-            current_epoch: response.data.current_epoch,
-            first_block_height: response.data.first_block_height,
-            current_epoch_interval: response.data.current_epoch_interval
-        };
+        try {
+            const response = await this.client.get('/babylon/epoching/v1/current_epoch');
+            console.debug('[Current Epoch Response]', response.data);
+
+            const current_epoch = Number(response.data.current_epoch);
+            const epoch_boundary = Number(response.data.epoch_boundary);
+
+            if (isNaN(current_epoch) || isNaN(epoch_boundary)) {
+                throw new Error('Invalid epoch data received from API');
+            }
+
+            this.currentEpochInfo = { current_epoch, epoch_boundary };
+            return this.currentEpochInfo;
+        } catch (error) {
+            console.error('Error fetching current epoch:', error);
+            throw error;
+        }
     }
 
     async calculateEpochForHeight(height: number): Promise<EpochInfo> {
-        // Cache'den epoch bilgisini kontrol et
+        // Cache'den kontrol et
         for (const [_, epochInfo] of this.epochCache) {
-            const endHeight = epochInfo.startHeight + epochInfo.interval - 1;
-            if (height >= epochInfo.startHeight && height <= endHeight) {
+            if (height >= epochInfo.startHeight && height <= epochInfo.endHeight) {
                 return epochInfo;
             }
         }
 
-        // Cache'de yoksa, current epoch bilgisini al
-        const currentEpoch = await this.getCurrentEpoch();
-        
-        // Epoch numarasını hesapla
-        const epochNumber = Math.floor(
-            (height - currentEpoch.first_block_height) / currentEpoch.current_epoch_interval
-        ) + currentEpoch.current_epoch;
+        try {
+            // Mevcut epoch bilgisini al
+            const currentEpoch = await this.getCurrentEpoch();
+            height = Number(height);
 
-        // Epoch başlangıç yüksekliğini hesapla
-        const startHeight = currentEpoch.first_block_height + 
-            (epochNumber - currentEpoch.current_epoch) * currentEpoch.current_epoch_interval;
-
-        const epochInfo: EpochInfo = {
-            epochNumber,
-            startHeight,
-            interval: currentEpoch.current_epoch_interval
-        };
-
-        // Cache'e kaydet
-        this.epochCache.set(epochNumber, epochInfo);
-        
-        return epochInfo;
+            // Eğer height, mevcut epoch'un boundary'sinden küçükse, mevcut epoch'tayız
+            if (height <= currentEpoch.epoch_boundary) {
+                const epochInfo: EpochInfo = {
+                    epochNumber: currentEpoch.current_epoch,
+                    startHeight: currentEpoch.epoch_boundary - 360, // Önceki boundary
+                    endHeight: currentEpoch.epoch_boundary
+                };
+                this.epochCache.set(epochInfo.epochNumber, epochInfo);
+                return epochInfo;
+            } else {
+                // Sonraki epoch
+                const epochInfo: EpochInfo = {
+                    epochNumber: currentEpoch.current_epoch + 1,
+                    startHeight: currentEpoch.epoch_boundary,
+                    endHeight: currentEpoch.epoch_boundary + 99 // Sonraki boundary
+                };
+                this.epochCache.set(epochInfo.epochNumber, epochInfo);
+                return epochInfo;
+            }
+        } catch (error) {
+            console.error('Error calculating epoch:', error);
+            throw error;
+        }
     }
 } 

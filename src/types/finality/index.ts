@@ -22,8 +22,8 @@ export interface SignatureStats {
             signedBlocks: number;
             missedBlocks: number;
             signatureRate: number;
-            firstBlockHeight: number;
-            epochInterval: number;
+            startHeight: number;
+            endHeight: number;
         } 
     };
     lastSignedBlock?: BlockSignatureInfo;
@@ -39,5 +39,5 @@ export interface SignatureStatsParams {
 export interface EpochInfo {
     epochNumber: number;
     startHeight: number;
-    interval: number;
+    endHeight: number;
 } 

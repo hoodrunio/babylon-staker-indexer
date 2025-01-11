@@ -251,8 +251,8 @@ export class FinalitySignatureService {
                     signedBlocks: 0,
                     missedBlocks: 0,
                     signatureRate: 0,
-                    firstBlockHeight: epochInfo.startHeight,
-                    epochInterval: epochInfo.interval
+                    startHeight: epochInfo.startHeight,
+                    endHeight: epochInfo.endHeight
                 };
             }
 
