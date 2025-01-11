@@ -29,17 +29,17 @@ export class BabylonIndexer {
         const phaseToIndex = parseInt(process.env.PHASE_TO_INDEX || '1');
         const phaseStartOverride = process.env.PHASE_START_OVERRIDE ? parseInt(process.env.PHASE_START_OVERRIDE) : null;
         const phaseEndOverride = process.env.PHASE_END_OVERRIDE ? parseInt(process.env.PHASE_END_OVERRIDE) : null;
-        
+
         const { getPhaseConfig } = await import('../config/phase-config');
         const phaseConfig = getPhaseConfig();
         targetPhase = phaseConfig.phases.find(p => p.phase === phaseToIndex);
-        
+
         if (!targetPhase) {
           throw new Error(`Phase ${phaseToIndex} not found in configuration`);
         }
 
         actualStartHeight = phaseStartOverride || targetPhase.startHeight;
-        
+
         if (phaseEndOverride) {
           actualEndHeight = phaseEndOverride;
         } else if (targetPhase.endCondition.type === 'block_height') {
@@ -53,7 +53,7 @@ export class BabylonIndexer {
         }
 
         console.log(`Indexing Phase ${phaseToIndex} from block ${actualStartHeight} to ${actualEndHeight}`);
-        
+
         try {
           await this.db.initPhaseStats(targetPhase.phase, targetPhase.startHeight);
           console.log(`Initialized stats for phase ${targetPhase.phase}`);
@@ -85,12 +85,12 @@ export class BabylonIndexer {
 
       // Pre-load and cache parameters for the entire range
       const paramsCache = new Map<number, any>();
-      
+
       // Process blocks in batches
       const BATCH_SIZE = 5;
       let currentHeight = actualStartHeight;
       let currentPhaseNumber = 0;
-      
+
       while (currentHeight <= actualEndHeight) {
         const batchEnd = Math.min(currentHeight + BATCH_SIZE - 1, actualEndHeight);
         const progress = ((currentHeight - actualStartHeight) / (actualEndHeight - actualStartHeight)) * 100;
@@ -101,12 +101,12 @@ export class BabylonIndexer {
           const currentPhase = targetPhase || getPhaseForHeight(currentHeight);
           if (!currentPhase) {
             console.log(`No active phase for height ${currentHeight}, skipping...`);
-            
+
             // Find the next phase's start height
             const nextPhase = phaseConfig.phases.find(p => p.startHeight > currentHeight);
             if (nextPhase) {
               console.log(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
-              
+
               // Initialize stats for the next phase if it's different from the current one
               if (nextPhase.phase !== currentPhaseNumber) {
                 try {
@@ -117,7 +117,7 @@ export class BabylonIndexer {
                   console.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
                 }
               }
-              
+
               currentHeight = nextPhase.startHeight;
               continue;
             } else {
@@ -150,7 +150,7 @@ export class BabylonIndexer {
           for (let height = currentHeight; height <= batchEnd; height++) {
             blockPromises.push(this.rpc.getBlock(height));
           }
-          
+
           const blocks = await Promise.all(blockPromises);
 
           // Process blocks and collect transactions
@@ -160,11 +160,11 @@ export class BabylonIndexer {
           for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
             const height = currentHeight + i;
-            
+
             // Get cached parameters
             const params = this.getParamsFromCache(height, paramsCache);
             const transactions = await this.processBlockWithParams(block, params);
-            
+
             totalTransactions += block.tx.length;
             const validTxCount = transactions.filter(tx => tx.isValid).length;
             babylonPrefix += transactions.filter(tx => tx.hasBabylonPrefix).length;
@@ -176,12 +176,12 @@ export class BabylonIndexer {
             // Check if phase conditions are met
             if (!isReindexing && await checkPhaseCondition(currentPhase, height)) {
               console.log(`Phase ${currentPhase.phase} conditions have been met at height ${height}`);
-              
+
               // Find the next phase's start height
               const nextPhase = phaseConfig.phases.find(p => p.startHeight > height);
               if (nextPhase) {
                 console.log(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
-                
+
                 // Initialize stats for the next phase
                 try {
                   await this.db.initPhaseStats(nextPhase.phase, nextPhase.startHeight);
@@ -190,7 +190,7 @@ export class BabylonIndexer {
                 } catch (error) {
                   console.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
                 }
-                
+
                 currentHeight = nextPhase.startHeight - 1; // -1 because we'll increment at the end of the loop
                 break;
               }
@@ -208,7 +208,7 @@ export class BabylonIndexer {
             // Update phase stats and last processed block
             for (const [height, stats] of blockStats) {
               if (stats.validTxCount > 0) {
-                const heightTransactions = batchTransactions.filter(tx => 
+                const heightTransactions = batchTransactions.filter(tx =>
                   tx.isValid && tx.blockHeight === height
                 );
                 await this.db.updatePhaseStatsBatch(stats.phase, height, heightTransactions);
@@ -257,9 +257,9 @@ export class BabylonIndexer {
     }).filter(Boolean) || [];
 
     // Find Taproot output that goes to a new address
-    const stakingOutput = tx.vout?.find((out: any) => 
-      this.isTaprootOutput(out) && 
-      out.scriptPubKey?.type === 'witness_v1_taproot' && 
+    const stakingOutput = tx.vout?.find((out: any) =>
+      this.isTaprootOutput(out) &&
+      out.scriptPubKey?.type === 'witness_v1_taproot' &&
       !inputAddresses.includes(out.scriptPubKey?.address)
     );
 
@@ -276,7 +276,7 @@ export class BabylonIndexer {
     // Get staker address from input - try different formats
     let stakerAddress: string | undefined;
     const firstInput = tx.vin?.[0];
-    
+
     if (firstInput?.prevout?.scriptPubKey?.address) {
       // Full RPC format with prevout info
       stakerAddress = firstInput.prevout.scriptPubKey.address;
@@ -294,26 +294,26 @@ export class BabylonIndexer {
     }
 
     // Find Taproot output that goes to a new address (still needed for validation)
-    const taprootOutput = tx.vout?.find((out: any) => 
-      this.isTaprootOutput(out) && 
-      out.scriptPubKey?.type === 'witness_v1_taproot' && 
+    const taprootOutput = tx.vout?.find((out: any) =>
+      this.isTaprootOutput(out) &&
+      out.scriptPubKey?.type === 'witness_v1_taproot' &&
       out.scriptPubKey?.address !== stakerAddress
     );
-    
+
     if (!taprootOutput) {
       console.warn(`Warning: Could not find taproot output for tx ${tx.txid}`);
       return null;
     }
-    
+
     // Get phase configuration for this block height
     const { getPhaseForHeight } = await import('../config/phase-config');
     const phase = getPhaseForHeight(block.height);
-    
+
     if (!phase) {
       console.warn(`Warning: No valid phase found for block height ${block.height}`);
       return null;
     }
-    
+
     return {
       txid: tx.txid,
       blockHeight: block.height,
@@ -359,7 +359,7 @@ export class BabylonIndexer {
     // If we're in specific phase mode, check if we should process this transaction
     const indexSpecificPhase = process.env.INDEX_SPECIFIC_PHASE === 'true';
     const targetPhase = parseInt(process.env.PHASE_TO_INDEX || '1');
-    
+
     // In specific phase mode, only process transactions for the target phase
     const shouldProcess = !indexSpecificPhase || phase === targetPhase;
     if (!shouldProcess) {
@@ -380,11 +380,12 @@ export class BabylonIndexer {
         break;
 
       case 2:
-      case 3:
+      case 3: {
         // Phase 2 & 3: Transaction is overflow if outside valid block height range
         const range = phaseRanges[phase];
         isOverflow = blockHeight < range.start || blockHeight > range.end;
         break;
+      }
 
       default:
         // If block is not in any phase range, mark as overflow
@@ -407,7 +408,7 @@ export class BabylonIndexer {
 
       // Basic validation without overflow check
       const validationResult = await validateStakeTransaction(tx, params, block.height, 0);
-      
+
       if (!validationResult.hasBabylonPrefix) continue;
 
       // Skip invalid transactions
@@ -448,17 +449,17 @@ export class BabylonIndexer {
     for (const { tx, amount } of validTransactions) {
       // Determine phase and overflow status first
       const { phase, isOverflow } = this.determinePhaseAndOverflow(block.height, tx, params);
-      
+
       // For phase 1, we need to track active stake for overflow
       // For other phases, we only care about block height range
       const effectiveActiveStake = phase === 1 ? currentActiveStake : 0;
-      
+
       // Re-validate with current active stake (only matters for phase 1)
       const validationResult = await validateStakeTransaction(tx, params, block.height, effectiveActiveStake);
-      
+
       // Parse OP_RETURN data
-      const opReturnOutput = tx.vout?.find((out: any) => 
-        out.scriptPubKey?.type === 'nulldata' || 
+      const opReturnOutput = tx.vout?.find((out: any) =>
+        out.scriptPubKey?.type === 'nulldata' ||
         (out.scriptPubKey?.hex && out.scriptPubKey.hex.startsWith('6a'))
       );
 
@@ -479,7 +480,7 @@ export class BabylonIndexer {
         parsed,
         block,
         amount,
-        { 
+        {
           ...validationResult,
           isOverflow,
           overflowAmount: isOverflow ? amount : 0
@@ -530,7 +531,7 @@ export class BabylonIndexer {
   }
 
   async getFinalityProviderStats(
-    address: string, 
+    address: string,
     timeRange?: TimeRange,
     skip?: number,
     limit?: number,
@@ -558,7 +559,7 @@ export class BabylonIndexer {
   }
 
   async getStakerStats(
-    address: string, 
+    address: string,
     timeRange?: TimeRange,
     includeTransactions: boolean = false,
     skip?: number,
@@ -595,4 +596,4 @@ export class BabylonIndexer {
     const stakerService = new StakerService();
     return stakerService.getGlobalStats();
   }
-} 
+}
