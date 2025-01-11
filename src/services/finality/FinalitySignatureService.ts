@@ -11,6 +11,8 @@ export class FinalitySignatureService {
     private readonly MAX_CACHE_SIZE = 1000;
     private readonly RECONNECT_INTERVAL = 5000;
     private readonly UPDATE_INTERVAL = 1000; // Her 1 saniyede bir kontrol et
+    private readonly DEFAULT_LAST_N_BLOCKS = 100;
+    private readonly MAX_LAST_N_BLOCKS = 200;
     private babylonClient: BabylonClient;
     private updateInterval: NodeJS.Timeout | null = null;
 
@@ -179,25 +181,33 @@ export class FinalitySignatureService {
     }
 
     async getSignatureStats(params: SignatureStatsParams): Promise<SignatureStats> {
-        const { fpBtcPkHex, startHeight, endHeight, lastNBlocks } = params;
+        const { fpBtcPkHex, startHeight, endHeight, lastNBlocks = this.DEFAULT_LAST_N_BLOCKS } = params;
+        
+        // lastNBlocks için limit kontrolü
+        const limitedLastNBlocks = Math.min(lastNBlocks, this.MAX_LAST_N_BLOCKS);
         
         const currentHeight = await this.babylonClient.getCurrentHeight();
         // Son bloktan bir önceki blok (finalize olmuş son blok)
         const safeHeight = currentHeight - 1;
         
-        const actualEndHeight = lastNBlocks 
+        const actualEndHeight = limitedLastNBlocks 
             ? safeHeight
             : endHeight 
                 ? Math.min(endHeight, safeHeight)
                 : safeHeight;
             
-        const actualStartHeight = lastNBlocks 
-            ? safeHeight - lastNBlocks + 1
+        const actualStartHeight = limitedLastNBlocks 
+            ? safeHeight - limitedLastNBlocks + 1
             : startHeight 
                 ? startHeight
-                : safeHeight - 100 + 1;
+                : safeHeight - this.DEFAULT_LAST_N_BLOCKS + 1;
 
-        console.debug(`Fetching signature stats from height ${actualStartHeight} to ${actualEndHeight}`);
+        // Eğer lastNBlocks limiti aşıldıysa uyarı log'u
+        if (lastNBlocks > this.MAX_LAST_N_BLOCKS) {
+            console.warn(`[Stats] Requested lastNBlocks (${lastNBlocks}) exceeds maximum limit. Using ${this.MAX_LAST_N_BLOCKS} blocks instead.`);
+        }
+
+        console.debug(`[Stats] Fetching signature stats from height ${actualStartHeight} to ${actualEndHeight}`);
 
         // Cache'den eksik blokları kontrol et
         const missingHeights = [];
