@@ -155,24 +155,63 @@ export class FinalitySignatureService {
         this.ws.send(JSON.stringify(subscription));
     }
 
-    private async fetchAndCacheSignatures(height: number) {
+    private async fetchAndCacheSignatures(height: number, retryCount = 0): Promise<void> {
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 1000; // 1 saniye
+
         try {
             console.debug(`[Cache] Fetching signatures for finalized block ${height}`);
             const votes = await this.babylonClient.getVotesAtHeight(height);
+            
+            // Eğer oy sayısı 0 ve yeniden deneme hakkımız varsa
+            if (votes.length === 0 && retryCount < MAX_RETRIES) {
+                console.warn(`[Cache] No votes found for block ${height}, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                return this.fetchAndCacheSignatures(height, retryCount + 1);
+            }
+
+            // Eğer hala oy yoksa ve yeniden deneme hakkımız bittiyse
+            if (votes.length === 0) {
+                console.error(`[Cache] No votes found for block ${height} after ${MAX_RETRIES} attempts`);
+                return;
+            }
+
             const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
+            
+            // Cache'de zaten varsa ve yeni veri daha az imza içeriyorsa güncelleme
+            const existingSigners = this.signatureCache.get(height);
+            if (existingSigners && existingSigners.size > signers.size) {
+                console.warn(`[Cache] Skipping update for block ${height} - existing signatures (${existingSigners.size}) > new signatures (${signers.size})`);
+                return;
+            }
             
             await this.processBlock(height, signers);
             this.lastProcessedHeight = Math.max(this.lastProcessedHeight, height);
             
             console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.signatureCache.size}`);
         } catch (error) {
-            console.error(`[Cache] ❌ Error processing block ${height}:`, error);
+            if (retryCount < MAX_RETRIES) {
+                console.warn(`[Cache] Error processing block ${height}, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES}):`, error);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                return this.fetchAndCacheSignatures(height, retryCount + 1);
+            }
+            console.error(`[Cache] ❌ Error processing block ${height} after ${MAX_RETRIES} attempts:`, error);
         }
     }
 
     private async processBlock(height: number, signers: Set<string>): Promise<void> {
+        // Eğer cache'de daha fazla imza varsa güncelleme yapma
+        const existingSigners = this.signatureCache.get(height);
+        if (existingSigners && existingSigners.size > signers.size) {
+            return;
+        }
+
         this.signatureCache.set(height, signers);
-        this.timestampCache.set(height, new Date());
+        
+        // Timestamp'i sadece ilk kez kaydederken ayarla
+        if (!this.timestampCache.has(height)) {
+            this.timestampCache.set(height, new Date());
+        }
         
         if (this.signatureCache.size > this.MAX_CACHE_SIZE) {
             const oldestHeight = Math.min(...this.signatureCache.keys());
