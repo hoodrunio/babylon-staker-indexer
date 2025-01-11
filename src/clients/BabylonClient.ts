@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import WebSocket from 'ws';
 import { EpochInfo } from '../types/finality';
 
@@ -13,20 +13,60 @@ interface CurrentEpochResponse {
     epoch_boundary: number;
 }
 
+// Axios config için custom tip tanımı
+interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
+    retry?: boolean;
+    currentRetryCount?: number;
+}
+
 export class BabylonClient {
     private static instance: BabylonClient | null = null;
     private readonly client: AxiosInstance;
     private readonly wsEndpoint: string;
     private epochCache: Map<number, EpochInfo> = new Map();
     private currentEpochInfo: CurrentEpochResponse | null = null;
+    private readonly MAX_RETRIES = 3;
+    private readonly RETRY_DELAY = 1000; // 1 saniye
 
     private constructor(babylonNodeUrl: string, babylonRpcUrl: string) {
         this.client = axios.create({
             baseURL: babylonNodeUrl,
-            timeout: 5000
+            timeout: 15000, // 15 saniye
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            }
+        });
+
+        // Retry interceptor ekle
+        this.client.interceptors.response.use(undefined, async (err: AxiosError) => {
+            const config = err.config as CustomAxiosRequestConfig;
+            if (!config || !config.retry) {
+                return Promise.reject(err);
+            }
+
+            config.currentRetryCount = config.currentRetryCount ?? 0;
+
+            if (config.currentRetryCount >= this.MAX_RETRIES) {
+                return Promise.reject(err);
+            }
+
+            config.currentRetryCount += 1;
+            
+            const delayTime = this.RETRY_DELAY * config.currentRetryCount;
+            await new Promise(resolve => setTimeout(resolve, delayTime));
+
+            console.debug(`[Retry] Attempt ${config.currentRetryCount} for ${config.url}`);
+            return this.client(config);
         });
         
-        // WebSocket endpoint'i RPC URL'den oluştur
+        // Her request'e retry config'i ekle
+        this.client.interceptors.request.use((config: CustomAxiosRequestConfig) => {
+            config.retry = true;
+            config.currentRetryCount = 0;
+            return config;
+        });
+        
         this.wsEndpoint = babylonRpcUrl.replace(/^http/, 'ws') + '/websocket';
     }
 
@@ -45,8 +85,17 @@ export class BabylonClient {
     }
 
     async getCurrentHeight(): Promise<number> {
-        const response = await this.client.get('/cosmos/base/tendermint/v1beta1/blocks/latest');
-        return parseInt(response.data.block.header.height, 10);
+        try {
+            const response = await this.client.get('/cosmos/base/tendermint/v1beta1/blocks/latest');
+            return parseInt(response.data.block.header.height, 10);
+        } catch (error) {
+            if (error instanceof Error) {
+                console.error('[Height] Failed to get current height:', error.message);
+            } else {
+                console.error('[Height] Failed to get current height:', error);
+            }
+            throw new Error('Failed to get current height');
+        }
     }
 
     async getVotesAtHeight(height: number): Promise<Vote[]> {
@@ -54,7 +103,7 @@ export class BabylonClient {
             const response = await this.client.get(`/babylon/finality/v1/votes/${height}`);
             
             if (!response.data || !response.data.btc_pks) {
-                console.warn(`No btc_pks in response for height ${height}`);
+                console.warn(`[Votes] No btc_pks in response for height ${height}`);
                 return [];
             }
 
@@ -65,7 +114,11 @@ export class BabylonClient {
                 timestamp: currentTime
             }));
         } catch (error) {
-            console.error(`Error fetching votes at height ${height}:`, error);
+            if (error instanceof Error) {
+                console.error(`[Votes] Error fetching votes at height ${height}:`, error.message);
+            } else {
+                console.error(`[Votes] Error fetching votes at height ${height}:`, error);
+            }
             return [];
         }
     }

@@ -1,10 +1,11 @@
 import WebSocket from 'ws';
 import { BabylonClient } from '../../clients/BabylonClient';
-import { BlockSignatureInfo, SignatureStats, SignatureStatsParams } from '../../types/finality';
+import { BlockSignatureInfo, SignatureStats, SignatureStatsParams, EpochInfo } from '../../types/finality';
 
 export class FinalitySignatureService {
     private static instance: FinalitySignatureService | null = null;
     private signatureCache: Map<number, Set<string>> = new Map();
+    private timestampCache: Map<number, Date> = new Map();
     private ws: WebSocket | null = null;
     private lastProcessedHeight: number = 0;
     private isRunning: boolean = false;
@@ -15,6 +16,8 @@ export class FinalitySignatureService {
     private readonly MAX_LAST_N_BLOCKS = 200;
     private babylonClient: BabylonClient;
     private updateInterval: NodeJS.Timeout | null = null;
+    private epochCache: Map<number, EpochInfo> = new Map();
+    private currentEpochInfo: { epochNumber: number; boundary: number } | null = null;
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -158,10 +161,8 @@ export class FinalitySignatureService {
             const votes = await this.babylonClient.getVotesAtHeight(height);
             const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
             
-            this.signatureCache.set(height, signers);
+            await this.processBlock(height, signers);
             this.lastProcessedHeight = Math.max(this.lastProcessedHeight, height);
-            
-            this.cleanOldCache(height);
             
             console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.signatureCache.size}`);
         } catch (error) {
@@ -169,14 +170,14 @@ export class FinalitySignatureService {
         }
     }
 
-    private cleanOldCache(currentHeight: number) {
+    private async processBlock(height: number, signers: Set<string>): Promise<void> {
+        this.signatureCache.set(height, signers);
+        this.timestampCache.set(height, new Date());
+        
         if (this.signatureCache.size > this.MAX_CACHE_SIZE) {
-            const minHeight = currentHeight - this.MAX_CACHE_SIZE;
-            for (const [height] of this.signatureCache) {
-                if (height < minHeight) {
-                    this.signatureCache.delete(height);
-                }
-            }
+            const oldestHeight = Math.min(...this.signatureCache.keys());
+            this.signatureCache.delete(oldestHeight);
+            this.timestampCache.delete(oldestHeight);
         }
     }
 
@@ -233,16 +234,33 @@ export class FinalitySignatureService {
         startHeight: number, 
         endHeight: number
     ): Promise<SignatureStats> {
+        const epochInfo = await this.getCurrentEpochInfo();
         const signatureHistory: BlockSignatureInfo[] = [];
         const missedBlockHeights: number[] = [];
         let signedBlocks = 0;
+        let unknownBlocks = 0;
         const normalizedPk = fpBtcPkHex.toLowerCase();
         const epochStats: { [key: number]: any } = {};
 
+        const blocksPerEpoch = 360;
+        const currentEpochStart = epochInfo.boundary - blocksPerEpoch + 1;
+        
         for (let height = startHeight; height <= endHeight; height++) {
             const signers = this.signatureCache.get(height);
+            const timestamp = this.timestampCache.get(height) || new Date();
+            
+            const heightEpoch = epochInfo.epochNumber + Math.floor((height - currentEpochStart) / blocksPerEpoch);
+
             if (!signers) {
-                console.warn(`No signature data for height ${height}`);
+                console.warn(`[Stats] No signature data for height ${height}, marking as unknown`);
+                unknownBlocks++;
+                signatureHistory.push({
+                    height,
+                    signed: false,
+                    status: 'unknown',
+                    epochNumber: heightEpoch,
+                    timestamp
+                });
                 continue;
             }
 
@@ -252,48 +270,65 @@ export class FinalitySignatureService {
             } else {
                 missedBlockHeights.push(height);
             }
-
-            const epochInfo = await this.babylonClient.calculateEpochForHeight(height);
             
-            if (!epochStats[epochInfo.epochNumber]) {
-                epochStats[epochInfo.epochNumber] = {
+            if (!epochStats[heightEpoch]) {
+                const isCurrentEpoch = heightEpoch === epochInfo.epochNumber;
+                const epochStartHeight = isCurrentEpoch ? 
+                    currentEpochStart : 
+                    epochInfo.boundary + ((heightEpoch - epochInfo.epochNumber - 1) * blocksPerEpoch) + 1;
+                
+                const epochEndHeight = isCurrentEpoch ? 
+                    epochInfo.boundary : 
+                    epochStartHeight + blocksPerEpoch - 1;
+                
+                epochStats[heightEpoch] = {
                     totalBlocks: 0,
                     signedBlocks: 0,
                     missedBlocks: 0,
+                    unknownBlocks: 0,
                     signatureRate: 0,
-                    startHeight: epochInfo.startHeight,
-                    endHeight: epochInfo.endHeight
+                    startHeight: epochStartHeight,
+                    endHeight: epochEndHeight
                 };
             }
 
-            const currentEpochStats = epochStats[epochInfo.epochNumber];
+            const currentEpochStats = epochStats[heightEpoch];
             currentEpochStats.totalBlocks++;
-            if (hasSigned) {
+            
+            if (signers === undefined) {
+                currentEpochStats.unknownBlocks++;
+            } else if (hasSigned) {
                 currentEpochStats.signedBlocks++;
             } else {
                 currentEpochStats.missedBlocks++;
             }
-            currentEpochStats.signatureRate = 
-                (currentEpochStats.signedBlocks / currentEpochStats.totalBlocks) * 100;
+
+            const validBlocks = currentEpochStats.totalBlocks - currentEpochStats.unknownBlocks;
+            currentEpochStats.signatureRate = validBlocks > 0 
+                ? (currentEpochStats.signedBlocks / validBlocks) * 100 
+                : 0;
 
             signatureHistory.push({
                 height,
                 signed: hasSigned,
-                epochNumber: epochInfo.epochNumber,
-                timestamp: new Date() // TODO: Block timestamp eklenecek
+                status: hasSigned ? 'signed' : (signers === undefined ? 'unknown' : 'missed'),
+                epochNumber: heightEpoch,
+                timestamp
             });
         }
 
-        const totalBlocks = endHeight - startHeight + 1;
+        const validBlocks = endHeight - startHeight + 1 - unknownBlocks;
+        
         return {
             fp_btc_pk_hex: fpBtcPkHex,
             startHeight,
             endHeight,
             currentHeight: this.lastProcessedHeight,
-            totalBlocks,
+            totalBlocks: endHeight - startHeight + 1,
             signedBlocks,
-            missedBlocks: totalBlocks - signedBlocks,
-            signatureRate: (signedBlocks / totalBlocks) * 100,
+            missedBlocks: validBlocks - signedBlocks,
+            unknownBlocks,
+            signatureRate: validBlocks > 0 ? (signedBlocks / validBlocks) * 100 : 0,
             missedBlockHeights,
             signatureHistory,
             epochStats,
@@ -301,5 +336,40 @@ export class FinalitySignatureService {
                 .filter(block => block.signed)
                 .sort((a, b) => b.height - a.height)[0]
         };
+    }
+
+    private async getCurrentEpochInfo(): Promise<{ epochNumber: number; boundary: number }> {
+        if (this.currentEpochInfo) {
+            return this.currentEpochInfo;
+        }
+        
+        const response = await this.babylonClient.getCurrentEpoch();
+        this.currentEpochInfo = {
+            epochNumber: Number(response.current_epoch),
+            boundary: Number(response.epoch_boundary)
+        };
+        return this.currentEpochInfo;
+    }
+
+    private async calculateEpochForHeight(height: number): Promise<EpochInfo> {
+        // Check cache first
+        const cachedEpoch = this.epochCache.get(height);
+        if (cachedEpoch) {
+            return cachedEpoch;
+        }
+
+        const epochInfo = await this.getCurrentEpochInfo();
+        const epochNumber = Math.floor(height / epochInfo.boundary);
+        
+        const epochData = {
+            epochNumber,
+            startHeight: epochNumber * epochInfo.boundary,
+            endHeight: (epochNumber + 1) * epochInfo.boundary - 1
+        };
+
+        // Cache the result
+        this.epochCache.set(height, epochData);
+        
+        return epochData;
     }
 } 

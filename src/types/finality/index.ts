@@ -3,6 +3,7 @@ export interface BlockSignatureInfo {
     signed: boolean;
     timestamp: Date;
     epochNumber: number;
+    status: 'signed' | 'missed' | 'unknown';
 }
 
 export interface SignatureStats {
@@ -13,6 +14,7 @@ export interface SignatureStats {
     totalBlocks: number;
     signedBlocks: number;
     missedBlocks: number;
+    unknownBlocks: number;
     signatureRate: number;
     missedBlockHeights: number[];
     signatureHistory: BlockSignatureInfo[];
@@ -21,6 +23,7 @@ export interface SignatureStats {
             totalBlocks: number;
             signedBlocks: number;
             missedBlocks: number;
+            unknownBlocks: number;
             signatureRate: number;
             startHeight: number;
             endHeight: number;
