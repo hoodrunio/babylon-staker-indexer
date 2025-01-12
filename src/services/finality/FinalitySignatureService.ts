@@ -482,6 +482,11 @@ export class FinalitySignatureService {
         const signers = this.signatureCache.get(height);
         const timestamp = this.timestampCache.get(height) || new Date();
         
+        // Epoch bilgisini al
+        const epochInfo = await this.getCurrentEpochInfo();
+        // Eğer height boundary'i geçtiyse bir sonraki epoch'tayız
+        const heightEpoch = height > epochInfo.boundary ? epochInfo.epochNumber + 1 : epochInfo.epochNumber;
+        
         // Her client için son blok bilgisini gönder
         for (const [clientId, client] of this.sseClients.entries()) {
             try {
@@ -491,7 +496,7 @@ export class FinalitySignatureService {
                     signed: signers ? signers.has(normalizedPk) : false,
                     status: !signers ? 'unknown' : (signers.has(normalizedPk) ? 'signed' : 'missed'),
                     timestamp,
-                    epochNumber: (await this.getCurrentEpochInfo()).epochNumber
+                    epochNumber: heightEpoch
                 };
 
                 this.sendSSEEvent(clientId, 'block', blockInfo);
