@@ -484,8 +484,11 @@ export class FinalitySignatureService {
         
         // Epoch bilgisini al
         const epochInfo = await this.getCurrentEpochInfo();
-        // Eğer height boundary'i geçtiyse bir sonraki epoch'tayız
-        const heightEpoch = height > epochInfo.boundary ? epochInfo.epochNumber + 1 : epochInfo.epochNumber;
+        const blocksPerEpoch = 360;
+        const currentEpochStart = epochInfo.boundary - blocksPerEpoch + 1;
+        
+        // Epoch hesaplama mantığını calculateStats ile aynı şekilde yap
+        const heightEpoch = epochInfo.epochNumber + Math.floor((height - currentEpochStart) / blocksPerEpoch);
         
         // Her client için son blok bilgisini gönder
         for (const [clientId, client] of this.sseClients.entries()) {
