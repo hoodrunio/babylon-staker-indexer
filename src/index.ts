@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import router from './api/routes';
 import { BabylonIndexer } from './services/BabylonIndexer';
 import { FinalitySignatureService } from './services/finality/FinalitySignatureService';
+import cors from 'cors';
 
 // Load environment variables
 dotenv.config();
@@ -12,14 +13,32 @@ async function startServer() {
     
     // Initialize and start the FinalitySignatureService
     const finalityService = FinalitySignatureService.getInstance();
-    await finalityService.start(); // Yeni metod ekleyeceğiz
+    await finalityService.start();
 
     const app = express();
     app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
     const port = process.env.PORT || 3000;
 
+    // CORS ayarları
+    app.use(cors({
+        origin: '*', // Tüm originlere izin ver (production'da spesifik domainleri belirtebilirsiniz)
+        methods: ['GET', 'POST', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        credentials: true,
+        maxAge: 86400 // CORS preflight cache süresi
+    }));
+
     // Middleware
     app.use(express.json());
+
+    // SSE endpoint'leri için özel CORS middleware
+    app.use('/api/finality/signatures/:fpBtcPkHex/stream', (req, res, next) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        next();
+    });
 
     // Routes - Add /api prefix
     app.use('/api', router);

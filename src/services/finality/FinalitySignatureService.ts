@@ -426,7 +426,11 @@ export class FinalitySignatureService {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Allow-Credentials': 'true',
+            'X-Accel-Buffering': 'no' // Nginx buffering'i devre dışı bırak
         });
 
         // Retry interval ayarla
