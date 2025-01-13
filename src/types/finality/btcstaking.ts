@@ -68,7 +68,24 @@ export interface QueryFinalityProviderDelegationsResponse {
 }
 
 export interface FinalityProviderPower {
+    /** Provider'ın BTC public key'i (hex formatında) */
     fpBtcPkHex: string;
+    
+    /** Provider'ın voting power'ı (BTC cinsinden, formatlanmış) */
     power: string;
+    
+    /** Provider'ın voting power'ı (satoshi cinsinden, raw değer) */
+    rawPower?: string;
+    
+    /** Provider'ın voting power yüzdesi (0-100 arasında, 2 decimal) */
+    powerPercentage: string;
+    
+    /** Power'ın hesaplandığı Babylon yüksekliği */
     height: number;
+    
+    /** Tüm aktif provider'ların toplam power'ı (BTC cinsinden, formatlanmış) */
+    totalPower: string;
+    
+    /** Tüm aktif provider'ların toplam power'ı (satoshi cinsinden, raw değer) */
+    rawTotalPower?: string;
 } 

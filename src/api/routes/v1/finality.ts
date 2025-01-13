@@ -3,7 +3,6 @@ import { FinalitySignatureService } from '../../../services/finality/FinalitySig
 import { FinalityProviderService } from '../../../services/finality/FinalityProviderService';
 import { Network } from '../../middleware/network-selector';
 import { v4 as uuidv4 } from 'uuid';
-import { SignatureStatsParams } from '../../../types';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
