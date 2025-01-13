@@ -8,7 +8,7 @@ import {
     QueryFinalityProviderDelegationsResponse,
     BTCDelegation
 } from '../../types/finality/btcstaking';
-import { formatSatoshis } from '../../utils/util';
+import { formatSatoshis, calculatePowerPercentage } from '../../utils/util';
 
 export class FinalityProviderService {
     private static instance: FinalityProviderService | null = null;
@@ -115,19 +115,6 @@ export class FinalityProviderService {
         }
     }
 
-    private calculatePowerPercentage(power: string, totalPower: string): string {
-        if (!totalPower || totalPower === '0') return '0';
-        
-        const powerBigInt = BigInt(power);
-        const totalPowerBigInt = BigInt(totalPower);
-        
-        // Hassasiyet için 10000 ile çarpıp sonra 100'e böleceğiz
-        // (power / totalPower) * 100 = ((power * 10000) / totalPower) / 100
-        const scaledPercentage = (powerBigInt * BigInt(10000)) / totalPowerBigInt;
-        const actualPercentage = Number(scaledPercentage) / 100;        
-        return actualPercentage.toFixed(2);
-    }
-
     public async getFinalityProviderPower(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProviderPower> {
         const { nodeUrl } = this.getNetworkConfig(network);
         try {
@@ -148,7 +135,7 @@ export class FinalityProviderService {
                 fpBtcPkHex,
                 power: formatSatoshis(Number(rawPower)),
                 // rawPower,
-                powerPercentage: this.calculatePowerPercentage(rawPower, totalPower.rawTotalPower),
+                powerPercentage: calculatePowerPercentage(rawPower, totalPower.rawTotalPower),
                 height: data.height || 0,
                 totalPower: totalPower.totalPower,
                 // rawTotalPower: totalPower.rawTotalPower
