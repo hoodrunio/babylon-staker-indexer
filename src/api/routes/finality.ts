@@ -1,8 +1,12 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
+import { FinalityProviderService } from '../../services/finality/FinalityProviderService';
 import { FinalitySignatureService } from '../../services/finality/FinalitySignatureService';
+import { formatSatoshis } from '../../utils/util';
+import { DelegationResponse } from '../../types/finality/btcstaking';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
+const finalityProviderService = FinalityProviderService.getInstance();
 const finalitySignatureService = FinalitySignatureService.getInstance();
 
 // Get signature stats for a finality provider

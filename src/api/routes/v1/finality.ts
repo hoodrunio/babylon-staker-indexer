@@ -164,19 +164,41 @@ router.get('/providers/:fpBtcPkHex/power', async (req, res) => {
 router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
+        const { page = '1', limit = '10' } = req.query;
         const network = req.network || Network.MAINNET;
-        const delegations = await finalityProviderService.getFinalityProviderDelegations(fpBtcPkHex, network);
-        
-        // Toplam delegasyon miktarını hesapla
-        const total_amount_sat = delegations.reduce((sum, d) => sum + d.amount_sat, 0);
+
+        // Parse pagination parameters
+        const pageNum = parseInt(page as string, 10);
+        const limitNum = parseInt(limit as string, 10);
+
+        // Validate pagination parameters
+        if (isNaN(pageNum) || pageNum < 1) {
+            return res.status(400).json({
+                error: 'Invalid page parameter. Must be a positive number'
+            });
+        }
+
+        if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+            return res.status(400).json({
+                error: 'Invalid limit parameter. Must be between 1 and 100'
+            });
+        }
+
+        const result = await finalityProviderService.getFinalityProviderDelegations(
+            fpBtcPkHex, 
+            network,
+            pageNum,
+            limitNum
+        );
         
         return res.json({
-            delegations,
+            delegations: result.delegations,
             metadata: {
-                count: delegations.length,
-                total_amount: formatSatoshis(total_amount_sat),
-                total_amount_sat,
-                timestamp: Date.now()
+                count: result.delegations.length,
+                total_amount: result.total_amount,
+                total_amount_sat: result.total_amount_sat,
+                timestamp: Date.now(),
+                pagination: result.pagination
             }
         });
     } catch (error) {
