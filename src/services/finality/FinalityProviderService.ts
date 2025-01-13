@@ -6,9 +6,10 @@ import {
     QueryFinalityProvidersResponse,
     QueryFinalityProviderResponse,
     QueryFinalityProviderDelegationsResponse,
-    BTCDelegation
+    DelegationResponse
 } from '../../types/finality/btcstaking';
 import { formatSatoshis, calculatePowerPercentage } from '../../utils/util';
+import { getTxHash } from '../../utils/generate-tx-hash';
 
 export class FinalityProviderService {
     private static instance: FinalityProviderService | null = null;
@@ -100,7 +101,7 @@ export class FinalityProviderService {
         }
     }
 
-    public async getFinalityProviderDelegations(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<BTCDelegation[]> {
+    public async getFinalityProviderDelegations(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<DelegationResponse[]> {
         const { nodeUrl } = this.getNetworkConfig(network);
         try {
             const response = await fetch(`${nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/delegations`);
@@ -108,7 +109,39 @@ export class FinalityProviderService {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const data = await response.json() as QueryFinalityProviderDelegationsResponse;
-            return data.delegations || [];
+            
+            // Her bir delegasyonu işle
+            const formattedDelegations = data.btc_delegator_delegations?.map(delegation => {
+                // Delegasyon verilerini kontrol et
+                if (!delegation || !delegation.dels || delegation.dels.length === 0) {
+                    return null;
+                }
+
+                const del = delegation.dels[0];
+                const totalSat = Number(del.total_sat);
+                if (isNaN(totalSat)) {
+                    console.warn(`Invalid total_sat value for delegation:`, del);
+                    return null;
+                }
+
+                const delegationResponse: DelegationResponse = {
+                    staker_address: del.staker_addr || '',
+                    status: del.status_desc || '',
+                    btc_pk_hex: del.btc_pk || '',
+                    amount: formatSatoshis(totalSat),
+                    amount_sat: totalSat,
+                    start_height: Number(del.start_height) || 0,
+                    end_height: Number(del.end_height) || 0,
+                    duration: Number(del.staking_time) || 0,
+                    transaction_id_hex: getTxHash(del.staking_tx_hex || '', false),
+                    transaction_id: del.staking_tx_hex || ''
+                };
+
+                return delegationResponse;
+            }).filter((d): d is DelegationResponse => d !== null) || [];
+
+            // Geçerli delegasyonları filtrele (amount_sat > 0)
+            return formattedDelegations.filter(d => d.amount_sat > 0);
         } catch (error) {
             console.error('Error fetching finality provider delegations:', error);
             throw error;

@@ -47,6 +47,28 @@ export interface BTCDelegation {
     slashing_tx?: string;
 }
 
+export interface BTCDelegatorDelegationsResponse {
+    dels: {
+        staker_addr: string;
+        btc_pk: string;
+        fp_btc_pk_list: string[];
+        staking_time: number;
+        start_height: number;
+        end_height: number;
+        total_sat: string;
+        staking_tx_hex: string;
+        slashing_tx_hex: string;
+        delegator_slash_sig_hex: string;
+        covenant_sigs: any[];
+        staking_output_idx: number;
+        active: boolean;
+        status_desc: string;
+        unbonding_time: number;
+        undelegation_response: any;
+        params_version: number;
+    }[];
+}
+
 export interface QueryFinalityProvidersResponse {
     finality_providers: FinalityProvider[];
     pagination?: {
@@ -60,7 +82,7 @@ export interface QueryFinalityProviderResponse {
 }
 
 export interface QueryFinalityProviderDelegationsResponse {
-    delegations: BTCDelegation[];
+    btc_delegator_delegations: BTCDelegatorDelegationsResponse[];
     pagination?: {
         next_key: string;
         total: number;
@@ -88,4 +110,36 @@ export interface FinalityProviderPower {
     
     /** Tüm aktif provider'ların toplam power'ı (satoshi cinsinden, raw değer) */
     rawTotalPower?: string;
+}
+
+export interface DelegationResponse {
+    /** Delegator'ın adresi */
+    staker_address: string;
+
+    /** Delegasyonun durum açıklaması */
+    status: string;
+
+    /** staker'ın BTC public key'i (hex formatında) */
+    btc_pk_hex: string;
+    
+    /** Delegasyon miktarı (BTC cinsinden, formatlanmış) */
+    amount: string;
+    
+    /** Delegasyon miktarı (satoshi cinsinden) */
+    amount_sat: number;
+    
+    /** Delegasyonun başlangıç bloğu */
+    start_height: number;
+    
+    /** Delegasyonun bitiş bloğu */
+    end_height: number;
+    
+    /** Delegasyonun süresi (blok sayısı) */
+    duration: number;
+    
+    /** Delegasyonun işlem hash'i */
+    transaction_id: string;
+
+    /** Delegasyonun işlem hash'inin hex formatı */
+    transaction_id_hex: string;
 } 

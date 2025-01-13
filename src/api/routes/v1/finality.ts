@@ -3,6 +3,7 @@ import { FinalitySignatureService } from '../../../services/finality/FinalitySig
 import { FinalityProviderService } from '../../../services/finality/FinalityProviderService';
 import { Network } from '../../middleware/network-selector';
 import { v4 as uuidv4 } from 'uuid';
+import { formatSatoshis } from '../../../utils/util';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
@@ -165,7 +166,19 @@ router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
         const { fpBtcPkHex } = req.params;
         const network = req.network || Network.MAINNET;
         const delegations = await finalityProviderService.getFinalityProviderDelegations(fpBtcPkHex, network);
-        return res.json(delegations);
+        
+        // Toplam delegasyon miktarını hesapla
+        const total_amount_sat = delegations.reduce((sum, d) => sum + d.amount_sat, 0);
+        
+        return res.json({
+            delegations,
+            metadata: {
+                count: delegations.length,
+                total_amount: formatSatoshis(total_amount_sat),
+                total_amount_sat,
+                timestamp: Date.now()
+            }
+        });
     } catch (error) {
         console.error('Error getting finality provider delegations:', error);
         return res.status(500).json({
