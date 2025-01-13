@@ -1,7 +1,14 @@
 import WebSocket from 'ws';
 import { BabylonClient } from '../../clients/BabylonClient';
-import { BlockSignatureInfo, SignatureStats, SignatureStatsParams, EpochInfo } from '../../types/finality';
+import { 
+    BlockSignatureInfo, 
+    SignatureStats, 
+    EpochInfo, 
+    SignatureStatsParams,
+    EpochStats
+} from '../../types';
 import { Response } from 'express';
+import { Network } from '../../api/middleware/network-selector';
 
 export class FinalitySignatureService {
     private static instance: FinalitySignatureService | null = null;
@@ -35,6 +42,13 @@ export class FinalitySignatureService {
         );
     }
 
+    private getNetworkConfig(network: Network = Network.MAINNET) {
+        return {
+            nodeUrl: network === Network.MAINNET ? process.env.BABYLON_NODE_URL : process.env.BABYLON_TESTNET_NODE_URL,
+            rpcUrl: network === Network.MAINNET ? process.env.BABYLON_RPC_URL : process.env.BABYLON_TESTNET_RPC_URL
+        };
+    }
+    
     public static getInstance(): FinalitySignatureService {
         if (!FinalitySignatureService.instance) {
             FinalitySignatureService.instance = new FinalitySignatureService();
@@ -229,6 +243,7 @@ export class FinalitySignatureService {
     }
 
     async getSignatureStats(params: SignatureStatsParams): Promise<SignatureStats> {
+        const { nodeUrl, rpcUrl } = this.getNetworkConfig(params.network);
         const { fpBtcPkHex, startHeight, endHeight, lastNBlocks = this.DEFAULT_LAST_N_BLOCKS } = params;
         
         // lastNBlocks için limit kontrolü

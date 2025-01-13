@@ -219,3 +219,5 @@ export interface GlobalStakerStats {
   activeStakers: number;
   totalStakers: number;
 }
+
+export * from './finality';
