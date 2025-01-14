@@ -147,6 +147,11 @@ export class FinalitySignatureService {
 
             this.ws.on('close', () => {
                 console.warn('[WebSocket] Disconnected, reconnecting...');
+                // WebSocket yeniden bağlanırken SSE client'larının initial data flag'lerini sıfırla
+                for (const [clientId, client] of this.sseClients.entries()) {
+                    client.initialDataSent = false;
+                    this.sendInitialDataToClient(clientId);
+                }
                 setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
             });
 
