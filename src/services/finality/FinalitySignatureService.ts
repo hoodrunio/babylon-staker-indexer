@@ -18,7 +18,7 @@ export class FinalitySignatureService {
     private ws: WebSocket | null = null;
     private lastProcessedHeight: number = 0;
     private isRunning: boolean = false;
-    private readonly MAX_CACHE_SIZE = 1000;
+    private readonly MAX_CACHE_SIZE = 2000;
     private readonly RECONNECT_INTERVAL = 5000;
     private readonly UPDATE_INTERVAL = 1000;
     private readonly DEFAULT_LAST_N_BLOCKS = 100;
@@ -32,7 +32,9 @@ export class FinalitySignatureService {
     private sseClients: Map<string, { res: Response; fpBtcPkHex: string; initialDataSent?: boolean }> = new Map();
     private readonly SSE_RETRY_INTERVAL = 3000;
     private readonly FINALIZATION_DELAY = 3000; // 3 saniye bekle
-    private readonly MAX_RETRY_DELAY = 5000; // Maximum delay between retries in ms
+    private readonly MAX_RETRY_DELAY = 10000; // 10 saniye
+    private readonly MAX_RETRIES = 5; // 5 deneme
+    private readonly INITIAL_RETRY_DELAY = 2000; // 2 saniye
     private processedBlocks: Set<number> = new Set();
     private currentBlockHeight: number = 0;
 
@@ -229,14 +231,17 @@ export class FinalitySignatureService {
         }
 
         this.requestLocks.set(requestKey, true);
-        const MAX_RETRIES = 2;
-        const retryDelay = Math.min(this.MAX_RETRY_DELAY, (retryCount + 1) * 2000);
+        const retryDelay = Math.min(
+            this.MAX_RETRY_DELAY,
+            this.INITIAL_RETRY_DELAY * Math.pow(2, retryCount)
+        );
 
         try {
             const votes = await this.babylonClient.getVotesAtHeight(height);
             
-            if (votes.length === 0 && retryCount < MAX_RETRIES) {
+            if (votes.length === 0 && retryCount < this.MAX_RETRIES) {
                 this.requestLocks.delete(requestKey);
+                console.debug(`[Cache] No votes found for block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms`);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
@@ -247,15 +252,16 @@ export class FinalitySignatureService {
                 this.processedBlocks.add(height);
                 console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.signatureCache.size}`);
             } else {
-                console.debug(`[Cache] No votes found for block ${height} after ${MAX_RETRIES} attempts`);
+                console.debug(`[Cache] No votes found for block ${height} after ${this.MAX_RETRIES} attempts`);
             }
         } catch (error) {
-            if (retryCount < MAX_RETRIES) {
+            if (retryCount < this.MAX_RETRIES) {
                 this.requestLocks.delete(requestKey);
+                console.warn(`[Cache] Error processing block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms:`, error);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
-            console.error(`[Cache] ❌ Error processing block ${height} after ${MAX_RETRIES} attempts:`, error);
+            console.error(`[Cache] ❌ Error processing block ${height} after ${this.MAX_RETRIES} attempts:`, error);
         } finally {
             this.requestLocks.delete(requestKey);
         }
@@ -581,9 +587,26 @@ export class FinalitySignatureService {
                 return;
             }
 
-            // Blokun finalize olması için bekle
+            // Eksik blokları kontrol et ve işle
+            const missingBlocks = [];
+            for (let h = this.lastProcessedHeight + 1; h <= previousHeight; h++) {
+                if (!this.processedBlocks.has(h)) {
+                    missingBlocks.push(h);
+                }
+            }
+
+            if (missingBlocks.length > 0) {
+                console.debug(`[WebSocket] Processing ${missingBlocks.length} missing blocks before ${previousHeight}`);
+                // Sıralı işleme için Promise.all yerine for...of kullan
+                for (const blockHeight of missingBlocks) {
+                    // Blokun finalize olması için bekle
+                    await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));
+                    await this.fetchAndCacheSignatures(blockHeight);
+                }
+            }
+
+            // Son bloku işle
             await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));
-            
             await this.fetchAndCacheSignatures(previousHeight);
             this.lastProcessedHeight = previousHeight;
             
@@ -599,14 +622,26 @@ export class FinalitySignatureService {
 
     // Cache temizleme metodunu ekle
     private cleanupCache(): void {
+        const MIN_BLOCKS_TO_KEEP = 1000; // En az tutulacak blok sayısı
+        
         if (this.processedBlocks.size > this.MAX_CACHE_SIZE) {
-            const oldestBlocks = Array.from(this.processedBlocks).sort((a, b) => a - b).slice(0, 100);
-            oldestBlocks.forEach(height => {
-                this.processedBlocks.delete(height);
-                this.signatureCache.delete(height);
-                this.timestampCache.delete(height);
-            });
-            console.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from cache`);
+            // En eski blokları bul
+            const oldestBlocks = Array.from(this.processedBlocks)
+                .sort((a, b) => a - b)
+                .slice(0, this.processedBlocks.size - MIN_BLOCKS_TO_KEEP);
+
+            // Cache'den sadece MIN_BLOCKS_TO_KEEP sayısından fazla olan blokları temizle
+            if (oldestBlocks.length > 0) {
+                oldestBlocks.forEach(height => {
+                    // İmza verilerini sakla
+                    const signatures = this.signatureCache.get(height);
+                    if (signatures) {
+                        // Sadece processedBlocks'dan çıkar, imzaları tut
+                        this.processedBlocks.delete(height);
+                    }
+                });
+                console.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from processed blocks cache, keeping signatures`);
+            }
         }
     }
 } 
