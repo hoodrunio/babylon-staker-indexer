@@ -65,8 +65,8 @@ router.get('/signatures/:fpBtcPkHex/performance', async (req, res) => {
             overall_performance: {
                 signed: `${stats.signedBlocks} / ${signableBlocks}`,
                 missed: stats.missedBlocks,
-                success_rate: `${successRate.toFixed(2)}%`,
-                block_range: `#${startHeight} - #${currentHeight}`,
+                success_rate: `${successRate.toFixed(2)}`,
+                block_range: `${startHeight} - ${currentHeight}`,
                 total_blocks: totalBlocks,
                 signable_blocks: signableBlocks,
                 unknown_blocks: unknownBlocks,
