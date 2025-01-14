@@ -85,10 +85,6 @@ export class FinalityProviderService {
         }
     }
 
-    public isProviderActive(provider: FinalityProvider): boolean {
-        return provider.highest_voted_height > 0 && !provider.jailed;
-    }
-
     public async getFinalityProvider(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProvider> {
         const { nodeUrl } = this.getNetworkConfig(network);
         try {
@@ -269,12 +265,12 @@ export class FinalityProviderService {
             const rawPower = data.voting_power || '0';
             
             const result = {
-                fpBtcPkHex,
+                // fpBtcPkHex,
                 power: formatSatoshis(Number(rawPower)),
                 // rawPower,
                 powerPercentage: calculatePowerPercentage(rawPower, totalPower.rawTotalPower),
                 height: data.height || 0,
-                totalPower: totalPower.totalPower,
+                totalNetworkPower: totalPower.totalPower,
                 // rawTotalPower: totalPower.rawTotalPower
             };            
             return result;

@@ -11,7 +11,7 @@ export interface FinalityProvider {
     description: Description;
     commission: string;
     btc_pk: string;
-    pop: ProofOfPossessionBTC;
+    // pop?: ProofOfPossessionBTC;
     slashed_babylon_height: number;
     slashed_btc_height: number;
     jailed: boolean;
@@ -36,7 +36,7 @@ export interface ProofOfPossessionBTC {
 export interface BTCDelegation {
     staker_addr: string;
     btc_pk: string;
-    pop: ProofOfPossessionBTC;
+    // pop?: ProofOfPossessionBTC;
     fp_btc_pk_list: string[];
     staking_time: number;
     start_height: number;
@@ -91,7 +91,7 @@ export interface QueryFinalityProviderDelegationsResponse {
 
 export interface FinalityProviderPower {
     /** Provider'ın BTC public key'i (hex formatında) */
-    fpBtcPkHex: string;
+    fpBtcPkHex?: string;
     
     /** Provider'ın voting power'ı (BTC cinsinden, formatlanmış) */
     power: string;
@@ -106,10 +106,10 @@ export interface FinalityProviderPower {
     height: number;
     
     /** Tüm aktif provider'ların toplam power'ı (BTC cinsinden, formatlanmış) */
-    totalPower: string;
+    totalNetworkPower: string;
     
     /** Tüm aktif provider'ların toplam power'ı (satoshi cinsinden, raw değer) */
-    rawTotalPower?: string;
+    rawTotalNetworkPower?: string;
 }
 
 export interface DelegationResponse {

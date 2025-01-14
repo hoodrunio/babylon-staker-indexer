@@ -29,7 +29,7 @@ export class FinalitySignatureService {
     private currentEpochInfo: { epochNumber: number; boundary: number } | null = null;
     
     // SSE için yeni özellikler
-    private sseClients: Map<string, { res: Response; fpBtcPkHex: string }> = new Map();
+    private sseClients: Map<string, { res: Response; fpBtcPkHex: string; initialDataSent?: boolean }> = new Map();
     private readonly SSE_RETRY_INTERVAL = 3000;
 
     private constructor() {
@@ -452,7 +452,7 @@ export class FinalitySignatureService {
         res.write(`retry: ${this.SSE_RETRY_INTERVAL}\n\n`);
 
         // Client'ı kaydet
-        this.sseClients.set(clientId, { res, fpBtcPkHex });
+        this.sseClients.set(clientId, { res, fpBtcPkHex, initialDataSent: false });
 
         // Initial data olarak son 100 bloğu gönder
         this.sendInitialDataToClient(clientId);
@@ -466,7 +466,7 @@ export class FinalitySignatureService {
 
     private async sendInitialDataToClient(clientId: string): Promise<void> {
         const client = this.sseClients.get(clientId);
-        if (!client) return;
+        if (!client || client.initialDataSent) return;
 
         try {
             const stats = await this.getSignatureStats({
@@ -475,6 +475,7 @@ export class FinalitySignatureService {
             });
 
             this.sendSSEEvent(clientId, 'initial', stats);
+            client.initialDataSent = true;
         } catch (error) {
             console.error(`[SSE] Error sending initial data to client ${clientId}:`, error);
         }
