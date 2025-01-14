@@ -100,19 +100,48 @@ export class BabylonClient {
 
     async getVotesAtHeight(height: number): Promise<Vote[]> {
         try {
+            console.debug(`[Votes] Fetching votes for height ${height}`);
             const response = await this.client.get(`/babylon/finality/v1/votes/${height}`);
             
-            if (!response.data || !response.data.btc_pks) {
+            if (!response.data) {
+                console.warn(`[Votes] No data in response for height ${height}`);
+                return [];
+            }
+
+            if (!response.data.btc_pks) {
                 console.warn(`[Votes] No btc_pks in response for height ${height}`);
                 return [];
             }
 
+            if (!Array.isArray(response.data.btc_pks)) {
+                console.warn(`[Votes] btc_pks is not an array for height ${height}`);
+                return [];
+            }
+
+            console.debug(`[Votes] Found ${response.data.btc_pks.length} votes for height ${height}`);
+            
+            // Duplicate check
+            const uniquePks = new Set(response.data.btc_pks);
+            if (uniquePks.size !== response.data.btc_pks.length) {
+                console.warn(`[Votes] Found ${response.data.btc_pks.length - uniquePks.size} duplicate votes for height ${height}`);
+            }
+
             const currentTime = new Date().toISOString();
-            return response.data.btc_pks.map((btcPk: string) => ({
-                fp_btc_pk_hex: btcPk.toLowerCase(),
-                signature: '',
-                timestamp: currentTime
-            }));
+            const votes = response.data.btc_pks.map((btcPk: string) => {
+                // Validate btcPk format
+                if (typeof btcPk !== 'string' || btcPk.length !== 64) {
+                    console.warn(`[Votes] Invalid btcPk format at height ${height}: ${btcPk}`);
+                    return null;
+                }
+                return {
+                    fp_btc_pk_hex: btcPk.toLowerCase(),
+                    signature: '',
+                    timestamp: currentTime
+                };
+            }).filter((vote: Vote | null): vote is Vote => vote !== null);
+
+            // console.debug(`[Votes] Processed ${votes.length} valid votes for height ${height}`);
+            return votes;
         } catch (error) {
             if (error instanceof Error) {
                 console.error(`[Votes] Error fetching votes at height ${height}:`, error.message);

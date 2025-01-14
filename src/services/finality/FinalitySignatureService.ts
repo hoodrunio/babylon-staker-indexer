@@ -220,8 +220,9 @@ export class FinalitySignatureService {
     private async fetchAndCacheSignatures(height: number, retryCount = 0): Promise<void> {
         const requestKey = `${height}-${retryCount}`;
         
-        // Blok zaten işlenmişse veya cache'de varsa atla
-        if (this.processedBlocks.has(height) || this.signatureCache.has(height)) {
+        // Eğer blok zaten işlenmişse ve yeterli imza varsa atla
+        const existingSigners = this.signatureCache.get(height);
+        if (this.processedBlocks.has(height) && existingSigners && existingSigners.size > 0) {
             return;
         }
 
@@ -239,7 +240,8 @@ export class FinalitySignatureService {
         try {
             const votes = await this.babylonClient.getVotesAtHeight(height);
             
-            if (votes.length === 0 && retryCount < this.MAX_RETRIES) {
+            // İlk denemede imza yoksa retry yap
+            if (votes.length === 0 && retryCount < this.MAX_RETRIES && !existingSigners) {
                 this.requestLocks.delete(requestKey);
                 console.debug(`[Cache] No votes found for block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms`);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
@@ -248,14 +250,30 @@ export class FinalitySignatureService {
 
             if (votes.length > 0) {
                 const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
+                
+                // Mevcut imzalarla karşılaştır
+                const currentSize = existingSigners?.size || 0;
+                
                 await this.processBlock(height, signers);
                 this.processedBlocks.add(height);
-                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.signatureCache.size}`);
-            } else {
+                
+                const newSigners = this.signatureCache.get(height);
+                const newSize = newSigners?.size || 0;
+                
+                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${newSize}, cache size: ${this.signatureCache.size}`);
+                
+                // Sadece yeni imzalar eklendiyse ve maksimum retry sayısına ulaşılmadıysa tekrar dene
+                if (newSize > currentSize && newSize < votes.length && retryCount < this.MAX_RETRIES) {
+                    console.warn(`[Cache] Found new signatures for block ${height}, retrying...`);
+                    this.requestLocks.delete(requestKey);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    return this.fetchAndCacheSignatures(height, retryCount + 1);
+                }
+            } else if (!existingSigners) {
                 console.debug(`[Cache] No votes found for block ${height} after ${this.MAX_RETRIES} attempts`);
             }
         } catch (error) {
-            if (retryCount < this.MAX_RETRIES) {
+            if (retryCount < this.MAX_RETRIES && !existingSigners) {
                 this.requestLocks.delete(requestKey);
                 console.warn(`[Cache] Error processing block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms:`, error);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
@@ -268,12 +286,16 @@ export class FinalitySignatureService {
     }
 
     private async processBlock(height: number, signers: Set<string>): Promise<void> {
-        // Eğer cache'de daha fazla imza varsa güncelleme yapma
+        // Eğer cache'de daha fazla imza varsa, mevcut imzaları ekle
         const existingSigners = this.signatureCache.get(height);
-        if (existingSigners && existingSigners.size > signers.size) {
+        if (existingSigners) {
+            // Mevcut imzaları yeni imzalara ekle
+            signers.forEach(signer => existingSigners.add(signer));
+            console.debug(`[Cache] Merged signatures for block ${height}, total signers: ${existingSigners.size}`);
             return;
         }
 
+        // Yeni imzaları cache'e ekle
         this.signatureCache.set(height, signers);
         
         // Timestamp'i sadece ilk kez kaydederken ayarla
@@ -281,8 +303,12 @@ export class FinalitySignatureService {
             this.timestampCache.set(height, new Date());
         }
         
+        // Cache boyutu kontrolü
         if (this.signatureCache.size > this.MAX_CACHE_SIZE) {
             const oldestHeight = Math.min(...this.signatureCache.keys());
+            // İmzaları silmeden önce log
+            const oldSigners = this.signatureCache.get(oldestHeight);
+            console.debug(`[Cache] Removing oldest block ${oldestHeight} with ${oldSigners?.size || 0} signatures due to cache size limit`);
             this.signatureCache.delete(oldestHeight);
             this.timestampCache.delete(oldestHeight);
         }
