@@ -57,7 +57,10 @@ export class FinalitySignatureService {
     }
 
     public async start(): Promise<void> {
-        if (this.isRunning) return;
+        if (this.isRunning) {
+            console.warn('[FinalityService] Service is already running');
+            return;
+        }
         
         console.log('[FinalityService] Starting signature monitoring service...');
         this.isRunning = true;
@@ -108,6 +111,7 @@ export class FinalitySignatureService {
     private async initializeWebSocket(): Promise<void> {
         if (this.ws) {
             console.debug('[WebSocket] Closing existing connection');
+            this.ws.removeAllListeners();
             this.ws.close();
             this.ws = null;
         }
@@ -136,22 +140,32 @@ export class FinalitySignatureService {
                 );
             }
 
-            this.ws = new WebSocket(`${process.env.BABYLON_RPC_URL!.replace('http', 'ws')}/websocket`);
+            const wsUrl = `${process.env.BABYLON_RPC_URL!.replace('http', 'ws')}/websocket`;
+            console.debug(`[WebSocket] Connecting to ${wsUrl}`);
+            this.ws = new WebSocket(wsUrl);
 
             this.ws.on('open', () => {
                 console.debug('[WebSocket] Connected successfully');
                 this.subscribeToNewBlocks();
             });
 
-            this.ws.on('message', (data: Buffer) => this.onWebSocketMessage(data));
+            this.ws.on('message', async (data: Buffer) => {
+                try {
+                    const message = JSON.parse(data.toString());
+                    if (message.result?.data?.value?.block) {
+                        const height = parseInt(message.result.data.value.block.header.height);
+                        if (height > this.lastProcessedHeight) {
+                            await this.handleNewBlock(height);
+                        }
+                    }
+                } catch (error) {
+                    console.error('[WebSocket] Error processing message:', error);
+                }
+            });
 
             this.ws.on('close', () => {
+                if (!this.isRunning) return;
                 console.warn('[WebSocket] Disconnected, reconnecting...');
-                // WebSocket yeniden bağlanırken SSE client'larının initial data flag'lerini sıfırla
-                for (const [clientId, client] of this.sseClients.entries()) {
-                    client.initialDataSent = false;
-                    this.sendInitialDataToClient(clientId);
-                }
                 setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
             });
 
@@ -162,7 +176,9 @@ export class FinalitySignatureService {
 
         } catch (error) {
             console.error('[WebSocket] Initialization error:', error);
-            setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
+            if (this.isRunning) {
+                setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
+            }
         }
     }
 
@@ -535,27 +551,17 @@ export class FinalitySignatureService {
         try {
             // Önceki bloku işle (finalize olmuş)
             const previousHeight = height - 1;
+            if (previousHeight <= this.lastProcessedHeight) {
+                return;
+            }
+            
             await this.fetchAndCacheSignatures(previousHeight);
+            this.lastProcessedHeight = previousHeight;
             
             // SSE client'larına sadece son blok bilgisini gönder
             await this.broadcastNewBlock(previousHeight);
         } catch (error) {
             console.error('[WebSocket] Error processing new block:', error);
-        }
-    }
-
-    // WebSocket message handler'ını güncelle
-    private async onWebSocketMessage(data: Buffer): Promise<void> {
-        try {
-            const message = JSON.parse(data.toString());
-            if (message.result?.data?.value?.block) {
-                const height = parseInt(message.result.data.value.block.header.height);
-                if (height > this.lastProcessedHeight) {
-                    await this.handleNewBlock(height);
-                }
-            }
-        } catch (error) {
-            console.error('[WebSocket] Error processing message:', error);
         }
     }
 } 
