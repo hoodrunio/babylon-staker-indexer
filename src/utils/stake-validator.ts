@@ -36,7 +36,7 @@ interface BitcoinTransactionVout {
     scriptPubKey: any;
 }
 
-interface BitcoinTransaction {
+export interface BitcoinTransaction {
     txid: string;
     hash: string;
     version: number;
@@ -46,22 +46,22 @@ interface BitcoinTransaction {
     locktime: number;
     vin: BitcoinTransactionVin[];
     vout: BitcoinTransactionVout[];
-    fee: number;
     hex: string;
+    blockhash: string;
+    confirmations: number;
+    time: number;
+    blocktime: number;
 }
 
 const OP_RETURN_BONDING_PREFIX = '6a47';
-const OP_RETURN_UNBONDING_PREFIX = '5120';
 const STAKING_TAG = '62626e31';
-const UNBONDING_TAG = 'b3541b75';
 const EXPECTED_BONDING_LENGTH = 146;
-const EXPECTED_UNBONDING_LENGTH = 68;
 const TAG_SLICE_START = 4;
 const TAG_SLICE_END = 12;
 const STAKING_TIME_SLICE_START = 142;
 const STAKING_TIME_SLICE_END = 146;
 
-const bitcoinRpc = new BitcoinRPC('https://proud-prettiest-river.btc.quiknode.pro/3d6102c323178f941d6f5fbeab0deb22b500f48e');
+const bitcoinRpc = new BitcoinRPC(process.env.BTC_RPC_URL || 'default_rpc_url');
 
 function checkBondingOpReturn(
     hexData: string,
@@ -81,24 +81,6 @@ function checkBondingOpReturn(
 
         if (stakingTimeValue < params.min_staking_time || stakingTimeValue > params.max_staking_time)
             return [`INVALID_STAKING_TIME: ${stakingTimeValue}`];
-    } catch (error) {
-        return [`OP_RETURN_PARSE_ERROR: ${error instanceof Error ? error.message : String(error)}`];
-    }
-
-    return [];
-}
-
-function checkUnbondingOpReturn(
-    hexData: string
-): string[] {
-    if (hexData.length !== EXPECTED_UNBONDING_LENGTH)
-        return [`INVALID_OP_RETURN_LENGTH: ${hexData.length / 2} bytes`];
-
-    try {
-        const tag = hexData.slice(TAG_SLICE_START, TAG_SLICE_END);
-
-        if (!tag.toLowerCase().startsWith(UNBONDING_TAG))
-            return [`INVALID_TAG: ${tag}`];
     } catch (error) {
         return [`OP_RETURN_PARSE_ERROR: ${error instanceof Error ? error.message : String(error)}`];
     }
@@ -234,27 +216,16 @@ export async function validateUnbondingTransaction(
         if (tx.vin.length !== 1 || tx.vout.length !== 1)
             return updateValidationResult(result, 'INVALID_INPUT_OUTPUT_COUNT', 'wrongOutputCount');
 
-        const opReturnOutput = tx.vout[0];
-
-        if (!opReturnOutput.scriptPubKey?.hex?.startsWith(OP_RETURN_UNBONDING_PREFIX))
-            return updateValidationResult(result, 'NO_OP_RETURN', 'noOpReturn');
-
         const witnessLength = tx.vin[0].txinwitness.filter(Boolean).length;
 
         if (witnessLength < 6)
             return updateValidationResult(result, 'INVALID_WITNESS', 'invalidTaprootKey');
 
-        const opReturnData = opReturnOutput.scriptPubKey.hex;
-        const formatErrors = checkUnbondingOpReturn(opReturnData);
-
-        if (formatErrors.length)
-            return updateValidationResult(result, formatErrors, 'invalidOpReturn');
-
-        result.parsedOpReturn = parseOpReturn(opReturnData);
-
         const stakingTransactionId = tx.vin[0].txid;
         const stakingTransaction = await bitcoinRpc.getRawTransaction(stakingTransactionId);
-        const stakingOpReturnOutput = stakingTransaction.vout.find((output: BitcoinTransactionVout) => output.scriptPubKey?.hex?.startsWith(OP_RETURN_BONDING_PREFIX));
+        const stakingOpReturnOutput = stakingTransaction.vout.find(
+            (output: BitcoinTransactionVout) => output.scriptPubKey?.hex?.startsWith(OP_RETURN_BONDING_PREFIX)
+        );
 
         if (!stakingOpReturnOutput)
             return updateValidationResult(result, 'NO_OP_RETURN', 'invalidOpReturn');

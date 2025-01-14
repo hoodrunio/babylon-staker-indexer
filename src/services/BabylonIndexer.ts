@@ -1,9 +1,13 @@
-import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, TopFinalityProviderStats, FinalityProvider, GlobalStakerStats } from '../types';
+import determinePhaseAndOverflow from './functions/determinePhaseAndOverflow.js';
+import findStakingAmount from './functions/findStakingAmount.js';
+import isTaprootOutput from './functions/isTaprootOutput.js';
+
+import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, GlobalStakerStats } from '../types';
 import { BitcoinRPC } from '../utils/bitcoin-rpc';
 import { Database } from '../database';
 import { parseOpReturn } from '../utils/op-return-parser';
 import { getParamsForHeight } from '../utils/params-validator';
-import { validateStakeTransaction } from '../utils/stake-validator';
+import { validateBondingTransaction, validateUnbondingTransaction } from '../utils/stake-validator';
 import { StakerService } from '../database/services/StakerService';
 
 export class BabylonIndexer {
@@ -240,32 +244,6 @@ export class BabylonIndexer {
     return paramsCache.get(height);
   }
 
-  private isTaprootOutput(output: any): boolean {
-    // Handle both RPC format and our custom format
-    const script = output.scriptPubKey?.hex;
-    const type = output.scriptPubKey?.type;
-    return (script && script.startsWith('5120') && script.length === 68) || // Raw script format
-           (type === 'witness_v1_taproot'); // RPC format
-  }
-
-  private findStakingAmount(tx: any, validationResult: any): number {
-    // Get input addresses from vin
-    const inputAddresses = tx.vin?.map((input: any) => {
-        // For RPC format, we need to look at the witness_v1_taproot address
-        const scriptPubKey = input.prevout?.scriptPubKey || {};
-        return scriptPubKey.address || null;
-    }).filter(Boolean) || [];
-
-    // Find Taproot output that goes to a new address
-    const stakingOutput = tx.vout?.find((out: any) =>
-      this.isTaprootOutput(out) &&
-      out.scriptPubKey?.type === 'witness_v1_taproot' &&
-      !inputAddresses.includes(out.scriptPubKey?.address)
-    );
-
-    return stakingOutput ? stakingOutput.value * 100000000 : 0; // Convert to satoshis
-  }
-
   private async createStakeTransaction(
     tx: any,
     parsed: any,
@@ -295,7 +273,7 @@ export class BabylonIndexer {
 
     // Find Taproot output that goes to a new address (still needed for validation)
     const taprootOutput = tx.vout?.find((out: any) =>
-      this.isTaprootOutput(out) &&
+      isTaprootOutput(out) &&
       out.scriptPubKey?.type === 'witness_v1_taproot' &&
       out.scriptPubKey?.address !== stakerAddress
     );
@@ -330,71 +308,6 @@ export class BabylonIndexer {
     };
   }
 
-  private determinePhaseAndOverflow(blockHeight: number, tx: any, params: any): { phase: number, isOverflow: boolean, shouldProcess: boolean } {
-    // Phase ranges
-    const phaseRanges = {
-      1: {
-        start: parseInt(process.env.PHASE1_START_HEIGHT || '857910'),
-        end: parseInt(process.env.PHASE1_END_HEIGHT || '864789')
-      },
-      2: {
-        start: parseInt(process.env.PHASE2_START_HEIGHT || '864790'),
-        end: parseInt(process.env.PHASE2_END_HEIGHT || '875087')
-      },
-      3: {
-        start: parseInt(process.env.PHASE3_START_HEIGHT || '875088'),
-        end: parseInt(process.env.PHASE3_END_HEIGHT || '885385')
-      }
-    };
-
-    // Determine which phase this block belongs to
-    let phase = 0;
-    for (const [p, range] of Object.entries(phaseRanges)) {
-      if (blockHeight >= range.start && blockHeight <= range.end) {
-        phase = parseInt(p);
-        break;
-      }
-    }
-
-    // If we're in specific phase mode, check if we should process this transaction
-    const indexSpecificPhase = process.env.INDEX_SPECIFIC_PHASE === 'true';
-    const targetPhase = parseInt(process.env.PHASE_TO_INDEX || '1');
-
-    // In specific phase mode, only process transactions for the target phase
-    const shouldProcess = !indexSpecificPhase || phase === targetPhase;
-    if (!shouldProcess) {
-      return { phase, isOverflow: false, shouldProcess: false };
-    }
-
-    // Determine if transaction is overflow based on phase-specific rules
-    let isOverflow = false;
-
-    switch (phase) {
-      case 1:
-        // Phase 1: Check against staking cap
-        if (params.staking_cap !== undefined) {
-          const stakingCapSats = BigInt(Math.floor(params.staking_cap));
-          const currentStakeSats = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
-          isOverflow = currentStakeSats > stakingCapSats;
-        }
-        break;
-
-      case 2:
-      case 3: {
-        // Phase 2 & 3: Transaction is overflow if outside valid block height range
-        const range = phaseRanges[phase];
-        isOverflow = blockHeight < range.start || blockHeight > range.end;
-        break;
-      }
-
-      default:
-        // If block is not in any phase range, mark as overflow
-        isOverflow = true;
-    }
-
-    return { phase, isOverflow, shouldProcess: true };
-  }
-
   private async processBlockWithParams(block: any, params: any): Promise<Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}>> {
     const transactions: Array<StakeTransaction & {isValid: boolean, hasBabylonPrefix: boolean}> = [];
     const validTransactions: Array<{tx: any, amount: number, timestamp: number}> = [];
@@ -407,7 +320,7 @@ export class BabylonIndexer {
       }
 
       // Basic validation without overflow check
-      const validationResult = await validateStakeTransaction(tx, params, block.height, 0);
+      const validationResult = await validateBondingTransaction(tx, params);
 
       if (!validationResult.hasBabylonPrefix) continue;
 
@@ -432,7 +345,7 @@ export class BabylonIndexer {
         continue;
       }
 
-      const stakeAmountSatoshi = this.findStakingAmount(tx, validationResult);
+      const stakeAmountSatoshi = findStakingAmount(tx);
       validTransactions.push({ tx, amount: stakeAmountSatoshi, timestamp: block.time });
     }
 
@@ -445,17 +358,19 @@ export class BabylonIndexer {
     });
 
     // Second pass: Process transactions with proper overflow checking
-    let currentActiveStake = 0;
+    // let currentActiveStake = 0;
     for (const { tx, amount } of validTransactions) {
       // Determine phase and overflow status first
-      const { phase, isOverflow } = this.determinePhaseAndOverflow(block.height, tx, params);
+      // const { phase, isOverflow } = this.determinePhaseAndOverflow(block.height, tx, params);
+
+      const { isOverflow } = determinePhaseAndOverflow(block.height, tx, params);
 
       // For phase 1, we need to track active stake for overflow
       // For other phases, we only care about block height range
-      const effectiveActiveStake = phase === 1 ? currentActiveStake : 0;
+      // const effectiveActiveStake = phase === 1 ? currentActiveStake : 0;
 
       // Re-validate with current active stake (only matters for phase 1)
-      const validationResult = await validateStakeTransaction(tx, params, block.height, effectiveActiveStake);
+      const validationResult = await validateBondingTransaction(tx, params);
 
       // Parse OP_RETURN data
       const opReturnOutput = tx.vout?.find((out: any) =>
@@ -495,9 +410,9 @@ export class BabylonIndexer {
         });
 
         // Only update active stake for phase 1
-        if (phase === 1 && validationResult.isValid && !isOverflow) {
-          currentActiveStake += amount;
-        }
+        // if (phase === 1 && validationResult.isValid && !isOverflow) {
+        //   currentActiveStake += amount;
+        // }
       }
     }
 

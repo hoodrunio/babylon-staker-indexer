@@ -36,16 +36,16 @@ async function loadParams(): Promise<GlobalParams> {
   if (cachedParams) {
     return cachedParams;
   }
-  
+
   try {
     const params = require('../../global-params.json');
-    
+
     // Add phase numbers to versions
     params.versions = params.versions.map((v: any) => ({
       ...v,
       phase: v.version + 1 // Convert version to phase number
     }));
-    
+
     cachedParams = params;
 
     // Log phase parameters
@@ -92,7 +92,7 @@ async function findApplicableVersion(height: number, versions: VersionParams[], 
     if (isReindexing) {
       // In reindexing mode, use strict phase boundaries from env vars with params as fallback
       startHeight = parseInt(process.env[`PHASE${version.phase}_START_HEIGHT`] || version.activation_height.toString());
-      endHeight = version.phase === 1 ? 
+      endHeight = version.phase === 1 ?
         parseInt(process.env.PHASE1_TIMEOUT_HEIGHT || version.cap_height?.toString() || version.activation_height.toString()) :
         parseInt(process.env[`PHASE${version.phase}_END_HEIGHT`] || version.cap_height?.toString() || version.activation_height.toString());
     } else {
@@ -109,7 +109,7 @@ async function findApplicableVersion(height: number, versions: VersionParams[], 
         endHeight = parseInt(process.env.PHASE3_END_HEIGHT || phase3Version.cap_height?.toString() || phase3Version.activation_height.toString());
       }
     }
-    
+
     // Skip if height is outside the valid range
     if (startHeight === 0 || endHeight === 0) {
       console.error(`Invalid height range for phase ${version.phase}: ${startHeight} - ${endHeight}`);
@@ -131,10 +131,10 @@ async function findApplicableVersion(height: number, versions: VersionParams[], 
         }
       }
     }
-    
+
     return version;
   }
-  
+
   return null;
 }
 
@@ -148,7 +148,7 @@ export async function getParamsForHeight(height: number): Promise<VersionParams 
     const params = await loadParams();
     const dbInstance = Database.getInstance();
     const isReindexing = process.env.INDEX_SPECIFIC_PHASE === 'true';
-    
+
     const applicableVersion = await findApplicableVersion(height, params.versions, dbInstance);
 
     if (!applicableVersion) {
@@ -161,7 +161,7 @@ export async function getParamsForHeight(height: number): Promise<VersionParams 
       const stats = await dbInstance.getGlobalStats();
       const totalStake = stats.totalStakeBTC * 100000000;
       const isPhase1Complete = await checkPhase1End(totalStake);
-      
+
       if (isPhase1Complete) {
         console.log(`Phase 1 completed at height ${height} due to reaching target stake`);
         return null;
