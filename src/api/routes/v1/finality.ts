@@ -13,54 +13,81 @@ const finalityProviderService = FinalityProviderService.getInstance();
 router.get('/signatures/:fpBtcPkHex/stats', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
-        const { startHeight, endHeight, lastNBlocks } = req.query;
         const network = req.network || Network.MAINNET;
+        const DEFAULT_BLOCKS = 100; // Son 100 blok için istatistikler
 
-        if (lastNBlocks) {
-            const lastN = parseInt(lastNBlocks as string, 10);
-            if (isNaN(lastN) || lastN <= 0) {
-                return res.status(400).json({
-                    error: 'lastNBlocks must be a positive number'
-                });
-            }
-            const stats = await finalitySignatureService.getSignatureStats({ 
-                fpBtcPkHex, 
-                lastNBlocks: lastN,
-                network 
-            });
-            return res.json(stats);
-        }
-
-        if (startHeight && endHeight) {
-            const start = parseInt(startHeight as string, 10);
-            const end = parseInt(endHeight as string, 10);
-            
-            if (isNaN(start) || isNaN(end)) {
-                return res.status(400).json({
-                    error: 'startHeight and endHeight must be numbers'
-                });
-            }
-            
-            if (start > end) {
-                return res.status(400).json({
-                    error: 'startHeight must be less than or equal to endHeight'
-                });
-            }
-
-            const stats = await finalitySignatureService.getSignatureStats({ 
-                fpBtcPkHex, 
-                startHeight: start, 
-                endHeight: end,
-                network
-            });
-            return res.json(stats);
-        }
-
-        return res.status(400).json({
-            error: 'Either lastNBlocks or both startHeight and endHeight must be provided'
+        const currentHeight = await finalitySignatureService.getCurrentHeight();
+        const startHeight = Math.max(1, currentHeight - DEFAULT_BLOCKS);
+        
+        const stats = await finalitySignatureService.getSignatureStats({ 
+            fpBtcPkHex, 
+            startHeight,
+            endHeight: currentHeight,
+            network
         });
+
+        return res.json(stats);
     } catch (error) {
         console.error('Error getting signature stats:', error);
+        return res.status(500).json({
+            error: 'Internal server error',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+
+// Get historical performance stats for a finality provider
+router.get('/signatures/:fpBtcPkHex/performance', async (req, res) => {
+    try {
+        const { fpBtcPkHex } = req.params;
+        const network = req.network || Network.MAINNET;
+        const currentHeight = await finalitySignatureService.getCurrentHeight();
+        const lookbackBlocks = 5000; // Son 5000 blok
+
+        // Son 5000 bloğun istatistiklerini al
+        const startHeight = Math.max(1, currentHeight - lookbackBlocks + 1);
+        const stats = await finalitySignatureService.getSignatureStats({ 
+            fpBtcPkHex, 
+            startHeight: startHeight,
+            endHeight: currentHeight,
+            network
+        });
+
+        // Performans metriklerini hesapla
+        const totalBlocks = currentHeight - startHeight + 1; // Gerçek toplam blok sayısı
+        const signableBlocks = stats.signedBlocks + stats.missedBlocks; // İmzalanabilir bloklar
+        const successRate = signableBlocks > 0 ? (stats.signedBlocks / signableBlocks) * 100 : 0;
+
+        // Bilinmeyen blokları hesapla
+        const unknownBlocks = totalBlocks - signableBlocks;
+
+        return res.json({
+            overall_performance: {
+                signed: `${stats.signedBlocks} / ${signableBlocks}`,
+                missed: stats.missedBlocks,
+                success_rate: `${successRate.toFixed(2)}%`,
+                block_range: `#${startHeight} - #${currentHeight}`,
+                total_blocks: totalBlocks,
+                signable_blocks: signableBlocks,
+                unknown_blocks: unknownBlocks,
+                lookback_blocks: lookbackBlocks
+            },
+            details: {
+                signed_blocks: stats.signedBlocks,
+                missed_blocks: stats.missedBlocks,
+                unknown_blocks: unknownBlocks,
+                total_blocks: totalBlocks,
+                signable_blocks: signableBlocks,
+                valid_blocks: signableBlocks,
+                success_rate: successRate,
+                start_height: startHeight,
+                end_height: currentHeight,
+                lookback_blocks: lookbackBlocks,
+                timestamp: Date.now()
+            }
+        });
+    } catch (error) {
+        console.error('Error getting performance stats:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'

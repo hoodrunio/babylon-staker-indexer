@@ -48,6 +48,15 @@ export class CacheService {
     }
   }
 
+  async keys(pattern: string): Promise<string[]> {
+    try {
+      return await this.client.keys(pattern);
+    } catch (error) {
+      console.error('Cache keys error:', error);
+      return [];
+    }
+  }
+
   async clearPattern(pattern: string): Promise<void> {
     try {
       const keys = await this.client.keys(pattern);

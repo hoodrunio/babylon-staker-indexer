@@ -9,6 +9,7 @@ import {
 } from '../../types';
 import { Response } from 'express';
 import { Network } from '../../api/middleware/network-selector';
+import { FinalityHistoricalService } from './FinalityHistoricalService';
 
 export class FinalitySignatureService {
     private static instance: FinalitySignatureService | null = null;
@@ -18,11 +19,11 @@ export class FinalitySignatureService {
     private ws: WebSocket | null = null;
     private lastProcessedHeight: number = 0;
     private isRunning: boolean = false;
-    private readonly MAX_CACHE_SIZE = 2000;
+    private readonly MAX_CACHE_SIZE = 10000;
     private readonly RECONNECT_INTERVAL = 5000;
     private readonly UPDATE_INTERVAL = 1000;
-    private readonly DEFAULT_LAST_N_BLOCKS = 100;
-    private readonly MAX_LAST_N_BLOCKS = 200;
+    private readonly DEFAULT_LAST_N_BLOCKS = 101;
+    private readonly MAX_LAST_N_BLOCKS = 5000;
     private babylonClient: BabylonClient;
     private updateInterval: NodeJS.Timeout | null = null;
     private epochCache: Map<number, EpochInfo> = new Map();
@@ -37,6 +38,7 @@ export class FinalitySignatureService {
     private readonly INITIAL_RETRY_DELAY = 2000; // 2 saniye
     private processedBlocks: Set<number> = new Set();
     private currentBlockHeight: number = 0;
+    private historicalService: FinalityHistoricalService;
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -46,6 +48,43 @@ export class FinalitySignatureService {
             process.env.BABYLON_NODE_URL,
             process.env.BABYLON_RPC_URL
         );
+        this.historicalService = FinalityHistoricalService.getInstance();
+        
+        // Program başladığında cache'i Redis'ten yükle
+        this.loadCacheFromRedis();
+    }
+
+    private async loadCacheFromRedis(): Promise<void> {
+        try {
+            // Redis'ten blok imzalarını al
+            const signatureKeys = await this.historicalService.getBlockSignatureKeys();
+            
+            for (const key of signatureKeys) {
+                const blockData = await this.historicalService.getBlockSignature(key);
+                if (blockData) {
+                    const height = parseInt(key.split(':')[2]); // "signature:block:HEIGHT" formatından height'ı al
+                    const signers = new Set<string>(blockData.signers);
+                    this.signatureCache.set(height, signers);
+                    this.timestampCache.set(height, new Date(blockData.timestamp));
+                    this.processedBlocks.add(height);
+                }
+            }
+
+            console.debug(`[Cache] Loaded ${this.signatureCache.size} blocks from Redis`);
+        } catch (error) {
+            console.error('[Cache] Error loading cache from Redis:', error);
+        }
+    }
+
+    private async saveBlockToRedis(height: number, signers: Set<string>): Promise<void> {
+        try {
+            await this.historicalService.saveBlockSignatures(height, {
+                signers: Array.from(signers),
+                timestamp: this.timestampCache.get(height)?.getTime() || Date.now()
+            });
+        } catch (error) {
+            console.error(`[Cache] Error saving block ${height} to Redis:`, error);
+        }
     }
 
     private getNetworkConfig(network: Network = Network.MAINNET) {
@@ -112,6 +151,11 @@ export class FinalitySignatureService {
                 if (nextHeight < currentHeight) {
                     await this.fetchAndCacheSignatures(nextHeight);
                 }
+
+                // Her 100 blokta bir cleanup yap
+                if (currentHeight % 100 === 0) {
+                    await this.historicalService.cleanup(currentHeight);
+                }
             } catch (error) {
                 console.error('[FinalityService] Error in periodic update:', error);
             }
@@ -130,28 +174,40 @@ export class FinalitySignatureService {
             const currentHeight = await this.babylonClient.getCurrentHeight();
             this.currentBlockHeight = currentHeight;
             
-            // Son N blok içinde kalacak şekilde başlangıç yüksekliğini hesapla
-            const startHeight = currentHeight - this.DEFAULT_LAST_N_BLOCKS;
-            this.lastProcessedHeight = startHeight - 1; // Başlangıç yüksekliğinden önceki blokları işleme
+            // Cache'deki en eski ve en yeni bloğu bul
+            const cachedHeights = Array.from(this.signatureCache.keys()).sort((a, b) => a - b);
+            const oldestCachedHeight = cachedHeights[0];
+            const newestCachedHeight = cachedHeights[cachedHeights.length - 1];
             
-            console.debug(`[WebSocket] Initializing with current height: ${currentHeight}, processing from: ${startHeight}`);
+            // Cache'de blok varsa en son işlenen bloktan devam et
+            // Yoksa son 100 bloktan başla
+            if (newestCachedHeight) {
+                this.lastProcessedHeight = newestCachedHeight;
+                console.debug(`[WebSocket] Resuming from last cached block: ${newestCachedHeight}`);
+            } else {
+                const startHeight = currentHeight - this.DEFAULT_LAST_N_BLOCKS;
+                this.lastProcessedHeight = startHeight - 1;
+                console.debug(`[WebSocket] No cached blocks, starting from: ${startHeight}`);
+                
+                // Cache boşsa son 100 bloğu al
+                const missingBlocks = [];
+                for (let height = startHeight; height < currentHeight; height++) {
+                    if (!this.signatureCache.has(height)) {
+                        missingBlocks.push(height);
+                    }
+                }
 
-            // Eksik blokları bul
-            const missingBlocks = [];
-            for (let height = startHeight; height < currentHeight; height++) {
-                if (!this.signatureCache.has(height)) {
-                    missingBlocks.push(height);
+                if (missingBlocks.length > 0) {
+                    console.debug(`[WebSocket] Processing ${missingBlocks.length} missing blocks`);
+                    await Promise.all(
+                        missingBlocks.map(height => this.fetchAndCacheSignatures(height))
+                    );
                 }
             }
+            
+            console.debug(`[WebSocket] Initializing with current height: ${currentHeight}, last processed height: ${this.lastProcessedHeight}`);
 
-            // Sadece eksik blokları işle
-            if (missingBlocks.length > 0) {
-                console.debug(`[WebSocket] Processing ${missingBlocks.length} missing blocks`);
-                await Promise.all(
-                    missingBlocks.map(height => this.fetchAndCacheSignatures(height))
-                );
-            }
-
+            // WebSocket bağlantısını kur
             const wsUrl = `${process.env.BABYLON_RPC_URL!.replace('http', 'ws')}/websocket`;
             console.debug(`[WebSocket] Connecting to ${wsUrl}`);
             this.ws = new WebSocket(wsUrl);
@@ -292,6 +348,9 @@ export class FinalitySignatureService {
             // Mevcut imzaları yeni imzalara ekle
             signers.forEach(signer => existingSigners.add(signer));
             console.debug(`[Cache] Merged signatures for block ${height}, total signers: ${existingSigners.size}`);
+            
+            // Redis'e kaydet
+            await this.saveBlockToRedis(height, existingSigners);
             return;
         }
 
@@ -303,14 +362,43 @@ export class FinalitySignatureService {
             this.timestampCache.set(height, new Date());
         }
         
-        // Cache boyutu kontrolü
-        if (this.signatureCache.size > this.MAX_CACHE_SIZE) {
-            const oldestHeight = Math.min(...this.signatureCache.keys());
-            // İmzaları silmeden önce log
-            const oldSigners = this.signatureCache.get(oldestHeight);
-            console.debug(`[Cache] Removing oldest block ${oldestHeight} with ${oldSigners?.size || 0} signatures due to cache size limit`);
-            this.signatureCache.delete(oldestHeight);
-            this.timestampCache.delete(oldestHeight);
+        // Redis'e kaydet
+        await this.saveBlockToRedis(height, signers);
+        
+        // Her imzacı için historical service'e kaydet
+        const allSigners = Array.from(signers);
+        for (const signer of allSigners) {
+            await this.historicalService.saveBlockSignature(
+                signer.toLowerCase(),
+                height,
+                true
+            );
+        }
+        
+        // SSE client'ları için özel olarak missed durumlarını da kaydet
+        for (const [_, client] of this.sseClients) {
+            const normalizedPk = client.fpBtcPkHex.toLowerCase();
+            if (!signers.has(normalizedPk)) {
+                await this.historicalService.saveBlockSignature(
+                    normalizedPk,
+                    height,
+                    false
+                );
+            }
+        }
+        
+        // Cache boyutu kontrolü ve temizleme
+        if (this.signatureCache.size > this.MAX_LAST_N_BLOCKS) {
+            const heights = Array.from(this.signatureCache.keys()).sort((a, b) => a - b);
+            const heightToRemove = heights[0]; // En eski bloğu bul
+            
+            console.debug(`[Cache] Removing oldest block ${heightToRemove} to maintain last ${this.MAX_LAST_N_BLOCKS} blocks`);
+            this.signatureCache.delete(heightToRemove);
+            this.timestampCache.delete(heightToRemove);
+            this.processedBlocks.delete(heightToRemove);
+            
+            // Redis'ten silme - artık TTL ile otomatik silinecek
+            // await this.historicalService.deleteBlockSignature(heightToRemove);
         }
     }
 
@@ -318,49 +406,70 @@ export class FinalitySignatureService {
         const { nodeUrl, rpcUrl } = this.getNetworkConfig(params.network);
         const { fpBtcPkHex, startHeight, endHeight, lastNBlocks = this.DEFAULT_LAST_N_BLOCKS } = params;
         
-        // lastNBlocks için limit kontrolü
-        const limitedLastNBlocks = Math.min(lastNBlocks, this.MAX_LAST_N_BLOCKS);
-        
         const currentHeight = await this.babylonClient.getCurrentHeight();
         // Son bloktan bir önceki blok (finalize olmuş son blok)
         const safeHeight = currentHeight - 1;
-        
-        const actualEndHeight = limitedLastNBlocks 
-            ? safeHeight
-            : endHeight 
-                ? Math.min(endHeight, safeHeight)
-                : safeHeight;
-            
-        const actualStartHeight = limitedLastNBlocks 
-            ? safeHeight - limitedLastNBlocks + 1
-            : startHeight 
-                ? startHeight
-                : safeHeight - this.DEFAULT_LAST_N_BLOCKS + 1;
 
-        // Eğer lastNBlocks limiti aşıldıysa uyarı log'u
-        if (lastNBlocks > this.MAX_LAST_N_BLOCKS) {
-            console.warn(`[Stats] Requested lastNBlocks (${lastNBlocks}) exceeds maximum limit. Using ${this.MAX_LAST_N_BLOCKS} blocks instead.`);
+        // Cache'deki en eski ve en yeni blokları bul
+        const cachedHeights = Array.from(this.signatureCache.keys()).sort((a, b) => a - b);
+        const oldestCachedHeight = cachedHeights[0];
+        const newestCachedHeight = cachedHeights[cachedHeights.length - 1];
+        
+        let actualEndHeight = endHeight 
+            ? Math.min(endHeight, safeHeight)
+            : safeHeight;
+            
+        let actualStartHeight;
+        if (startHeight) {
+            actualStartHeight = startHeight;
+        } else if (lastNBlocks === this.DEFAULT_LAST_N_BLOCKS) {
+            // /stats endpoint için son 100 blok
+            actualStartHeight = Math.max(1, actualEndHeight - lastNBlocks + 1);
+        } else {
+            // /performance endpoint için cache'deki en eski bloktan başla
+            // Cache'de blok varsa en eski bloktan başla, yoksa son 5000 bloğun başlangıcından başla
+            actualStartHeight = oldestCachedHeight || Math.max(1, actualEndHeight - this.MAX_LAST_N_BLOCKS + 1);
         }
 
-        console.debug(`[Stats] Fetching signature stats from height ${actualStartHeight} to ${actualEndHeight}`);
+        // Sadece /stats endpoint'i için son 100 bloğu çek
+        if (lastNBlocks === this.DEFAULT_LAST_N_BLOCKS) {
+            const fetchStartHeight = Math.max(actualStartHeight, actualEndHeight - this.DEFAULT_LAST_N_BLOCKS + 1);
+            const missingHeights = [];
+            for (let height = fetchStartHeight; height <= actualEndHeight; height++) {
+                if (!this.signatureCache.has(height)) {
+                    missingHeights.push(height);
+                }
+            }
 
-        // Cache'den eksik blokları kontrol et
-        const missingHeights = [];
-        for (let height = actualStartHeight; height <= actualEndHeight; height++) {
-            if (!this.signatureCache.has(height)) {
-                missingHeights.push(height);
+            if (missingHeights.length > 0) {
+                console.debug(`[Cache] Fetching ${missingHeights.length} missing blocks for last ${this.DEFAULT_LAST_N_BLOCKS} blocks`);
+                await Promise.all(
+                    missingHeights.map(height => this.fetchAndCacheSignatures(height))
+                );
             }
         }
 
-        // Eksik blokları getir
-        if (missingHeights.length > 0) {
-            console.debug(`Fetching ${missingHeights.length} missing blocks`);
-            await Promise.all(
-                missingHeights.map(height => this.fetchAndCacheSignatures(height))
-            );
-        }
+        // İstatistikleri hesapla
+        const stats = await this.calculateStats(
+            fpBtcPkHex,
+            actualStartHeight,
+            actualEndHeight
+        );
 
-        return this.calculateStats(fpBtcPkHex, actualStartHeight, actualEndHeight);
+        // Gerçek toplam blok sayısını ve diğer metrikleri ayarla
+        stats.totalBlocks = actualEndHeight - actualStartHeight + 1;
+        stats.startHeight = actualStartHeight;
+        stats.endHeight = actualEndHeight;
+        stats.currentHeight = this.lastProcessedHeight;
+
+        // Unknown blokları yeniden hesapla
+        stats.unknownBlocks = stats.totalBlocks - (stats.signedBlocks + stats.missedBlocks);
+
+        // Success rate'i yeniden hesapla
+        const signableBlocks = stats.signedBlocks + stats.missedBlocks;
+        stats.signatureRate = signableBlocks > 0 ? (stats.signedBlocks / signableBlocks) * 100 : 0;
+
+        return stats;
     }
 
     private async calculateStats(
@@ -372,12 +481,22 @@ export class FinalitySignatureService {
         const signatureHistory: BlockSignatureInfo[] = [];
         const missedBlockHeights: number[] = [];
         let signedBlocks = 0;
+        let missedBlocks = 0;
         let unknownBlocks = 0;
         const normalizedPk = fpBtcPkHex.toLowerCase();
         const epochStats: { [key: number]: any } = {};
 
         const blocksPerEpoch = 360;
         const currentEpochStart = epochInfo.boundary - blocksPerEpoch + 1;
+
+        // Cache'de olmayan blokların sayısını başta hesapla
+        const missingBlocksCount = Array.from({ length: endHeight - startHeight + 1 }, (_, i) => startHeight + i)
+            .filter(height => !this.signatureCache.has(height))
+            .length;
+
+        if (missingBlocksCount > 0) {
+            console.debug(`[Stats] ${missingBlocksCount} blocks have no signature data in the requested range`);
+        }
         
         for (let height = startHeight; height <= endHeight; height++) {
             const signers = this.signatureCache.get(height);
@@ -385,26 +504,6 @@ export class FinalitySignatureService {
             
             const heightEpoch = epochInfo.epochNumber + Math.floor((height - currentEpochStart) / blocksPerEpoch);
 
-            if (!signers) {
-                console.warn(`[Stats] No signature data for height ${height}, marking as unknown`);
-                unknownBlocks++;
-                signatureHistory.push({
-                    height,
-                    signed: false,
-                    status: 'unknown',
-                    epochNumber: heightEpoch,
-                    timestamp
-                });
-                continue;
-            }
-
-            const hasSigned = signers.has(normalizedPk);
-            if (hasSigned) {
-                signedBlocks++;
-            } else {
-                missedBlockHeights.push(height);
-            }
-            
             if (!epochStats[heightEpoch]) {
                 const isCurrentEpoch = heightEpoch === epochInfo.epochNumber;
                 const epochStartHeight = isCurrentEpoch ? 
@@ -428,30 +527,60 @@ export class FinalitySignatureService {
 
             const currentEpochStats = epochStats[heightEpoch];
             currentEpochStats.totalBlocks++;
-            
-            if (signers === undefined) {
+
+            // Eğer blok cache'de yoksa veya imzacı listesi boşsa, unknown olarak işaretle
+            if (!signers || signers.size === 0) {
+                unknownBlocks++;
                 currentEpochStats.unknownBlocks++;
-            } else if (hasSigned) {
-                currentEpochStats.signedBlocks++;
-            } else {
-                currentEpochStats.missedBlocks++;
+                signatureHistory.push({
+                    height,
+                    signed: false,
+                    status: 'unknown',
+                    epochNumber: heightEpoch,
+                    timestamp
+                });
+                continue;
             }
 
-            const validBlocks = currentEpochStats.totalBlocks - currentEpochStats.unknownBlocks;
-            currentEpochStats.signatureRate = validBlocks > 0 
-                ? (currentEpochStats.signedBlocks / validBlocks) * 100 
-                : 0;
+            // Redis'ten yüklenen blok imzalarını kontrol et
+            const hasSigned = signers.has(normalizedPk);
+            if (hasSigned) {
+                signedBlocks++;
+                currentEpochStats.signedBlocks++;
+                signatureHistory.push({
+                    height,
+                    signed: true,
+                    status: 'signed',
+                    epochNumber: heightEpoch,
+                    timestamp
+                });
+            } else {
+                // Sadece imzacı listesi varsa ve imza yoksa missed olarak işaretle
+                missedBlocks++;
+                currentEpochStats.missedBlocks++;
+                missedBlockHeights.push(height);
+                signatureHistory.push({
+                    height,
+                    signed: false,
+                    status: 'missed',
+                    epochNumber: heightEpoch,
+                    timestamp
+                });
+            }
 
-            signatureHistory.push({
-                height,
-                signed: hasSigned,
-                status: hasSigned ? 'signed' : (signers === undefined ? 'unknown' : 'missed'),
-                epochNumber: heightEpoch,
-                timestamp
-            });
+            const signableBlocks = currentEpochStats.signedBlocks + currentEpochStats.missedBlocks;
+            currentEpochStats.signatureRate = signableBlocks > 0 
+                ? (currentEpochStats.signedBlocks / signableBlocks) * 100 
+                : 0;
         }
 
-        const validBlocks = endHeight - startHeight + 1 - unknownBlocks;
+        // Epoch istatistiklerini temizle - sadece ilgili epochları tut
+        const relevantEpochs = new Set(signatureHistory.map(s => s.epochNumber));
+        Object.keys(epochStats).forEach(epoch => {
+            if (!relevantEpochs.has(Number(epoch))) {
+                delete epochStats[Number(epoch)];
+            }
+        });
         
         return {
             fp_btc_pk_hex: fpBtcPkHex,
@@ -460,9 +589,9 @@ export class FinalitySignatureService {
             currentHeight: this.lastProcessedHeight,
             totalBlocks: endHeight - startHeight + 1,
             signedBlocks,
-            missedBlocks: validBlocks - signedBlocks,
+            missedBlocks,
             unknownBlocks,
-            signatureRate: validBlocks > 0 ? (signedBlocks / validBlocks) * 100 : 0,
+            signatureRate: 0, // getSignatureStats'da yeniden hesaplanacak
             missedBlockHeights,
             signatureHistory,
             epochStats,
@@ -669,5 +798,9 @@ export class FinalitySignatureService {
                 console.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from processed blocks cache, keeping signatures`);
             }
         }
+    }
+
+    public async getCurrentHeight(): Promise<number> {
+        return this.babylonClient.getCurrentHeight();
     }
 } 
