@@ -14,7 +14,7 @@ export class FinalitySignatureService {
     private static instance: FinalitySignatureService | null = null;
     private signatureCache: Map<number, Set<string>> = new Map();
     private timestampCache: Map<number, Date> = new Map();
-    private requestLocks: Set<number> = new Set();
+    private requestLocks: Map<string, boolean> = new Map();
     private ws: WebSocket | null = null;
     private lastProcessedHeight: number = 0;
     private isRunning: boolean = false;
@@ -31,6 +31,10 @@ export class FinalitySignatureService {
     // SSE için yeni özellikler
     private sseClients: Map<string, { res: Response; fpBtcPkHex: string; initialDataSent?: boolean }> = new Map();
     private readonly SSE_RETRY_INTERVAL = 3000;
+    private readonly FINALIZATION_DELAY = 3000; // 3 saniye bekle
+    private readonly MAX_RETRY_DELAY = 5000; // Maximum delay between retries in ms
+    private processedBlocks: Set<number> = new Set();
+    private currentBlockHeight: number = 0;
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -97,10 +101,14 @@ export class FinalitySignatureService {
 
             try {
                 const currentHeight = await this.babylonClient.getCurrentHeight();
+                this.currentBlockHeight = currentHeight;
                 
-                // Son işlenen bloktan current height'e kadar olan eksik blokları işle
-                for (let height = this.lastProcessedHeight + 1; height < currentHeight; height++) {
-                    await this.fetchAndCacheSignatures(height);
+                // Son işlenen bloktan sonraki ilk bloğu işle
+                const nextHeight = this.lastProcessedHeight + 1;
+                
+                // Eğer işlenecek yeni blok varsa ve finalize olmuşsa işle
+                if (nextHeight < currentHeight) {
+                    await this.fetchAndCacheSignatures(nextHeight);
                 }
             } catch (error) {
                 console.error('[FinalityService] Error in periodic update:', error);
@@ -118,9 +126,11 @@ export class FinalitySignatureService {
 
         try {
             const currentHeight = await this.babylonClient.getCurrentHeight();
-            // Son 100 blok yerine sadece eksik blokları işle
-            const lastProcessedBlock = this.lastProcessedHeight || (currentHeight - this.DEFAULT_LAST_N_BLOCKS);
-            const startHeight = Math.max(lastProcessedBlock, currentHeight - this.DEFAULT_LAST_N_BLOCKS);
+            this.currentBlockHeight = currentHeight;
+            
+            // Son N blok içinde kalacak şekilde başlangıç yüksekliğini hesapla
+            const startHeight = currentHeight - this.DEFAULT_LAST_N_BLOCKS;
+            this.lastProcessedHeight = startHeight - 1; // Başlangıç yüksekliğinden önceki blokları işleme
             
             console.debug(`[WebSocket] Initializing with current height: ${currentHeight}, processing from: ${startHeight}`);
 
@@ -197,48 +207,57 @@ export class FinalitySignatureService {
         this.ws.send(JSON.stringify(subscription));
     }
 
+    private async updateCurrentBlockHeight(): Promise<void> {
+        try {
+            this.currentBlockHeight = await this.babylonClient.getCurrentHeight();
+        } catch (error) {
+            console.error('[Cache] Error updating current block height:', error);
+        }
+    }
+
     private async fetchAndCacheSignatures(height: number, retryCount = 0): Promise<void> {
-        if (this.requestLocks.has(height)) {
-            console.debug(`[Cache] Request already in progress for block ${height}, skipping`);
+        const requestKey = `${height}-${retryCount}`;
+        
+        // Blok zaten işlenmişse veya cache'de varsa atla
+        if (this.processedBlocks.has(height) || this.signatureCache.has(height)) {
             return;
         }
 
-        this.requestLocks.add(height);
-        const MAX_RETRIES = 3;
-        const RETRY_DELAY = 1000;
+        // İstek zaten devam ediyorsa atla
+        if (this.requestLocks.has(requestKey)) {
+            return;
+        }
+
+        this.requestLocks.set(requestKey, true);
+        const MAX_RETRIES = 2;
+        const retryDelay = Math.min(this.MAX_RETRY_DELAY, (retryCount + 1) * 2000);
 
         try {
-            console.debug(`[Cache] Fetching signatures for finalized block ${height}`);
             const votes = await this.babylonClient.getVotesAtHeight(height);
             
             if (votes.length === 0 && retryCount < MAX_RETRIES) {
-                console.warn(`[Cache] No votes found for block ${height}, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                this.requestLocks.delete(height);
+                this.requestLocks.delete(requestKey);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
 
-            if (votes.length === 0) {
-                console.error(`[Cache] No votes found for block ${height} after ${MAX_RETRIES} attempts`);
-                this.requestLocks.delete(height);
-                return;
+            if (votes.length > 0) {
+                const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
+                await this.processBlock(height, signers);
+                this.processedBlocks.add(height);
+                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.signatureCache.size}`);
+            } else {
+                console.debug(`[Cache] No votes found for block ${height} after ${MAX_RETRIES} attempts`);
             }
-
-            const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
-            await this.processBlock(height, signers);
-            this.lastProcessedHeight = Math.max(this.lastProcessedHeight, height);
-            
-            console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.signatureCache.size}`);
         } catch (error) {
             if (retryCount < MAX_RETRIES) {
-                console.warn(`[Cache] Error processing block ${height}, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES}):`, error);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                this.requestLocks.delete(height);
+                this.requestLocks.delete(requestKey);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
             console.error(`[Cache] ❌ Error processing block ${height} after ${MAX_RETRIES} attempts:`, error);
         } finally {
-            this.requestLocks.delete(height);
+            this.requestLocks.delete(requestKey);
         }
     }
 
@@ -528,7 +547,11 @@ export class FinalitySignatureService {
         const heightEpoch = epochInfo.epochNumber + Math.floor((height - currentEpochStart) / blocksPerEpoch);
         
         // Her client için son blok bilgisini gönder
+        const sentClients = new Set<string>();
+        
         for (const [clientId, client] of this.sseClients.entries()) {
+            if (sentClients.has(clientId)) continue;
+            
             try {
                 const normalizedPk = client.fpBtcPkHex.toLowerCase();
                 const blockInfo: BlockSignatureInfo = {
@@ -540,6 +563,7 @@ export class FinalitySignatureService {
                 };
 
                 this.sendSSEEvent(clientId, 'block', blockInfo);
+                sentClients.add(clientId);
             } catch (error) {
                 console.error(`[SSE] Error broadcasting to client ${clientId}:`, error);
             }
@@ -551,17 +575,38 @@ export class FinalitySignatureService {
         try {
             // Önceki bloku işle (finalize olmuş)
             const previousHeight = height - 1;
-            if (previousHeight <= this.lastProcessedHeight) {
+            
+            // Eğer blok zaten işlenmişse veya son işlenen bloktan küçükse atla
+            if (previousHeight <= this.lastProcessedHeight || this.processedBlocks.has(previousHeight)) {
                 return;
             }
+
+            // Blokun finalize olması için bekle
+            await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));
             
             await this.fetchAndCacheSignatures(previousHeight);
             this.lastProcessedHeight = previousHeight;
             
             // SSE client'larına sadece son blok bilgisini gönder
             await this.broadcastNewBlock(previousHeight);
+
+            // Cache'i temizle
+            this.cleanupCache();
         } catch (error) {
             console.error('[WebSocket] Error processing new block:', error);
+        }
+    }
+
+    // Cache temizleme metodunu ekle
+    private cleanupCache(): void {
+        if (this.processedBlocks.size > this.MAX_CACHE_SIZE) {
+            const oldestBlocks = Array.from(this.processedBlocks).sort((a, b) => a - b).slice(0, 100);
+            oldestBlocks.forEach(height => {
+                this.processedBlocks.delete(height);
+                this.signatureCache.delete(height);
+                this.timestampCache.delete(height);
+            });
+            console.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from cache`);
         }
     }
 } 
