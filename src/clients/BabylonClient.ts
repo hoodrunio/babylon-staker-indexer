@@ -174,44 +174,6 @@ export class BabylonClient {
         }
     }
 
-    async calculateEpochForHeight(height: number): Promise<EpochInfo> {
-        // Cache'den kontrol et
-        for (const [_, epochInfo] of this.epochCache) {
-            if (height >= epochInfo.startHeight && height <= epochInfo.endHeight) {
-                return epochInfo;
-            }
-        }
-
-        try {
-            // Mevcut epoch bilgisini al
-            const currentEpoch = await this.getCurrentEpoch();
-            height = Number(height);
-
-            // Eğer height, mevcut epoch'un boundary'sinden küçükse, mevcut epoch'tayız
-            if (height <= currentEpoch.epoch_boundary) {
-                const epochInfo: EpochInfo = {
-                    epochNumber: currentEpoch.current_epoch,
-                    startHeight: currentEpoch.epoch_boundary - 360, // Önceki boundary
-                    endHeight: currentEpoch.epoch_boundary
-                };
-                this.epochCache.set(epochInfo.epochNumber, epochInfo);
-                return epochInfo;
-            } else {
-                // Sonraki epoch
-                const epochInfo: EpochInfo = {
-                    epochNumber: currentEpoch.current_epoch + 1,
-                    startHeight: currentEpoch.epoch_boundary,
-                    endHeight: currentEpoch.epoch_boundary + 99 // Sonraki boundary
-                };
-                this.epochCache.set(epochInfo.epochNumber, epochInfo);
-                return epochInfo;
-            }
-        } catch (error) {
-            console.error('Error calculating epoch:', error);
-            throw error;
-        }
-    }
-
     public async getAllFinalityProviders(network: Network = Network.MAINNET): Promise<FinalityProvider[]> {
         try {
             const response = await this.client.get('/babylon/btcstaking/v1/finality_providers');
