@@ -6,7 +6,7 @@ export class FinalitySSEManager {
     private static instance: FinalitySSEManager | null = null;
     private sseClients: Map<string, { res: Response; fpBtcPkHex: string; initialDataSent?: boolean }> = new Map();
     private readonly SSE_RETRY_INTERVAL = 3000;
-    private readonly DEFAULT_LAST_N_BLOCKS = 101;
+    private readonly DEFAULT_LAST_N_BLOCKS = 100;
 
     private constructor() {}
 
@@ -59,7 +59,7 @@ export class FinalitySSEManager {
         clientId: string,
         getSignatureStats: (params: SignatureStatsParams) => Promise<any>
     ): Promise<void> {
-        const client = this.sseClients.get(clientId);
+        const client = this.sseClients.get(clientId); 
         if (!client || client.initialDataSent) return;
 
         try {
