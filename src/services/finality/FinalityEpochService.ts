@@ -11,7 +11,7 @@ export class FinalityEpochService {
         stats: EpochStats;
         timestamp: number;
     } | null = null;
-    private readonly EPOCH_STATS_CACHE_TTL = 10000; // 10 seconds
+    private readonly EPOCHS_TO_KEEP = 14; // Keep last 14 epochs
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -40,7 +40,51 @@ export class FinalityEpochService {
             epochNumber: Number(response.current_epoch),
             boundary: Number(response.epoch_boundary)
         };
+
         return this.currentEpochInfo;
+    }
+
+    public async checkAndUpdateEpoch(currentHeight: number): Promise<void> {
+        try {
+            // Eğer cache yoksa veya mevcut yükseklik boundary'yi geçmişse
+            if (!this.currentEpochInfo || currentHeight > this.currentEpochInfo.boundary) {
+                const response = await this.babylonClient.getCurrentEpoch();
+                const newEpochInfo = {
+                    epochNumber: Number(response.current_epoch),
+                    boundary: Number(response.epoch_boundary)
+                };
+
+                // Eğer yeni bir epoch'a geçilmişse
+                if (!this.currentEpochInfo || newEpochInfo.epochNumber > this.currentEpochInfo.epochNumber) {
+                    this.currentEpochInfo = newEpochInfo;
+                    await this.cleanupOldEpochs();
+                    console.debug(`[EpochService] Epoch updated to ${this.currentEpochInfo.epochNumber} at height ${currentHeight}, boundary: ${this.currentEpochInfo.boundary}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking and updating epoch:', error);
+            throw error;
+        }
+    }
+
+    private async cleanupOldEpochs(): Promise<void> {
+        if (!this.currentEpochInfo) return;
+
+        const currentEpoch = this.currentEpochInfo.epochNumber;
+        const oldestEpochToKeep = currentEpoch - this.EPOCHS_TO_KEEP;
+
+        // Get all heights from cache
+        const heights = Array.from(this.epochCache.keys());
+
+        // Remove entries for epochs older than oldestEpochToKeep
+        for (const height of heights) {
+            const epochInfo = this.epochCache.get(height);
+            if (epochInfo && epochInfo.epochNumber < oldestEpochToKeep) {
+                this.epochCache.delete(height);
+            }
+        }
+
+        console.debug(`[EpochService] Cleaned up epochs older than ${oldestEpochToKeep}, current cache size: ${this.epochCache.size}`);
     }
 
     public async calculateEpochForHeight(height: number): Promise<EpochInfo> {
@@ -68,13 +112,14 @@ export class FinalityEpochService {
     public async updateCurrentEpochStats(
         getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
         network: Network = Network.MAINNET
-    ): Promise<void> {
+    ): Promise<EpochStats> {
         try {
             const currentEpoch = await this.getCurrentEpochInfo();
             const currentHeight = await this.babylonClient.getCurrentHeight();
             
             // Calculate epoch boundaries
             const epochStartHeight = currentEpoch.boundary - 360; // Each epoch is 360 blocks
+            const epochEndHeight = currentEpoch.boundary;
             
             // Get all finality providers
             const providers = await this.babylonClient.getAllFinalityProviders(network);
@@ -101,21 +146,28 @@ export class FinalityEpochService {
                     })
             );
 
+            // Create stats object
+            const epochStats: EpochStats = {
+                epochNumber: currentEpoch.epochNumber,
+                startHeight: epochStartHeight,
+                currentHeight,
+                endHeight: epochEndHeight,
+                providerStats,
+                timestamp: Date.now()
+            };
+
             // Save to cache
             this.currentEpochStatsCache = {
-                stats: {
-                    epochNumber: currentEpoch.epochNumber,
-                    startHeight: epochStartHeight,
-                    currentHeight,
-                    providerStats,
-                    timestamp: Date.now()
-                },
+                stats: epochStats,
                 timestamp: Date.now()
             };
 
             console.debug(`[Stats] Updated epoch ${currentEpoch.epochNumber} stats with ${providerStats.length} providers`);
+            
+            return epochStats;
         } catch (error) {
             console.error('Error updating current epoch stats:', error);
+            throw error;
         }
     }
 

@@ -75,6 +75,11 @@ export class FinalitySignatureService {
         const startHeight = currentHeight - this.DEFAULT_LAST_N_BLOCKS;
         await this.blockProcessor.initializeFromHeight(startHeight);
         
+        // Initialize epoch stats
+        await this.epochService.updateCurrentEpochStats(
+            this.getSignatureStats.bind(this)
+        );
+        
         // Start WebSocket
         await this.wsManager.start();
     }

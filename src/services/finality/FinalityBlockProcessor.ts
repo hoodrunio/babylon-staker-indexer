@@ -181,6 +181,9 @@ export class FinalityBlockProcessor {
                 return;
             }
 
+            // Check and update epoch if needed
+            await this.epochService.checkAndUpdateEpoch(height);
+
             // Check and process missing blocks
             const missingBlocks = [];
             for (let h = this.lastProcessedHeight + 1; h <= previousHeight; h++) {

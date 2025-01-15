@@ -265,7 +265,11 @@ router.get('/epoch/current/stats/:fpBtcPkHex', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
         const network = req.network || Network.MAINNET;
-        const stats = await finalityEpochService.getProviderCurrentEpochStats(fpBtcPkHex, finalitySignatureService.getSignatureStats, network);
+        const stats = await finalityEpochService.getProviderCurrentEpochStats(
+            fpBtcPkHex, 
+            finalitySignatureService.getSignatureStats.bind(finalitySignatureService), 
+            network
+        );
         return res.json(stats);
     } catch (error) {
         console.error('Error getting current epoch stats for provider:', error);
