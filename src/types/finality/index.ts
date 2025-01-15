@@ -38,14 +38,20 @@ export interface EpochInfo {
     endHeight: number;
 }
 
-export interface EpochStats {
-    totalBlocks: number;
+export interface ProviderEpochStats {
+    btcPk: string;
     signedBlocks: number;
     missedBlocks: number;
-    unknownBlocks: number;
-    signatureRate: number;
+    successRate: number;
+}
+
+export interface EpochStats {
+    epochNumber: number;
     startHeight: number;
-    endHeight: number;
+    currentHeight: number;
+    endHeight?: number;
+    timestamp: number;
+    providerStats?: ProviderEpochStats[];
 }
 
 export interface FinalityProvider {

@@ -18,7 +18,7 @@ export class FinalityHistoricalService {
     private static instance: FinalityHistoricalService | null = null;
     private cache: CacheService;
     private readonly SIGNATURE_TTL = 86400; // 24 saat
-    private readonly AGGREGATED_TTL = 604800; // 7 gün
+    private readonly AGGREGATED_TTL = 86400; // 1 day
     private readonly BATCH_SIZE = 1000; // Her batch için blok sayısı
     private readonly BLOCK_SIGNATURE_PREFIX = 'signature:block:';
     private readonly SIGNER_SIGNATURE_PREFIX = 'signature:signer:';

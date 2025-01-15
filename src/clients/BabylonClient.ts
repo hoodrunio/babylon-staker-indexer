@@ -1,6 +1,8 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import WebSocket from 'ws';
 import { EpochInfo } from '../types/finality';
+import { Network } from '../api/middleware/network-selector';
+import { FinalityProvider } from '../types/finality';
 
 interface Vote {
     fp_btc_pk_hex: string;
@@ -206,6 +208,21 @@ export class BabylonClient {
             }
         } catch (error) {
             console.error('Error calculating epoch:', error);
+            throw error;
+        }
+    }
+
+    public async getAllFinalityProviders(network: Network = Network.MAINNET): Promise<FinalityProvider[]> {
+        try {
+            const response = await this.client.get('/babylon/btcstaking/v1/finality_providers');
+            return response.data.finality_providers.map((provider: any) => ({
+                fpBtcPkHex: provider.btc_pk,
+                power: provider.power,
+                height: parseInt(provider.height),
+                description: provider.description
+            }));
+        } catch (error) {
+            console.error('Error getting all finality providers:', error);
             throw error;
         }
     }
