@@ -4,13 +4,11 @@ import { FinalityProviderService } from '../../../services/finality/FinalityProv
 import { Network } from '../../middleware/network-selector';
 import { v4 as uuidv4 } from 'uuid';
 import { FinalityEpochService } from '../../../services/finality/FinalityEpochService';
-import { FinalitySSEManager } from '../../../services/finality/FinalitySSEManager';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
 const finalityProviderService = FinalityProviderService.getInstance();
 const finalityEpochService = FinalityEpochService.getInstance();
-const finalitySSEManager = FinalitySSEManager.getInstance();
 // Get signature stats for a finality provider
 router.get('/signatures/:fpBtcPkHex/stats', async (req, res) => {
     try {
