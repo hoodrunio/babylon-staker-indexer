@@ -16,7 +16,7 @@ import { FinalityBlockProcessor } from './FinalityBlockProcessor';
 
 export class FinalitySignatureService {
     private static instance: FinalitySignatureService | null = null;
-    private readonly DEFAULT_LAST_N_BLOCKS = 101;
+    private readonly DEFAULT_LAST_N_BLOCKS = 100;
     private readonly MAX_LAST_N_BLOCKS = 5000;
     private babylonClient: BabylonClient;
     private historicalService: FinalityHistoricalService;
