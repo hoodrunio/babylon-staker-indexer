@@ -5,7 +5,6 @@ import { Network } from '../../middleware/network-selector';
 import { v4 as uuidv4 } from 'uuid';
 import { FinalityEpochService } from '../../../services/finality/FinalityEpochService';
 import { FinalitySSEManager } from '../../../services/finality/FinalitySSEManager';
-import { SignatureStatsParams } from '../../../types/finality';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
@@ -99,7 +98,7 @@ router.get('/signatures/:fpBtcPkHex/performance', async (req, res) => {
 });
 
 // SSE endpoint for real-time signature updates
-router.get('/signatures/:fpBtcPkHex/stream', (req, res) => {
+router.get('/signatures/:fpBtcPkHex/stream', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
         const network = req.network || Network.MAINNET;
@@ -108,11 +107,10 @@ router.get('/signatures/:fpBtcPkHex/stream', (req, res) => {
         console.log(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
 
         // SSE bağlantısını başlat
-        finalitySSEManager.addClient(
+        finalitySignatureService.addSSEClient(
             clientId, 
             res, 
-            fpBtcPkHex, 
-            finalitySignatureService.getSignatureStats.bind(finalitySignatureService)
+            fpBtcPkHex
         );
 
         // Client bağlantısı kapandığında cleanup yap

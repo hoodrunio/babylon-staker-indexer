@@ -1,3 +1,4 @@
+import { Response } from 'express';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { FinalityCacheManager } from './FinalityCacheManager';
 import { FinalityEpochService } from './FinalityEpochService';
@@ -238,6 +239,12 @@ export class FinalityBlockProcessor {
     }
 
     private async broadcastNewBlock(height: number): Promise<void> {
+        // Only broadcast blocks that are 2 blocks behind current height
+        const currentHeight = await this.babylonClient.getCurrentHeight();
+        if (height > currentHeight - 2) {
+            return;
+        }
+
         const signers = this.cacheManager.getSigners(height);
         const timestamp = this.cacheManager.getTimestamp(height) || new Date();
         
@@ -264,6 +271,16 @@ export class FinalityBlockProcessor {
 
             this.sseManager.broadcastBlock(blockInfo);
         }
+    }
+
+    public addSSEClient(clientId: string, res: Response, fpBtcPkHex: string): void {
+        this.sseManager.addClient(
+            clientId,
+            res,
+            fpBtcPkHex,
+            (params) => this.getSignatureStats(params),
+            this.lastProcessedHeight + 2 // Current height is lastProcessedHeight + 2
+        );
     }
 
     public getLastProcessedHeight(): number {

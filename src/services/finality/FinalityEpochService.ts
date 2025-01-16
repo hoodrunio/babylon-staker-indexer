@@ -136,10 +136,11 @@ export class FinalityEpochService {
             
             const currentEpoch = await this.getCurrentEpochInfo();
             const currentHeight = await this.babylonClient.getCurrentHeight();
+            const safeHeight = currentHeight - 2; // Process up to 2 blocks behind
             
             // Calculate epoch boundaries
             const epochStartHeight = currentEpoch.boundary - 360; // Each epoch is 360 blocks
-            const epochEndHeight = currentEpoch.boundary;
+            const epochEndHeight = Math.min(currentEpoch.boundary, safeHeight);
             
             // Get all finality providers
             const providers = await this.babylonClient.getAllFinalityProviders(network);
@@ -152,7 +153,7 @@ export class FinalityEpochService {
                         const stats = await getSignatureStats({
                             fpBtcPkHex: provider.fpBtcPkHex,
                             startHeight: epochStartHeight,
-                            endHeight: currentHeight,
+                            endHeight: epochEndHeight,
                             network
                         });
                         
@@ -170,7 +171,7 @@ export class FinalityEpochService {
             const epochStats: EpochStats = {
                 epochNumber: currentEpoch.epochNumber,
                 startHeight: epochStartHeight,
-                currentHeight,
+                currentHeight: safeHeight,
                 endHeight: epochEndHeight,
                 providerStats,
                 timestamp: Date.now()

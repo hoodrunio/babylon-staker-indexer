@@ -96,7 +96,14 @@ export class FinalitySignatureService {
     }
 
     public addSSEClient(clientId: string, res: Response, fpBtcPkHex: string): void {
-        this.sseManager.addClient(clientId, res, fpBtcPkHex, this.getSignatureStats.bind(this));
+        const currentHeight = this.blockProcessor.getLastProcessedHeight() + 2;
+        this.sseManager.addClient(
+            clientId, 
+            res, 
+            fpBtcPkHex, 
+            this.getSignatureStats.bind(this),
+            currentHeight
+        );
     }
 
     private async checkAndProcessMissingBlocks(fetchStartHeight: number, actualEndHeight: number, currentHeight: number): Promise<void> {
@@ -171,8 +178,8 @@ export class FinalitySignatureService {
         const { fpBtcPkHex, startHeight, endHeight, lastNBlocks = this.DEFAULT_LAST_N_BLOCKS } = params;
         
         const currentHeight = await this.babylonClient.getCurrentHeight();
-        // Last finalized block (one before the current block)
-        const safeHeight = currentHeight - 1;
+        // Last processed block (2 blocks behind current height)
+        const safeHeight = currentHeight - 2;
 
         let actualEndHeight = endHeight 
             ? Math.min(endHeight, safeHeight)
@@ -206,7 +213,7 @@ export class FinalitySignatureService {
         stats.totalBlocks = actualEndHeight - actualStartHeight + 1;
         stats.startHeight = actualStartHeight;
         stats.endHeight = actualEndHeight;
-        stats.currentHeight = this.blockProcessor.getLastProcessedHeight();
+        stats.currentHeight = currentHeight;
 
         // Recalculate unknown blocks
         stats.unknownBlocks = stats.totalBlocks - (stats.signedBlocks + stats.missedBlocks);

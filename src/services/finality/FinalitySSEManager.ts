@@ -25,7 +25,8 @@ export class FinalitySSEManager {
         clientId: string, 
         res: Response, 
         fpBtcPkHex: string,
-        getSignatureStats: (params: SignatureStatsParams) => Promise<any>
+        getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
+        currentHeight: number
     ): void {
         // SSE header settings
         res.writeHead(200, {
@@ -46,7 +47,7 @@ export class FinalitySSEManager {
         this.sseClients.set(clientId, { res, fpBtcPkHex, initialDataSent: false });
 
         // Send initial data - last 100 blocks
-        this.sendInitialData(clientId, getSignatureStats);
+        this.sendInitialData(clientId, getSignatureStats, currentHeight);
 
         // Cleanup on client disconnect
         res.on('close', () => {
@@ -57,15 +58,20 @@ export class FinalitySSEManager {
 
     private async sendInitialData(
         clientId: string,
-        getSignatureStats: (params: SignatureStatsParams) => Promise<any>
+        getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
+        currentHeight: number
     ): Promise<void> {
         const client = this.sseClients.get(clientId); 
         if (!client || client.initialDataSent) return;
 
         try {
+            // Calculate safe height (2 blocks behind)
+            const safeHeight = currentHeight - 2;
+
             const stats = await getSignatureStats({
                 fpBtcPkHex: client.fpBtcPkHex,
-                lastNBlocks: this.DEFAULT_LAST_N_BLOCKS,
+                startHeight: Math.max(1, safeHeight - this.DEFAULT_LAST_N_BLOCKS + 1),
+                endHeight: safeHeight,
                 network: Network.MAINNET
             });
 
