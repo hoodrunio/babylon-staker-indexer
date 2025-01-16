@@ -130,20 +130,19 @@ export class BabylonClient {
 
             const currentTime = new Date().toISOString();
             const votes = response.data.btc_pks.map((btcPk: string) => {
-                // Remove quotes if present and validate
-                const cleanPk = btcPk.replace(/^"|"$/g, '');
-                if (typeof cleanPk !== 'string' || cleanPk.length !== 64) {
-                    console.warn(`[Votes] Invalid btcPk format at height ${height}: ${cleanPk}, length: ${cleanPk?.length}`);
+                // Validate btcPk format
+                if (typeof btcPk !== 'string' || btcPk.length !== 64) {
+                    console.warn(`[Votes] Invalid btcPk format at height ${height}: ${btcPk}`);
                     return null;
                 }
                 return {
-                    fp_btc_pk_hex: cleanPk.toLowerCase(),
+                    fp_btc_pk_hex: btcPk.toLowerCase(),
                     signature: '',
                     timestamp: currentTime
                 };
             }).filter((vote: Vote | null): vote is Vote => vote !== null);
 
-            console.debug(`[Votes] Processed ${votes.length} valid votes for height ${height}`);
+            // console.debug(`[Votes] Processed ${votes.length} valid votes for height ${height}`);
             return votes;
         } catch (error) {
             if (error instanceof Error) {

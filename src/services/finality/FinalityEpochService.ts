@@ -12,6 +12,8 @@ export class FinalityEpochService {
         timestamp: number;
     } | null = null;
     private readonly EPOCHS_TO_KEEP = 14; // Keep last 14 epochs
+    private readonly statsUpdateLock: Set<string> = new Set();
+    private readonly STATS_UPDATE_INTERVAL = 60000; // 1 minute
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -113,7 +115,25 @@ export class FinalityEpochService {
         getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
         network: Network = Network.MAINNET
     ): Promise<EpochStats> {
+        const lockKey = `epoch-stats-${network}`;
+        
+        // Check if stats are being updated
+        if (this.statsUpdateLock.has(lockKey)) {
+            if (this.currentEpochStatsCache) {
+                return this.currentEpochStatsCache.stats;
+            }
+            throw new Error('Epoch stats are being updated');
+        }
+
+        // Check if cache is still valid
+        if (this.currentEpochStatsCache && 
+            Date.now() - this.currentEpochStatsCache.timestamp < this.STATS_UPDATE_INTERVAL) {
+            return this.currentEpochStatsCache.stats;
+        }
+
         try {
+            this.statsUpdateLock.add(lockKey);
+            
             const currentEpoch = await this.getCurrentEpochInfo();
             const currentHeight = await this.babylonClient.getCurrentHeight();
             
@@ -168,6 +188,8 @@ export class FinalityEpochService {
         } catch (error) {
             console.error('Error updating current epoch stats:', error);
             throw error;
+        } finally {
+            this.statsUpdateLock.delete(lockKey);
         }
     }
 

@@ -96,18 +96,18 @@ export class FinalityCacheManager {
     }
 
     public async cleanup(): Promise<void> {
-        if (this.processedBlocks.size > this.MAX_CACHE_SIZE) {
+        if (this.signatureCache.size > this.MAX_CACHE_SIZE) {
             // Find oldest blocks
-            const oldestBlocks = Array.from(this.processedBlocks)
-                .sort((a, b) => a - b)
-                .slice(0, this.processedBlocks.size - this.MIN_BLOCKS_TO_KEEP);
+            const heights = Array.from(this.signatureCache.keys()).sort((a, b) => a - b);
+            const oldestBlocks = heights.slice(0, heights.length - this.MIN_BLOCKS_TO_KEEP);
 
             if (oldestBlocks.length > 0) {
                 oldestBlocks.forEach(height => {
-                    // Keep signatures but remove from processed blocks
+                    this.signatureCache.delete(height);
+                    this.timestampCache.delete(height);
                     this.processedBlocks.delete(height);
                 });
-                console.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from processed blocks cache, keeping signatures`);
+                console.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from cache, current size: ${this.signatureCache.size}`);
             }
         }
     }

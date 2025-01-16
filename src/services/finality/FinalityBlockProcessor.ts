@@ -12,7 +12,7 @@ import {
 export class FinalityBlockProcessor {
     private static instance: FinalityBlockProcessor | null = null;
     private lastProcessedHeight: number = 0;
-    private readonly FINALIZATION_DELAY = 3000;
+    private readonly FINALIZATION_DELAY = 8000;
     private readonly MAX_RETRY_DELAY = 10000;
     private readonly MAX_RETRIES = 5;
     private readonly INITIAL_RETRY_DELAY = 2000;
@@ -23,6 +23,7 @@ export class FinalityBlockProcessor {
     private epochService: FinalityEpochService;
     private sseManager: FinalitySSEManager;
     private requestLocks: Map<string, boolean> = new Map();
+    private processingBlocks: Set<number> = new Set();
     private updateInterval: NodeJS.Timeout | null = null;
     private isRunning: boolean = false;
     private signatureService: FinalitySignatureService | null = null;
@@ -127,12 +128,25 @@ export class FinalityBlockProcessor {
         }
 
         this.requestLocks.set(requestKey, true);
+        this.processingBlocks.add(height);
+
         const retryDelay = Math.min(
             this.MAX_RETRY_DELAY,
             this.INITIAL_RETRY_DELAY * Math.pow(2, retryCount)
         );
 
         try {
+            // Get current height to ensure we're not fetching too early
+            const currentHeight = await this.babylonClient.getCurrentHeight();
+            
+            // Ensure we're at least 2 blocks behind the current height
+            if (currentHeight <= height + 2) {
+                console.debug(`[Cache] Block ${height} is too recent, waiting for finalization (current: ${currentHeight})`);
+                this.requestLocks.delete(requestKey);
+                await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));
+                return this.fetchAndCacheSignatures(height, retryCount);
+            }
+
             const votes = await this.babylonClient.getVotesAtHeight(height);
             
             // Retry if no votes on first attempt
@@ -144,24 +158,13 @@ export class FinalityBlockProcessor {
             }
 
             if (votes.length > 0) {
-                // Get existing signers from cache
-                const existingSigners = this.cacheManager.getSigners(height) || new Set<string>();
+                const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
+                await this.cacheManager.processBlock(height, signers);
                 
-                // Merge new votes with existing ones
-                const newSigners = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
-                const mergedSigners = new Set([...existingSigners, ...newSigners]);
-                
-                await this.cacheManager.processBlock(height, mergedSigners);
-                
-                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${mergedSigners.size}, cache size: ${this.cacheManager.getCacheSize()}`);
-                
-                // Broadcast if new signatures found
-                if (mergedSigners.size > existingSigners.size) {
-                    await this.broadcastNewBlock(height);
-                }
+                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.cacheManager.getCacheSize()}`);
                 
                 // Retry if new signatures found and max retries not reached
-                if (retryCount < this.MAX_RETRIES && mergedSigners.size > existingSigners.size) {
+                if (retryCount < this.MAX_RETRIES) {
                     this.requestLocks.delete(requestKey);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                     return this.fetchAndCacheSignatures(height, retryCount + 1);
@@ -179,6 +182,7 @@ export class FinalityBlockProcessor {
             console.error(`[Cache] ❌ Error processing block ${height} after ${this.MAX_RETRIES} attempts:`, error);
         } finally {
             this.requestLocks.delete(requestKey);
+            this.processingBlocks.delete(height);
         }
     }
 
@@ -217,6 +221,9 @@ export class FinalityBlockProcessor {
             await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));
             await this.fetchAndCacheSignatures(previousHeight);
             this.lastProcessedHeight = previousHeight;
+            
+            // Broadcast only last block to SSE clients
+            await this.broadcastNewBlock(previousHeight);
 
             // Update epoch stats
             await this.epochService.updateCurrentEpochStats(
@@ -272,5 +279,9 @@ export class FinalityBlockProcessor {
             throw new Error('SignatureService not initialized');
         }
         return this.signatureService.getSignatureStats(params);
+    }
+
+    public isProcessing(height: number): boolean {
+        return this.processingBlocks.has(height);
     }
 } 

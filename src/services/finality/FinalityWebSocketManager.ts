@@ -75,8 +75,9 @@ export class FinalityWebSocketManager {
                     const message = JSON.parse(data.toString());
                     if (message.result?.data?.value?.block) {
                         const height = parseInt(message.result.data.value.block.header.height);
-                        if (this.onNewBlockCallback) {
-                            await this.onNewBlockCallback(height);
+                        if (this.onNewBlockCallback && height > 2) {
+                            // Process block with 2-block delay for finalization
+                            await this.onNewBlockCallback(height - 2);
                         }
                     }
                 } catch (error) {

@@ -25,6 +25,11 @@ export class FinalitySignatureService {
     private cacheManager: FinalityCacheManager;
     private wsManager: FinalityWebSocketManager;
     private blockProcessor: FinalityBlockProcessor;
+    private missingBlocksCache: Map<string, boolean> = new Map();
+    private processingRanges: Set<string> = new Set();
+    private readonly CACHE_TTL = 60000; // 30 seconds TTL for cache
+    private readonly globalProcessedRanges: Map<string, number> = new Map();
+    private readonly missingBlocksLogCache: Map<string, number> = new Map();
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -94,6 +99,73 @@ export class FinalitySignatureService {
         this.sseManager.addClient(clientId, res, fpBtcPkHex, this.getSignatureStats.bind(this));
     }
 
+    private async checkAndProcessMissingBlocks(fetchStartHeight: number, actualEndHeight: number, currentHeight: number): Promise<void> {
+        const cacheKey = `${fetchStartHeight}-${actualEndHeight}`;
+        
+        // Check global cache first
+        const globalCacheTimestamp = this.globalProcessedRanges.get(cacheKey);
+        if (globalCacheTimestamp && Date.now() - globalCacheTimestamp < this.CACHE_TTL) {
+            return;
+        }
+
+        // Return if this range is currently being processed by another call
+        if (this.processingRanges.has(cacheKey)) {
+            return;
+        }
+
+        try {
+            this.processingRanges.add(cacheKey);
+
+            const missingHeights = [];
+            let missingCount = 0;
+            
+            for (let height = fetchStartHeight; height <= actualEndHeight; height++) {
+                if (!this.cacheManager.hasSignatureData(height) && 
+                    !this.blockProcessor.isProcessing(height) &&
+                    currentHeight > height + 2) {
+                    missingHeights.push(height);
+                    missingCount++;
+                }
+            }
+
+            if (missingCount > 0) {
+                console.debug(`[Stats] ${missingCount} blocks have no signature data in the range ${fetchStartHeight}-${actualEndHeight}`);
+                // Process blocks sequentially to avoid duplicate requests
+                for (const height of missingHeights) {
+                    await this.blockProcessor.fetchAndCacheSignatures(height);
+                }
+            }
+
+            // Update both caches
+            this.missingBlocksCache.set(cacheKey, true);
+            this.globalProcessedRanges.set(cacheKey, Date.now());
+
+            // Clean up old entries from global cache
+            const now = Date.now();
+            for (const [key, timestamp] of this.globalProcessedRanges.entries()) {
+                if (now - timestamp > this.CACHE_TTL) {
+                    this.globalProcessedRanges.delete(key);
+                }
+            }
+        } finally {
+            this.processingRanges.delete(cacheKey);
+        }
+    }
+
+    private normalizeRange(start: number, end: number): { start: number, end: number } {
+        // Normalize to 100-block intervals
+        const intervalSize = this.DEFAULT_LAST_N_BLOCKS;
+        const normalizedStart = Math.floor(start / intervalSize) * intervalSize;
+        const normalizedEnd = Math.ceil(end / intervalSize) * intervalSize;
+        return { start: normalizedStart, end: normalizedEnd };
+    }
+
+    private async batchProcessMissingBlocks(startHeight: number, endHeight: number, currentHeight: number): Promise<void> {
+        // Normalize range to reduce unique ranges
+        const { start, end } = this.normalizeRange(startHeight, endHeight);
+        await this.checkAndProcessMissingBlocks(start, end, currentHeight);
+    }
+
     public async getSignatureStats(params: SignatureStatsParams): Promise<SignatureStats> {
         const { nodeUrl, rpcUrl } = this.getNetworkConfig(params.network);
         const { fpBtcPkHex, startHeight, endHeight, lastNBlocks = this.DEFAULT_LAST_N_BLOCKS } = params;
@@ -120,19 +192,7 @@ export class FinalitySignatureService {
         // Only fetch last 100 blocks for /stats endpoint
         if (lastNBlocks === this.DEFAULT_LAST_N_BLOCKS) {
             const fetchStartHeight = Math.max(actualStartHeight, actualEndHeight - this.DEFAULT_LAST_N_BLOCKS + 1);
-            const missingHeights = [];
-            for (let height = fetchStartHeight; height <= actualEndHeight; height++) {
-                if (!this.cacheManager.hasSignatureData(height)) {
-                    missingHeights.push(height);
-                }
-            }
-
-            if (missingHeights.length > 0) {
-                console.debug(`[Cache] Fetching ${missingHeights.length} missing blocks for last ${this.DEFAULT_LAST_N_BLOCKS} blocks`);
-                await Promise.all(
-                    missingHeights.map(height => this.blockProcessor.fetchAndCacheSignatures(height))
-                );
-            }
+            await this.batchProcessMissingBlocks(fetchStartHeight, actualEndHeight, currentHeight);
         }
 
         // Calculate stats
@@ -175,13 +235,29 @@ export class FinalitySignatureService {
         const blocksPerEpoch = 360;
         const currentEpochStart = epochInfo.boundary - blocksPerEpoch + 1;
 
-        // Calculate missing blocks count
-        const missingBlocksCount = Array.from({ length: endHeight - startHeight + 1 }, (_, i) => startHeight + i)
-            .filter(height => !this.cacheManager.hasSignatureData(height))
-            .length;
+        // Check if we've logged this range recently
+        const rangeKey = `${startHeight}-${endHeight}`;
+        const lastLogTime = this.missingBlocksLogCache.get(rangeKey);
+        const shouldLog = !lastLogTime || (Date.now() - lastLogTime > this.CACHE_TTL);
 
-        if (missingBlocksCount > 0) {
-            console.debug(`[Stats] ${missingBlocksCount} blocks have no signature data in the range ${startHeight}-${endHeight}`);
+        // Calculate missing blocks only if we should log
+        if (shouldLog) {
+            const missingBlocksCount = Array.from({ length: endHeight - startHeight + 1 }, (_, i) => startHeight + i)
+                .filter(height => !this.cacheManager.hasSignatureData(height))
+                .length;
+
+            if (missingBlocksCount > 0) {
+                console.debug(`[Stats] ${missingBlocksCount} blocks have no signature data in the range ${startHeight}-${endHeight}`);
+                this.missingBlocksLogCache.set(rangeKey, Date.now());
+
+                // Clean up old cache entries
+                const now = Date.now();
+                for (const [key, timestamp] of this.missingBlocksLogCache.entries()) {
+                    if (now - timestamp > this.CACHE_TTL) {
+                        this.missingBlocksLogCache.delete(key);
+                    }
+                }
+            }
         }
         
         for (let height = startHeight; height <= endHeight; height++) {
