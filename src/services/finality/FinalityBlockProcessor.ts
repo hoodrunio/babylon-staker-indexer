@@ -144,13 +144,24 @@ export class FinalityBlockProcessor {
             }
 
             if (votes.length > 0) {
-                const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
-                await this.cacheManager.processBlock(height, signers);
+                // Get existing signers from cache
+                const existingSigners = this.cacheManager.getSigners(height) || new Set<string>();
                 
-                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.cacheManager.getCacheSize()}`);
+                // Merge new votes with existing ones
+                const newSigners = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
+                const mergedSigners = new Set([...existingSigners, ...newSigners]);
+                
+                await this.cacheManager.processBlock(height, mergedSigners);
+                
+                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${mergedSigners.size}, cache size: ${this.cacheManager.getCacheSize()}`);
+                
+                // Broadcast if new signatures found
+                if (mergedSigners.size > existingSigners.size) {
+                    await this.broadcastNewBlock(height);
+                }
                 
                 // Retry if new signatures found and max retries not reached
-                if (retryCount < this.MAX_RETRIES) {
+                if (retryCount < this.MAX_RETRIES && mergedSigners.size > existingSigners.size) {
                     this.requestLocks.delete(requestKey);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                     return this.fetchAndCacheSignatures(height, retryCount + 1);
@@ -206,9 +217,6 @@ export class FinalityBlockProcessor {
             await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));
             await this.fetchAndCacheSignatures(previousHeight);
             this.lastProcessedHeight = previousHeight;
-            
-            // Broadcast only last block to SSE clients
-            await this.broadcastNewBlock(previousHeight);
 
             // Update epoch stats
             await this.epochService.updateCurrentEpochStats(
