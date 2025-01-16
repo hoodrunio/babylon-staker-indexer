@@ -105,7 +105,7 @@ router.get('/signatures/:fpBtcPkHex/stream', async (req, res) => {
         console.log(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
 
         // SSE bağlantısını başlat
-        finalitySignatureService.addSSEClient(
+        await finalitySignatureService.addSSEClient(
             clientId, 
             res, 
             fpBtcPkHex

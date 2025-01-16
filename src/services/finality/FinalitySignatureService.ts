@@ -95,12 +95,12 @@ export class FinalitySignatureService {
         this.wsManager.stop();
     }
 
-    public addSSEClient(clientId: string, res: Response, fpBtcPkHex: string): void {
+    public async addSSEClient(clientId: string, res: Response, fpBtcPkHex: string): Promise<void> {
         const currentHeight = this.blockProcessor.getLastProcessedHeight() + 2;
-        this.sseManager.addClient(
-            clientId, 
-            res, 
-            fpBtcPkHex, 
+        await this.sseManager.addClient(
+            clientId,
+            res,
+            fpBtcPkHex,
             this.getSignatureStats.bind(this),
             currentHeight
         );

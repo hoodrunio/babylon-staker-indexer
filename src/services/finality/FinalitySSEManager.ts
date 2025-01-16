@@ -4,7 +4,12 @@ import { Network } from '../../api/middleware/network-selector';
 
 export class FinalitySSEManager {
     private static instance: FinalitySSEManager | null = null;
-    private sseClients: Map<string, { res: Response; fpBtcPkHex: string; initialDataSent?: boolean }> = new Map();
+    private sseClients: Map<string, { 
+        res: Response; 
+        fpBtcPkHex: string; 
+        initialDataSent?: boolean;
+        lastSentBlockHeight?: number;
+    }> = new Map();
     private readonly SSE_RETRY_INTERVAL = 3000;
     private readonly DEFAULT_LAST_N_BLOCKS = 100;
 
@@ -17,17 +22,23 @@ export class FinalitySSEManager {
         return FinalitySSEManager.instance;
     }
 
-    public getClients(): Map<string, { res: Response; fpBtcPkHex: string; initialDataSent?: boolean }> {
+    public getClients(): Map<string, { 
+        res: Response; 
+        fpBtcPkHex: string; 
+        initialDataSent?: boolean;
+        lastSentBlockHeight?: number;
+    }> {
         return this.sseClients;
     }
 
-    public addClient(
+    public async addClient(
         clientId: string, 
         res: Response, 
         fpBtcPkHex: string,
         getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
         currentHeight: number
-    ): void {
+    ): Promise<void> {
+        console.log(`[SSE] Adding new client ${clientId}`);
         // SSE header settings
         res.writeHead(200, {
             'Content-Type': 'text/event-stream',
@@ -43,11 +54,16 @@ export class FinalitySSEManager {
         // Set retry interval
         res.write(`retry: ${this.SSE_RETRY_INTERVAL}\n\n`);
 
-        // Save client
-        this.sseClients.set(clientId, { res, fpBtcPkHex, initialDataSent: false });
+        // Save client with all required fields
+        this.sseClients.set(clientId, { 
+            res, 
+            fpBtcPkHex, 
+            initialDataSent: false,
+            lastSentBlockHeight: undefined 
+        });
 
         // Send initial data - last 100 blocks
-        this.sendInitialData(clientId, getSignatureStats, currentHeight);
+        await this.sendInitialData(clientId, getSignatureStats, currentHeight);
 
         // Cleanup on client disconnect
         res.on('close', () => {
@@ -61,22 +77,38 @@ export class FinalitySSEManager {
         getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
         currentHeight: number
     ): Promise<void> {
+        console.log(`[SSE] Attempting to send initial data for client ${clientId}`);
         const client = this.sseClients.get(clientId); 
-        if (!client || client.initialDataSent) return;
+        
+        if (!client) {
+            console.log(`[SSE] Client ${clientId} not found`);
+            return;
+        }
+        
+        if (client.initialDataSent) {
+            console.log(`[SSE] Initial data already sent for client ${clientId}`);
+            return;
+        }
 
         try {
+            console.log(`[SSE] Current height: ${currentHeight}`);
             // Calculate safe height (2 blocks behind)
             const safeHeight = currentHeight - 2;
-
+            const startHeight = Math.max(1, safeHeight - this.DEFAULT_LAST_N_BLOCKS + 1);
+            
+            console.log(`[SSE] Fetching stats for height range: ${startHeight} - ${safeHeight}`);
             const stats = await getSignatureStats({
                 fpBtcPkHex: client.fpBtcPkHex,
-                startHeight: Math.max(1, safeHeight - this.DEFAULT_LAST_N_BLOCKS + 1),
+                startHeight,
                 endHeight: safeHeight,
                 network: Network.MAINNET
             });
 
+            console.log(`[SSE] Got stats, sending initial event to client ${clientId}`);
             this.sendEvent(clientId, 'initial', stats);
             client.initialDataSent = true;
+            client.lastSentBlockHeight = safeHeight;
+            console.log(`[SSE] Initial data sent successfully for client ${clientId}`);
         } catch (error) {
             console.error(`[SSE] Error sending initial data to client ${clientId}:`, error);
         }
@@ -96,14 +128,15 @@ export class FinalitySSEManager {
     }
 
     public broadcastBlock(blockInfo: BlockSignatureInfo): void {
-        const sentClients = new Set<string>();
-        
         for (const [clientId, client] of this.sseClients.entries()) {
-            if (sentClients.has(clientId)) continue;
-            
             try {
+                // Skip if we've already sent this block height to this client
+                if (client.lastSentBlockHeight && client.lastSentBlockHeight >= blockInfo.height) {
+                    continue;
+                }
+                
                 this.sendEvent(clientId, 'block', blockInfo);
-                sentClients.add(clientId);
+                client.lastSentBlockHeight = blockInfo.height;
             } catch (error) {
                 console.error(`[SSE] Error broadcasting to client ${clientId}:`, error);
             }
