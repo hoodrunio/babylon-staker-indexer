@@ -56,9 +56,9 @@ export class Database {
       
       console.log('Connected to MongoDB successfully');
       console.log('Database name:', this.db.name);
-      if (this.db.db) {
+      /* if (this.db.db) {
         console.log('Collections:', await this.db.db.collections());
-      }
+      } */
     } catch (error) {
       console.error('MongoDB connection error:', error);
       throw error;
