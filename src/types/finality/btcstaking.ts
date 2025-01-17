@@ -167,4 +167,13 @@ export interface DelegationResponse {
         /** Unbonding işleminin harcandığı işlem hash'i */
         spend_transaction_id?: string;
     };
+}
+
+export enum BTCDelegationStatus {
+    PENDING = 'PENDING',
+    ACTIVE = 'ACTIVE',
+    UNBONDING = 'UNBONDING',
+    UNBONDED = 'UNBONDED',
+    EXPIRED = 'EXPIRED',
+    ANY = 'ANY'
 } 
