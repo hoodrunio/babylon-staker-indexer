@@ -24,10 +24,10 @@ export class FinalityDelegationCacheManager {
     
     private readonly CACHE_TTL = {
         DELEGATIONS_INITIAL: 1800,  // 30 dakika
-        DELEGATIONS_UPDATES: 300,   // 5 dakika
+        DELEGATIONS_UPDATES: 600,   // 10 dakika
     };
 
-    private readonly UPDATE_INTERVAL = 5 * 60 * 1000; // 5 dakika
+    private readonly UPDATE_INTERVAL = 10 * 60 * 1000; // 10 dakika
     private readonly INITIAL_FETCH_LIMIT = 500;
 
     private constructor() {
@@ -142,9 +142,11 @@ export class FinalityDelegationCacheManager {
         
         try {
             let cached = await this.cache.get<PaginatedDelegations>(cacheKey);
+            const now = Date.now();
             
-            if (!cached) {
-                console.log(`Cache miss for ${cacheKey}, fetching all delegations...`);
+            // Cache yok veya son güncelleme üzerinden 30 dakika geçmişse, yeni veri çek
+            if (!cached || (now - cached.last_updated > this.CACHE_TTL.DELEGATIONS_INITIAL * 1000)) {
+                console.log(`Cache miss or expired for ${cacheKey}, fetching all delegations...`);
                 const { delegations, pagination_keys } = await this.fetchAllDelegations(fpBtcPkHex, network, fetchCallback);
                 
                 if (!delegations.length) {
@@ -155,13 +157,17 @@ export class FinalityDelegationCacheManager {
                     delegations,
                     pagination_keys,
                     total_stats: this.calculateDelegationStats(delegations),
-                    last_updated: Date.now()
+                    last_updated: now
                 };
                 
                 console.log(`Fetched ${delegations.length} total delegations with stats:`, cached.total_stats);
                 
-                await this.cache.set(cacheKey, cached, this.CACHE_TTL.DELEGATIONS_INITIAL);
+                // Cache'i sonsuz TTL ile kaydet
+                await this.cache.set(cacheKey, cached, 0);
                 this.startUpdateJob(fpBtcPkHex, network, fetchCallback);
+            } else if (now - cached.last_updated > this.CACHE_TTL.DELEGATIONS_UPDATES * 1000) {
+                // 5 dakikadan fazla zaman geçmişse arka planda güncelle
+                this.updateInBackground(fpBtcPkHex, network, fetchCallback, cached);
             }
 
             if (!cached || !cached.delegations) {
@@ -216,6 +222,48 @@ export class FinalityDelegationCacheManager {
         };
     }
 
+    private async updateInBackground(
+        fpBtcPkHex: string,
+        network: Network,
+        fetchCallback: (fpBtcPkHex: string, network: Network, pageKey?: string, pageLimit?: number) => Promise<{
+            delegations: DelegationResponse[];
+            next_key?: string;
+        }>,
+        currentCache: PaginatedDelegations
+    ) {
+        const cacheKey = this.getDelegationsCacheKey(fpBtcPkHex, network);
+        
+        try {
+            const lastKey = currentCache.pagination_keys[currentCache.pagination_keys.length - 1];
+            const newData = await fetchCallback(fpBtcPkHex, network, lastKey, 100);
+            
+            if (newData.delegations.length > 0) {
+                const updatedCache = {
+                    ...currentCache,
+                    delegations: [...currentCache.delegations, ...newData.delegations],
+                    last_updated: Date.now()
+                };
+                
+                updatedCache.total_stats = this.calculateDelegationStats(updatedCache.delegations);
+                
+                if (newData.next_key) {
+                    updatedCache.pagination_keys.push(newData.next_key);
+                }
+
+                // Cache'i sonsuz TTL ile güncelle
+                await this.cache.set(cacheKey, updatedCache, 0);
+                
+                console.log(`Background update completed for ${cacheKey}:`, {
+                    new_delegations: newData.delegations.length,
+                    total_delegations: updatedCache.delegations.length,
+                    total_amount: updatedCache.total_stats.total_amount
+                });
+            }
+        } catch (error) {
+            console.error(`Error in background update for ${cacheKey}:`, error);
+        }
+    }
+
     private startUpdateJob(
         fpBtcPkHex: string,
         network: Network,
@@ -235,31 +283,9 @@ export class FinalityDelegationCacheManager {
                 const cached = await this.cache.get<PaginatedDelegations>(cacheKey);
                 if (!cached) return;
 
-                const lastKey = cached.pagination_keys[cached.pagination_keys.length - 1];
-                const newData = await fetchCallback(fpBtcPkHex, network, lastKey, 100);
-                
-                if (newData.delegations.length > 0) {
-                    const oldStats = cached.total_stats;
-                    cached.delegations = [...cached.delegations, ...newData.delegations];
-                    cached.total_stats = this.calculateDelegationStats(cached.delegations);
-                    cached.last_updated = Date.now();
-                    
-                    if (newData.next_key) {
-                        cached.pagination_keys.push(newData.next_key);
-                    }
-
-                    /* console.log(`Updated delegations for ${fpBtcPkHex}:`, {
-                        new_delegations: newData.delegations.length,
-                        total_delegations: cached.delegations.length,
-                        old_total: oldStats.total_amount,
-                        new_total: cached.total_stats.total_amount,
-                        change: formatSatoshis(cached.total_stats.total_amount_sat - oldStats.total_amount_sat)
-                    }); */
-                    
-                    await this.cache.set(cacheKey, cached, this.CACHE_TTL.DELEGATIONS_INITIAL);
-                }
+                await this.updateInBackground(fpBtcPkHex, network, fetchCallback, cached);
             } catch (error) {
-                console.error(`Error updating delegations cache for ${cacheKey}:`, error);
+                console.error(`Error in update job for ${cacheKey}:`, error);
             }
         }, this.UPDATE_INTERVAL);
         
