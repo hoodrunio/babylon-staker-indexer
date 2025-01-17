@@ -33,40 +33,49 @@ export interface ProofOfPossessionBTC {
     babylon_sig: string;
 }
 
+export interface SignatureInfo {
+    signature_hex: string;
+    pubkey_hex: string;
+}
+
+export interface CovenantAdaptorSignatures {
+    adaptor_signature_hex: string;
+    pubkey_hex: string;
+}
+
+export interface BTCUndelegationResponse {
+    unbonding_tx_hex: string;
+    covenant_unbonding_sig_list: SignatureInfo[];
+    slashing_tx_hex: string;
+    delegator_slashing_sig_hex: string;
+    covenant_slashing_sigs: CovenantAdaptorSignatures[];
+    delegator_unbonding_info: {
+        spend_stake_tx_hex: string;
+    };
+}
+
 export interface BTCDelegation {
     staker_addr: string;
     btc_pk: string;
-    // pop?: ProofOfPossessionBTC;
     fp_btc_pk_list: string[];
     staking_time: number;
     start_height: number;
     end_height: number;
     total_sat: number;
-    staking_tx: string;
+    staking_tx_hex: string;
+    slashing_tx_hex: string;
+    delegator_slash_sig_hex: string;
+    covenant_sigs: CovenantAdaptorSignatures[];
     staking_output_idx: number;
-    slashing_tx?: string;
+    active: boolean;
+    status_desc: string;
+    unbonding_time: number;
+    undelegation_response: BTCUndelegationResponse | null;
+    params_version: number;
 }
 
 export interface BTCDelegatorDelegationsResponse {
-    dels: {
-        staker_addr: string;
-        btc_pk: string;
-        fp_btc_pk_list: string[];
-        staking_time: number;
-        start_height: number;
-        end_height: number;
-        total_sat: string;
-        staking_tx_hex: string;
-        slashing_tx_hex: string;
-        delegator_slash_sig_hex: string;
-        covenant_sigs: any[];
-        staking_output_idx: number;
-        active: boolean;
-        status_desc: string;
-        unbonding_time: number;
-        undelegation_response: any;
-        params_version: number;
-    }[];
+    dels: BTCDelegation[];
 }
 
 export interface QueryFinalityProvidersResponse {
@@ -142,4 +151,20 @@ export interface DelegationResponse {
 
     /** Delegasyonun işlem hash'inin hex formatı */
     transaction_id_hex: string;
+
+    /** Delegasyonun aktif olup olmadığı */
+    active: boolean;
+
+    /** Unbonding süresi (blok sayısı) */
+    unbonding_time: number;
+
+    /** Unbonding işlem bilgileri */
+    unbonding?: {
+        /** Unbonding işlem hash'i */
+        transaction_id: string;
+        /** Unbonding işlem hash'inin hex formatı */
+        transaction_id_hex: string;
+        /** Unbonding işleminin harcandığı işlem hash'i */
+        spend_transaction_id?: string;
+    };
 } 

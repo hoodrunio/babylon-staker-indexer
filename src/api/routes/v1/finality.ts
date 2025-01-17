@@ -4,6 +4,7 @@ import { FinalityProviderService } from '../../../services/finality/FinalityProv
 import { Network } from '../../middleware/network-selector';
 import { v4 as uuidv4 } from 'uuid';
 import { FinalityEpochService } from '../../../services/finality/FinalityEpochService';
+import { FinalityDelegationService } from '../../../services/finality/FinalityDelegationService';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
@@ -215,29 +216,18 @@ router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
             });
         }
 
-        const result = await finalityProviderService.getFinalityProviderDelegations(
+        const finalityDelegationService = FinalityDelegationService.getInstance();
+        const result = await finalityDelegationService.getFinalityProviderDelegations(
             fpBtcPkHex, 
             network,
             pageNum,
             limitNum
         );
-        
-        return res.json({
-            delegations: result.delegations,
-            metadata: {
-                count: result.delegations.length,
-                total_amount: result.total_amount,
-                total_amount_sat: result.total_amount_sat,
-                timestamp: Date.now(),
-                pagination: result.pagination
-            }
-        });
+
+        res.json(result);
     } catch (error) {
-        console.error('Error getting finality provider delegations:', error);
-        return res.status(500).json({
-            error: 'Internal server error',
-            message: error instanceof Error ? error.message : 'Unknown error'
-        });
+        console.error('Error fetching finality provider delegations:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 

@@ -5,12 +5,9 @@ import {
     FinalityProvider, 
     FinalityProviderPower,
     QueryFinalityProvidersResponse,
-    QueryFinalityProviderResponse,
-    QueryFinalityProviderDelegationsResponse,
-    DelegationResponse
+    QueryFinalityProviderResponse
 } from '../../types/finality/btcstaking';
 import { formatSatoshis, calculatePowerPercentage } from '../../utils/util';
-import { getTxHash } from '../../utils/generate-tx-hash';
 
 interface CacheEntry<T> {
     data: T;
@@ -27,7 +24,6 @@ export class FinalityProviderService {
     private readonly CACHE_TTL = {
         PROVIDERS_LIST: 60, // 1 dakika
         PROVIDER_DETAILS: 300, // 5 dakika
-        DELEGATIONS: 600, // 10 dakika
         POWER: 300, // 30 saniye
         TOTAL_POWER: 300 // 30 saniye
     };
@@ -63,32 +59,26 @@ export class FinalityProviderService {
         fetchFn: () => Promise<T>
     ): Promise<T> {
         try {
-            // Cache'den veriyi al
             const cachedEntry = await this.cache.get<CacheEntry<T>>(cacheKey);
 
-            // Revalidation işlemi zaten devam ediyorsa, yeni bir istek başlatma
             if (this.revalidationPromises.has(cacheKey)) {
                 if (cachedEntry) {
                     return cachedEntry.data;
                 }
-                // Cache yoksa, devam eden revalidation'ı bekle
                 return this.revalidationPromises.get(cacheKey)!;
             }
 
             const now = Date.now();
 
-            // Cache var ve TTL dolmamışsa direkt dön
             if (cachedEntry && (now - cachedEntry.lastFetched) < ttl * 1000) {
                 return cachedEntry.data;
             }
 
-            // Cache var ama TTL dolmuşsa, eski veriyi dön ve arka planda güncelle
             if (cachedEntry) {
                 this.revalidateInBackground(cacheKey, fetchFn, ttl);
                 return cachedEntry.data;
             }
 
-            // Cache yoksa, yeni veriyi getir
             const revalidationPromise = this.fetchAndCache(cacheKey, fetchFn, ttl);
             this.revalidationPromises.set(cacheKey, revalidationPromise);
 
@@ -198,130 +188,12 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProviderDelegations(
-        fpBtcPkHex: string, 
-        network: Network = Network.MAINNET,
-        page: number = 1,
-        limit: number = 10
-    ): Promise<{
-        delegations: DelegationResponse[];
-        pagination: {
-            total_count: number;
-            total_pages: number;
-            current_page: number;
-            has_next: boolean;
-            has_previous: boolean;
-            next_page: number | null;
-            previous_page: number | null;
-        };
-        total_amount: string;
-        total_amount_sat: number;
-    }> {
-        const { nodeUrl } = this.getNetworkConfig(network);
-        const cacheKey = `fp:delegations:${fpBtcPkHex}`;
-
-        return this.getWithRevalidate(
-            cacheKey,
-            this.CACHE_TTL.DELEGATIONS,
-            async () => {
-                // If not in cache, fetch all delegations
-                let allDelegations: DelegationResponse[] = [];
-                let nextKey: string | null = null;
-
-                do {
-                    // Construct URL with pagination parameters
-                    const url = new URL(`${nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/delegations`);
-                    
-                    // Add pagination parameters
-                    url.searchParams.append('pagination.limit', '100'); // Fetch maximum allowed per request
-                    if (nextKey) {
-                        url.searchParams.append('pagination.key', nextKey);
-                    }
-
-                    const response = await fetch(url.toString());
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    const data = await response.json() as QueryFinalityProviderDelegationsResponse;
-                    
-                    // Process current page delegations
-                    const pageDelegations = data.btc_delegator_delegations?.map(delegation => {
-                        if (!delegation || !delegation.dels || delegation.dels.length === 0) {
-                            return null;
-                        }
-
-                        const del = delegation.dels[0];
-                        const totalSat = Number(del.total_sat);
-                        if (isNaN(totalSat)) {
-                            console.warn(`Invalid total_sat value for delegation:`, del);
-                            return null;
-                        }
-
-                        const delegationResponse: DelegationResponse = {
-                            staker_address: del.staker_addr || '',
-                            status: del.status_desc || '',
-                            btc_pk_hex: del.btc_pk || '',
-                            amount: formatSatoshis(totalSat),
-                            amount_sat: totalSat,
-                            start_height: Number(del.start_height) || 0,
-                            end_height: Number(del.end_height) || 0,
-                            duration: Number(del.staking_time) || 0,
-                            transaction_id_hex: getTxHash(del.staking_tx_hex || '', false),
-                            transaction_id: del.staking_tx_hex || ''
-                        };
-
-                        return delegationResponse;
-                    }).filter((d): d is DelegationResponse => d !== null && d.amount_sat > 0) || [];
-
-                    // Add current page delegations to all delegations
-                    allDelegations = [...allDelegations, ...pageDelegations];
-
-                    // Get next page key from pagination response
-                    nextKey = data.pagination?.next_key || null;
-
-                    // Log progress
-                    console.log(`Fetched ${pageDelegations.length} delegations, total so far: ${allDelegations.length}`);
-
-                } while (nextKey); // Continue until no more pages
-
-                console.log(`Finished fetching all delegations. Total count: ${allDelegations.length}`);
-
-                // Calculate pagination info
-                const totalCount = allDelegations.length;
-                const totalPages = Math.ceil(totalCount / limit);
-                const currentPage = Math.min(Math.max(1, page), totalPages);
-                const startIndex = (currentPage - 1) * limit;
-                const endIndex = startIndex + limit;
-
-                // Calculate total amount from all delegations
-                const totalAmountSat = allDelegations.reduce((sum, d) => sum + d.amount_sat, 0);
-
-                // Return paginated result with pagination info and total amounts
-                return {
-                    delegations: allDelegations.slice(startIndex, endIndex),
-                    pagination: {
-                        total_count: totalCount,
-                        total_pages: totalPages,
-                        current_page: currentPage,
-                        has_next: currentPage < totalPages,
-                        has_previous: currentPage > 1,
-                        next_page: currentPage < totalPages ? currentPage + 1 : null,
-                        previous_page: currentPage > 1 ? currentPage - 1 : null
-                    },
-                    total_amount: formatSatoshis(totalAmountSat),
-                    total_amount_sat: totalAmountSat
-                };
-            }
-        );
-    }
-
     public async getFinalityProviderPower(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProviderPower> {
         const cacheKey = `fp:power:${fpBtcPkHex}:${network}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.POWER,
             async () => {
-                // Provider'ın power'ını ve toplam power'ı paralel olarak al
                 const [powerResponse, totalPower] = await Promise.all([
                     fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/finality/v1/finality_providers/${fpBtcPkHex}/power`),
                     this.getTotalVotingPower(network)

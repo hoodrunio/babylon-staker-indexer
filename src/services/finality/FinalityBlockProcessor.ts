@@ -109,9 +109,22 @@ export class FinalityBlockProcessor {
 
         if (missingBlocks.length > 0) {
             console.debug(`[BlockProcessor] Processing ${missingBlocks.length} missing blocks`);
-            await Promise.all(
-                missingBlocks.map(height => this.fetchAndCacheSignatures(height))
-            );
+            
+            // Batch size for parallel processing
+            const BATCH_SIZE = 10;
+            const batches = [];
+            
+            // Create batches of missing blocks
+            for (let i = 0; i < missingBlocks.length; i += BATCH_SIZE) {
+                batches.push(missingBlocks.slice(i, i + BATCH_SIZE));
+            }
+
+            // Process batches in parallel
+            for (const batch of batches) {
+                await Promise.all(
+                    batch.map(height => this.fetchAndCacheSignatures(height))
+                );
+            }
         }
     }
 

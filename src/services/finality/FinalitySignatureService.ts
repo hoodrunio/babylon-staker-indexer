@@ -137,9 +137,21 @@ export class FinalitySignatureService {
 
             if (missingCount > 0) {
                 console.debug(`[Stats] ${missingCount} blocks have no signature data in the range ${fetchStartHeight}-${actualEndHeight}`);
-                // Process blocks sequentially to avoid duplicate requests
-                for (const height of missingHeights) {
-                    await this.blockProcessor.fetchAndCacheSignatures(height);
+                
+                // Batch size for parallel processing
+                const BATCH_SIZE = 10;
+                const batches = [];
+                
+                // Create batches of missing blocks
+                for (let i = 0; i < missingHeights.length; i += BATCH_SIZE) {
+                    batches.push(missingHeights.slice(i, i + BATCH_SIZE));
+                }
+
+                // Process batches in parallel
+                for (const batch of batches) {
+                    await Promise.all(
+                        batch.map(height => this.blockProcessor.fetchAndCacheSignatures(height))
+                    );
                 }
             }
 
