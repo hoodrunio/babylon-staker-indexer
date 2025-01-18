@@ -172,7 +172,6 @@ export interface DelegationResponse {
 export enum BTCDelegationStatus {
     PENDING = 'PENDING',
     ACTIVE = 'ACTIVE',
-    UNBONDING = 'UNBONDING',
     UNBONDED = 'UNBONDED',
     EXPIRED = 'EXPIRED',
     ANY = 'ANY'

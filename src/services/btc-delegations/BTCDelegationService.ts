@@ -31,11 +31,11 @@ export class BTCDelegationService {
     private updateJobs: Map<string, NodeJS.Timeout> = new Map();
     
     private readonly CACHE_TTL = {
-        STATUS_DELEGATIONS: 300,  // 5 dakika
-        SINGLE_DELEGATION: 60,    // 1 dakika
+        STATUS_DELEGATIONS: 0,  // Sonsuz TTL
+        SINGLE_DELEGATION: 600,    // 10 dakika
     };
 
-    private readonly UPDATE_INTERVAL = 5 * 60 * 1000; // 5 dakika
+    private readonly UPDATE_INTERVAL = 10 * 60 * 1000; // 1 dakika
 
     private constructor() {
         if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
@@ -289,9 +289,9 @@ export class BTCDelegationService {
         const cacheKey = this.getStatusCacheKey(status, network);
         
         if (this.updateJobs.has(cacheKey)) {
-            clearInterval(this.updateJobs.get(cacheKey)!);
+            return;
         }
-        
+
         const intervalId = setInterval(async () => {
             try {
                 const cached = await this.cache.get<StatusDelegationsCache>(cacheKey);
@@ -301,30 +301,39 @@ export class BTCDelegationService {
                 const newData = await this.fetchDelegationsByStatus(status, network, lastKey);
                 
                 if (newData.delegations.length > 0) {
-                    const oldStats = cached.total_stats;
-                    cached.delegations = [...cached.delegations, ...newData.delegations];
-                    
-                    const totalAmountSat = cached.delegations.reduce((sum, d) => sum + d.amount_sat, 0);
-                    cached.total_stats = {
-                        total_amount: formatSatoshis(totalAmountSat),
-                        total_amount_sat: totalAmountSat
-                    };
-                    
-                    cached.last_updated = Date.now();
-                    
-                    if (newData.next_key) {
-                        cached.pagination_keys.push(newData.next_key);
-                    }
+                    const existingTxIds = new Set(cached.delegations.map(d => d.transaction_id));
+                    const newUniqueDelegations = newData.delegations.filter(d => !existingTxIds.has(d.transaction_id));
 
-                    console.log(`Updated ${status} delegations:`, {
-                        new_delegations: newData.delegations.length,
-                        total_delegations: cached.delegations.length,
-                        old_total: oldStats.total_amount,
-                        new_total: cached.total_stats.total_amount,
-                        change: formatSatoshis(cached.total_stats.total_amount_sat - oldStats.total_amount_sat)
-                    });
-                    
-                    await this.cache.set(cacheKey, cached, this.CACHE_TTL.STATUS_DELEGATIONS);
+                    if (newUniqueDelegations.length > 0) {
+                        const oldStats = cached.total_stats;
+                        cached.delegations = [...cached.delegations, ...newUniqueDelegations];
+                        
+                        const totalAmountSat = cached.delegations.reduce((sum, d) => sum + d.amount_sat, 0);
+                        cached.total_stats = {
+                            total_amount: formatSatoshis(totalAmountSat),
+                            total_amount_sat: totalAmountSat
+                        };
+                        
+                        cached.last_updated = Date.now();
+                        
+                        if (newData.next_key) {
+                            cached.pagination_keys.push(newData.next_key);
+                        }
+
+                        console.log(`Updated ${status} delegations:`, {
+                            new_unique_delegations: newUniqueDelegations.length,
+                            total_delegations: cached.delegations.length,
+                            old_total: oldStats.total_amount,
+                            new_total: cached.total_stats.total_amount,
+                            change: formatSatoshis(cached.total_stats.total_amount_sat - oldStats.total_amount_sat)
+                        });
+                        
+                        await this.cache.set(cacheKey, cached, this.CACHE_TTL.STATUS_DELEGATIONS);
+                    } else {
+                        console.log(`No new unique delegations found for ${status}`);
+                    }
+                } else {
+                    console.log(`No new delegations found for ${status}`);
                 }
             } catch (error) {
                 console.error(`Error updating delegations cache for ${cacheKey}:`, error);

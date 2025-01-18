@@ -24,7 +24,7 @@ export class FinalityDelegationCacheManager {
     
     private readonly CACHE_TTL = {
         DELEGATIONS_INITIAL: 1800,  // 30 dakika
-        DELEGATIONS_UPDATES: 600,   // 10 dakika
+        DELEGATIONS_UPDATES: 100,   // 10 dakika
     };
 
     private readonly UPDATE_INTERVAL = 10 * 60 * 1000; // 10 dakika
@@ -47,9 +47,9 @@ export class FinalityDelegationCacheManager {
 
     private calculateDelegationStats(delegations: DelegationResponse[]) {
         const stats = delegations.reduce((acc, del) => {
-            if (del.active) {
+            if (del.status === 'ACTIVE' && del.active) {
                 acc.active_amount_sat += del.amount_sat;
-            } else if (del.unbonding) {
+            } else if (del.status === 'UNBONDING' || del.unbonding) {
                 acc.unbonding_amount_sat += del.amount_sat;
             }
             acc.total_amount_sat += del.amount_sat;
@@ -58,6 +58,17 @@ export class FinalityDelegationCacheManager {
             total_amount_sat: 0,
             active_amount_sat: 0,
             unbonding_amount_sat: 0
+        });
+
+        console.log('Delegation Stats:', {
+            total_delegations: delegations.length,
+            active_delegations: delegations.filter(d => d.status === 'ACTIVE' && d.active).length,
+            unbonding_delegations: delegations.filter(d => d.status === 'UNBONDED' || d.unbonding).length,
+            stats: {
+                total: formatSatoshis(stats.total_amount_sat),
+                active: formatSatoshis(stats.active_amount_sat),
+                unbonding: formatSatoshis(stats.unbonding_amount_sat)
+            }
         });
 
         return {
@@ -238,26 +249,36 @@ export class FinalityDelegationCacheManager {
             const newData = await fetchCallback(fpBtcPkHex, network, lastKey, 100);
             
             if (newData.delegations.length > 0) {
-                const updatedCache = {
-                    ...currentCache,
-                    delegations: [...currentCache.delegations, ...newData.delegations],
-                    last_updated: Date.now()
-                };
-                
-                updatedCache.total_stats = this.calculateDelegationStats(updatedCache.delegations);
-                
-                if (newData.next_key) {
-                    updatedCache.pagination_keys.push(newData.next_key);
-                }
+                // Transaction ID'ye göre unique delegasyonları belirle
+                const existingTxIds = new Set(currentCache.delegations.map(d => d.transaction_id));
+                const newUniqueDelegations = newData.delegations.filter(d => !existingTxIds.has(d.transaction_id));
 
-                // Cache'i sonsuz TTL ile güncelle
-                await this.cache.set(cacheKey, updatedCache, 0);
-                
-                console.log(`Background update completed for ${cacheKey}:`, {
-                    new_delegations: newData.delegations.length,
-                    total_delegations: updatedCache.delegations.length,
-                    total_amount: updatedCache.total_stats.total_amount
-                });
+                if (newUniqueDelegations.length > 0) {
+                    const updatedCache = {
+                        ...currentCache,
+                        delegations: [...currentCache.delegations, ...newUniqueDelegations],
+                        last_updated: Date.now()
+                    };
+                    
+                    updatedCache.total_stats = this.calculateDelegationStats(updatedCache.delegations);
+                    
+                    if (newData.next_key) {
+                        updatedCache.pagination_keys.push(newData.next_key);
+                    }
+
+                    // Cache'i sonsuz TTL ile güncelle
+                    await this.cache.set(cacheKey, updatedCache, 0);
+                    
+                    console.log(`Background update completed for ${cacheKey}:`, {
+                        new_unique_delegations: newUniqueDelegations.length,
+                        total_delegations: updatedCache.delegations.length,
+                        total_amount: updatedCache.total_stats.total_amount,
+                        active_amount: updatedCache.total_stats.active_amount,
+                        unbonding_amount: updatedCache.total_stats.unbonding_amount
+                    });
+                } else {
+                    console.log(`No new unique delegations found for ${cacheKey}`);
+                }
             }
         } catch (error) {
             console.error(`Error in background update for ${cacheKey}:`, error);
