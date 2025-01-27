@@ -1,6 +1,5 @@
-import { Network } from '../../api/middleware/network-selector';
+import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
-import { CacheService } from '../CacheService';
 import { 
     BTCDelegation,
     DelegationResponse,
@@ -8,44 +7,65 @@ import {
 } from '../../types/finality/btcstaking';
 import { formatSatoshis } from '../../utils/util';
 import { getTxHash } from '../../utils/generate-tx-hash';
-
-interface CacheEntry<T> {
-    data: T;
-    lastFetched: number;
-}
-
-interface StatusDelegationsCache {
-    delegations: DelegationResponse[];
-    pagination_keys: string[];
-    total_stats: {
-        total_amount: string;
-        total_amount_sat: number;
+import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
+import { extractAddressesFromTransaction } from '../../utils/btc-transaction';
+interface ChainDelegationResponse {
+    btc_delegations: BTCDelegation[];
+    pagination?: {
+        next_key?: string;
     };
-    last_updated: number;
 }
 
 export class BTCDelegationService {
     private static instance: BTCDelegationService | null = null;
-    private babylonClient: BabylonClient;
-    private cache: CacheService;
-    private updateJobs: Map<string, NodeJS.Timeout> = new Map();
-    
-    private readonly CACHE_TTL = {
-        STATUS_DELEGATIONS: 0,  // Sonsuz TTL
-        SINGLE_DELEGATION: 600,    // 10 dakika
-    };
-
-    private readonly UPDATE_INTERVAL = 10 * 60 * 1000; // 1 dakika
+    private babylonClients: Map<Network, BabylonClient>;
+    private readonly SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    private delegationModel: typeof NewBTCDelegation;
+    private isSyncing = false;
 
     private constructor() {
-        if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
-            throw new Error('BABYLON_NODE_URL and BABYLON_RPC_URL environment variables must be set');
+        this.babylonClients = new Map();
+        this.delegationModel = NewBTCDelegation;
+        
+        // Her network için client oluşturmayı dene
+        try {
+            this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
+            console.log('[Network] Testnet client initialized successfully');
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('Missing configuration')) {
+                console.log('[Network] Testnet is not configured');
+            } else {
+                console.error('[Network] Failed to initialize testnet client:', error);
+            }
         }
-        this.babylonClient = BabylonClient.getInstance(
-            process.env.BABYLON_NODE_URL,
-            process.env.BABYLON_RPC_URL
-        );
-        this.cache = CacheService.getInstance();
+
+        try {
+            this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
+            console.log('[Network] Mainnet client initialized successfully');
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('Missing configuration')) {
+                console.log('[Network] Mainnet is not configured');
+            } else {
+                console.error('[Network] Failed to initialize mainnet client:', error);
+            }
+        }
+
+        if (this.babylonClients.size === 0) {
+            throw new Error('No network configurations available. Please configure at least one network (testnet or mainnet).');
+        }
+        
+        // İlk senkronizasyonu başlat
+       /*  const networks = Array.from(this.babylonClients.keys());
+        console.log(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
+        
+        for (const network of networks) {
+            this.syncDelegations(network).catch(err => 
+                console.error(`[${network}] Error in initial sync:`, err)
+            );
+        } */
+        
+        // Periyodik senkronizasyonu başlat
+        //this.startPeriodicSync();
     }
 
     public static getInstance(): BTCDelegationService {
@@ -55,65 +75,223 @@ export class BTCDelegationService {
         return BTCDelegationService.instance;
     }
 
+    private getBabylonClient(network: Network): BabylonClient {
+        const client = this.babylonClients.get(network);
+        if (!client) {
+            throw new Error(`No BabylonClient instance found for network: ${network}`);
+        }
+        return client;
+    }
+
     private getNetworkConfig(network: Network = Network.MAINNET) {
+        const client = this.getBabylonClient(network);
+        const baseUrl = client.getBaseUrl();
+        
+        if (!baseUrl) {
+            throw new Error(`Missing configuration for ${network} network`);
+        }
+
         return {
-            nodeUrl: network === Network.MAINNET ? process.env.BABYLON_NODE_URL : process.env.BABYLON_TESTNET_NODE_URL,
-            rpcUrl: network === Network.MAINNET ? process.env.BABYLON_RPC_URL : process.env.BABYLON_TESTNET_RPC_URL
+            nodeUrl: baseUrl,
+            rpcUrl: baseUrl
         };
     }
 
-    private processDelegation(del: BTCDelegation): DelegationResponse | null {
-        if (!del) return null;
+    private async startPeriodicSync() {
+        let isPeriodicSyncRunning = false;
 
-        const totalSat = Number(del.total_sat);
-        if (isNaN(totalSat)) {
-            console.warn(`Invalid total_sat value for delegation:`, del);
+        setInterval(async () => {
+            if (isPeriodicSyncRunning) {
+                console.log('[Network] Previous periodic sync still running, skipping...');
+                return;
+            }
+
+            try {
+                isPeriodicSyncRunning = true;
+                const networks = Array.from(this.babylonClients.keys());
+                console.log(`[Network] Starting periodic delegation sync for configured networks: ${networks.join(', ')}`);
+                
+                for (const network of networks) {
+                    if (this.isSyncing) {
+                        console.log(`[${network}] Manual sync in progress, skipping periodic sync...`);
+                        continue;
+                    }
+                    await this.syncDelegations(network).catch(err => 
+                        console.error(`[${network}] Error in periodic sync:`, err)
+                    );
+                }
+            } catch (error) {
+                console.error('[Network] Error in periodic delegation sync:', error);
+            } finally {
+                isPeriodicSyncRunning = false;
+            }
+        }, this.SYNC_INTERVAL);
+    }
+
+    private async syncDelegations(network: Network) {
+        // Senkronizasyon zaten çalışıyorsa, yeni bir senkronizasyon başlatma
+        if (this.isSyncing) {
+            console.log(`[${network}] Sync already in progress, skipping...`);
+            return;
+        }
+
+        try {
+            this.isSyncing = true;
+            console.log(`[${network}] Starting delegation sync...`);
+            
+            const statuses = Object.values(BTCDelegationStatus);
+            let totalDelegations = 0;
+            let totalCreated = 0;
+            let totalUpdated = 0;
+
+            const BATCH_SIZE = 100;
+            
+            for (const status of statuses) {
+                const chainDelegations = await this.fetchDelegationsFromChain(status, network);
+                if (!chainDelegations || chainDelegations.length === 0) {
+                    console.log(`[${network}] No delegations found with status ${status}`);
+                    continue;
+                }
+
+                totalDelegations += chainDelegations.length;
+                console.log(`[${network}] Found ${chainDelegations.length} delegations with status ${status}`);
+                
+                // Process in larger batches for better performance
+                for (let i = 0; i < chainDelegations.length; i += BATCH_SIZE) {
+                    const batch = chainDelegations.slice(i, i + BATCH_SIZE);
+                    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+                    const totalBatches = Math.ceil(chainDelegations.length / BATCH_SIZE);
+                    
+                    console.log(`[${network}] Processing batch ${batchNumber}/${totalBatches} for status ${status}`);
+                    
+                    const batchResults = await this.processBatch(batch, network);
+                    
+                    totalCreated += batchResults.created || 0;
+                    totalUpdated += batchResults.updated || 0;
+
+                    if (Object.keys(batchResults).length > 0) {
+                        console.log(`[${network}] Batch ${batchNumber}/${totalBatches} results:`, batchResults);
+                    }
+                }
+            }
+            
+            console.log(`[${network}] Sync completed:`, {
+                totalDelegationsFound: totalDelegations,
+                newDelegationsCreated: totalCreated,
+                delegationsUpdated: totalUpdated
+            });
+        } catch (error) {
+            console.error(`[${network}] Error syncing delegations:`, error);
+        } finally {
+            this.isSyncing = false;
+        }
+    }
+
+    private async processDelegation(del: BTCDelegation): Promise<DelegationResponse | null> {
+        if (!del) {
+            console.warn('Delegation is null');
             return null;
         }
 
-        const response: DelegationResponse = {
-            staker_address: del.staker_addr || '',
-            status: del.status_desc || '',
-            btc_pk_hex: del.btc_pk || '',
-            amount: formatSatoshis(totalSat),
-            amount_sat: totalSat,
-            start_height: Number(del.start_height) || 0,
-            end_height: Number(del.end_height) || 0,
-            duration: Number(del.staking_time) || 0,
-            transaction_id_hex: getTxHash(del.staking_tx_hex || '', false),
-            transaction_id: del.staking_tx_hex || '',
-            active: del.active,
-            unbonding_time: del.unbonding_time
-        };
+        try {
+            console.log('Processing delegation with staking_tx_hex:', del.staking_tx_hex);
+            let senderAddress = '';
+            try {
+                const addresses = await extractAddressesFromTransaction(del.staking_tx_hex);
+                console.log('Extracted addresses:', addresses);
+                senderAddress = addresses.sender || '';
+            } catch (error) {
+                console.error('Failed to extract sender address from staking transaction:', error);
+                console.error('Transaction hex that failed:', del.staking_tx_hex);
+                return null;
+            }
 
-        if (del.undelegation_response) {
-            response.unbonding = {
-                transaction_id: del.undelegation_response.unbonding_tx_hex,
-                transaction_id_hex: getTxHash(del.undelegation_response.unbonding_tx_hex || '', false),
-                spend_transaction_id: del.undelegation_response.delegator_unbonding_info?.spend_stake_tx_hex
+            const totalSat = Number(del.total_sat);
+            if (isNaN(totalSat)) {
+                console.warn(`Invalid total_sat value for delegation:`, del);
+                return null;
+            }
+
+            return {
+                staker_address: del.staker_addr || '',
+                stakerBtcAddress: senderAddress || '',
+                status: del.status_desc || '',
+                btc_pk_hex: del.btc_pk || '',
+                amount: formatSatoshis(totalSat),
+                amount_sat: totalSat,
+                start_height: Number(del.start_height) || 0,
+                end_height: Number(del.end_height) || 0,
+                duration: Number(del.staking_time) || 0,
+                transaction_id_hex: getTxHash(del.staking_tx_hex || '', false),
+                transaction_id: del.staking_tx_hex || '',
+                active: del.active,
+                unbonding_time: del.unbonding_time,
+                unbonding: del.undelegation_response ? {
+                    transaction_id: del.undelegation_response.unbonding_tx_hex,
+                    transaction_id_hex: getTxHash(del.undelegation_response.unbonding_tx_hex || '', false)
+                } : undefined,
+                params_version: del.params_version,
+                finality_provider_btc_pks_hex: del.fp_btc_pk_list || []
             };
+        } catch (error) {
+            console.error('Error processing delegation:', error);
+            return null;
         }
-
-        return response;
     }
 
-    private getStatusCacheKey(status: BTCDelegationStatus, network: Network): string {
-        return `btc:delegations:status:${status}:${network}`;
+    private async processBatch(batch: DelegationResponse[], network: Network) {
+        const results = await Promise.allSettled(
+            batch.map(async (chainDel) => {
+                if (!chainDel?.transaction_id_hex) {
+                    return { type: 'error', error: 'Missing transaction_id_hex' };
+                }
+
+                try {
+                    const existingDel = await this.delegationModel.findOne({
+                        $or: [
+                            { stakingTxHex: chainDel.transaction_id },
+                            { stakingTxIdHex: chainDel.transaction_id_hex }
+                        ],
+                        networkType: network.toLowerCase()
+                    });
+
+                    if (!existingDel) {
+                        const result = await this.createDelegationFromChainData(chainDel, network);
+                        return { type: 'created', id: chainDel.transaction_id_hex };
+                    } else if (existingDel.state !== chainDel.status) {
+                        await this.updateDelegationState(chainDel.transaction_id_hex, chainDel.status, network);
+                        return { type: 'updated', id: chainDel.transaction_id_hex };
+                    }
+                    return { type: 'unchanged', id: chainDel.transaction_id_hex };
+                } catch (error) {
+                    return { 
+                        type: 'error', 
+                        id: chainDel.transaction_id_hex,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    };
+                }
+            })
+        );
+
+        const summary = results.reduce((acc, result) => {
+            if (result.status === 'fulfilled') {
+                acc[result.value.type] = (acc[result.value.type] || 0) + 1;
+            }
+            return acc;
+        }, {} as Record<string, number>);
+
+        return summary;
     }
 
-    private getDelegationCacheKey(stakingTxHash: string, network: Network): string {
-        return `btc:delegation:${stakingTxHash}:${network}`;
-    }
-
-    private async fetchDelegationsByStatus(
+    private async fetchDelegationsFromChain(
         status: BTCDelegationStatus,
         network: Network,
         pageKey?: string,
-        pageLimit: number = 100
-    ): Promise<{
-        delegations: DelegationResponse[];
-        next_key?: string;
-    }> {
+        pageLimit: number = 100,
+        retryCount: number = 0
+    ): Promise<DelegationResponse[]> {
+        const maxRetries = 5;
+        const retryDelay = (retryCount: number) => Math.min(1000 * Math.pow(2, retryCount), 10000); // exponential backoff
         const { nodeUrl } = this.getNetworkConfig(network);
         const url = new URL(`${nodeUrl}/babylon/btcstaking/v1/btc_delegations/${status}`);
         
@@ -122,238 +300,276 @@ export class BTCDelegationService {
             url.searchParams.append('pagination.key', pageKey);
         }
 
-        const response = await fetch(url.toString());
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        if (!pageKey) {
+            console.log(`[${network}] Fetching ${status} delegations...`);
         }
 
-        const data = await response.json() as {
-            btc_delegations?: BTCDelegation[];
-            pagination?: {
-                next_key?: string;
-            };
-        };
-        
-        const delegations = data.btc_delegations?.map((del: BTCDelegation) => this.processDelegation(del))
-            .filter((d: DelegationResponse | null): d is DelegationResponse => d !== null) || [];
-
-        return {
-            delegations,
-            next_key: data.pagination?.next_key
-        };
-    }
-
-    public async getDelegationsByStatus(
-        status: BTCDelegationStatus,
-        network: Network = Network.MAINNET,
-        page: number = 1,
-        limit: number = 10
-    ): Promise<{
-        delegations: DelegationResponse[];
-        pagination: {
-            total_count: number;
-            total_pages: number;
-            current_page: number;
-            has_next: boolean;
-            has_previous: boolean;
-            next_page: number | null;
-            previous_page: number | null;
-        };
-        total_stats: {
-            total_amount: string;
-            total_amount_sat: number;
-        };
-    }> {
-        const cacheKey = this.getStatusCacheKey(status, network);
-        
         try {
-            let cached = await this.cache.get<StatusDelegationsCache>(cacheKey);
-            
-            if (!cached) {
-                console.log(`Cache miss for ${cacheKey}, fetching delegations...`);
-                let allDelegations: DelegationResponse[] = [];
-                let paginationKeys: string[] = [];
-                let nextKey: string | undefined;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-                do {
-                    const data = await this.fetchDelegationsByStatus(status, network, nextKey);
-                    allDelegations = [...allDelegations, ...data.delegations];
-                    
-                    if (data.next_key) {
-                        paginationKeys.push(data.next_key);
-                    }
-                    
-                    nextKey = data.next_key;
-                } while (nextKey);
-
-                const totalAmountSat = allDelegations.reduce((sum, d) => sum + d.amount_sat, 0);
-
-                cached = {
-                    delegations: allDelegations,
-                    pagination_keys: paginationKeys,
-                    total_stats: {
-                        total_amount: formatSatoshis(totalAmountSat),
-                        total_amount_sat: totalAmountSat
-                    },
-                    last_updated: Date.now()
-                };
-                
-                await this.cache.set(cacheKey, cached, this.CACHE_TTL.STATUS_DELEGATIONS);
-                this.startUpdateJob(status, network);
-            }
-
-            const totalCount = cached.delegations.length;
-            const totalPages = Math.ceil(totalCount / limit);
-            const currentPage = Math.min(Math.max(1, page), totalPages || 1);
-            const startIndex = (currentPage - 1) * limit;
-            const endIndex = startIndex + limit;
-            
-            return {
-                delegations: cached.delegations.slice(startIndex, endIndex),
-                pagination: {
-                    total_count: totalCount,
-                    total_pages: totalPages,
-                    current_page: currentPage,
-                    has_next: currentPage < totalPages,
-                    has_previous: currentPage > 1,
-                    next_page: currentPage < totalPages ? currentPage + 1 : null,
-                    previous_page: currentPage > 1 ? currentPage - 1 : null
+            const response = await fetch(url.toString(), {
+                signal: controller.signal,
+                headers: {
+                    'Accept': 'application/json',
                 },
-                total_stats: cached.total_stats
-            };
-        } catch (error) {
-            console.error(`Error in getDelegationsByStatus for ${cacheKey}:`, error);
-            return {
-                delegations: [],
-                pagination: {
-                    total_count: 0,
-                    total_pages: 0,
-                    current_page: page,
-                    has_next: false,
-                    has_previous: false,
-                    next_page: null,
-                    previous_page: null
-                },
-                total_stats: {
-                    total_amount: '0',
-                    total_amount_sat: 0
-                }
-            };
-        }
-    }
-
-    public async getDelegationByTxHash(
-        stakingTxHash: string,
-        network: Network = Network.MAINNET
-    ): Promise<DelegationResponse | null> {
-        const cacheKey = this.getDelegationCacheKey(stakingTxHash, network);
-        
-        try {
-            const cached = await this.cache.get<CacheEntry<DelegationResponse>>(cacheKey);
+            });
             
-            if (cached && (Date.now() - cached.lastFetched < this.CACHE_TTL.SINGLE_DELEGATION * 1000)) {
-                return cached.data;
-            }
-
-            const { nodeUrl } = this.getNetworkConfig(network);
-            const response = await fetch(`${nodeUrl}/babylon/btcstaking/v1/btc_delegation/${stakingTxHash}`);
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
-                if (response.status === 404) {
+                const errorText = await response.text();
+                console.error(`[${network}] HTTP error fetching delegations:`, {
+                    status: response.status,
+                    url: url.toString(),
+                    error: errorText,
+                    attempt: retryCount + 1
+                });
+
+                if (retryCount < maxRetries) {
+                    const delay = retryDelay(retryCount);
+                    console.log(`[${network}] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return this.fetchDelegationsFromChain(status, network, pageKey, pageLimit, retryCount + 1);
+                }
+                throw new Error(`Failed to fetch delegations after ${maxRetries} retries`);
+            }
+
+            const data = await response.json() as ChainDelegationResponse;
+            
+            if (!data.btc_delegations) {
+                return [];
+            }
+
+            const delegationsPromises = data.btc_delegations.map(async del => {
+                try {
+                    return await this.processDelegation(del);
+                } catch (error) {
+                    console.error(`[${network}] Error processing delegation:`, error);
                     return null;
                 }
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            });
 
-            const data = await response.json() as {
-                btc_delegation?: BTCDelegation;
-            };
+            const delegationsResults = await Promise.all(delegationsPromises);
+            const delegations = delegationsResults.filter((del): del is DelegationResponse => del !== null);
             
-            const delegation = data.btc_delegation ? this.processDelegation(data.btc_delegation) : null;
-
-            if (delegation) {
-                await this.cache.set(cacheKey, {
-                    data: delegation,
-                    lastFetched: Date.now()
-                }, this.CACHE_TTL.SINGLE_DELEGATION);
+            if (data.pagination?.next_key) {
+                try {
+                    const nextDelegations = await this.fetchDelegationsFromChain(
+                        status,
+                        network,
+                        data.pagination.next_key,
+                        pageLimit
+                    );
+                    return [...delegations, ...nextDelegations];
+                } catch (error) {
+                    console.error(`[${network}] Error fetching next page:`, error);
+                    // Return current page if next page fails
+                    return delegations;
+                }
             }
 
-            return delegation;
+            return delegations;
         } catch (error) {
-            console.error(`Error in getDelegationByTxHash for ${stakingTxHash}:`, error);
+            const isAbortError = error instanceof Error && error.name === 'AbortError';
+            const isConnectionError = error instanceof Error && 
+                (error.message.includes('ECONNRESET') || 
+                 error.message.includes('ETIMEDOUT') ||
+                 error.message.includes('ECONNREFUSED'));
+
+            console.error(`[${network}] Error fetching ${status} delegations:`, {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                type: isAbortError ? 'timeout' : isConnectionError ? 'connection' : 'unknown',
+                url: url.toString(),
+                pageKey,
+                attempt: retryCount + 1
+            });
+
+            if (retryCount < maxRetries && (isAbortError || isConnectionError)) {
+                const delay = retryDelay(retryCount);
+                console.log(`[${network}] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return this.fetchDelegationsFromChain(status, network, pageKey, pageLimit, retryCount + 1);
+            }
+
+            throw error;
+        }
+    }
+
+    private async createDelegationFromChainData(chainDel: DelegationResponse, network: Network) {
+        try {
+            if (!chainDel?.transaction_id_hex) {
+                throw new Error('Missing transaction_id_hex in delegation data');
+            }
+
+            const existingDelegation = await this.delegationModel.findOne({
+                $or: [
+                    { stakingTxHex: chainDel.transaction_id },
+                    { stakingTxIdHex: chainDel.transaction_id_hex }
+                ],
+                networkType: network.toLowerCase()
+            });
+
+            if (existingDelegation) {
+                if (existingDelegation.state !== chainDel.status) {
+                    existingDelegation.state = this.mapStatusToEnum(chainDel.status);
+                    return await existingDelegation.save();
+                }
+                return existingDelegation;
+            }
+
+            const currentHeight = await this.getBabylonClient(network).getCurrentHeight();
+
+            const delegation = new this.delegationModel({
+                stakingTxHex: chainDel.transaction_id,
+                stakingTxIdHex: chainDel.transaction_id_hex,
+                stakerAddress: chainDel.staker_address,
+                stakerBtcAddress: chainDel.stakerBtcAddress || '',
+                stakerBtcPkHex: chainDel.btc_pk_hex,
+                state: this.mapStatusToEnum(chainDel.status),
+                networkType: network.toLowerCase(),
+                totalSat: chainDel.amount_sat,
+                startHeight: chainDel.start_height,
+                endHeight: chainDel.end_height || 0,
+                stakingTime: chainDel.duration,
+                unbondingTime: chainDel.unbonding_time,
+                blockHeight: currentHeight,
+                txHash: chainDel.transaction_id_hex,
+                finalityProviderBtcPksHex: chainDel.finality_provider_btc_pks_hex || []
+            });
+
+            return await delegation.save();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    private mapStatusToEnum(status: string): 'PENDING' | 'VERIFIED' | 'ACTIVE' | 'UNBONDED' {
+        const normalizedStatus = status.toUpperCase();
+        switch (normalizedStatus) {
+            case 'PENDING':
+                return 'PENDING';
+            case 'VERIFIED':
+                return 'VERIFIED';
+            case 'ACTIVE':
+                return 'ACTIVE';
+            case 'UNBONDED':
+                return 'UNBONDED';
+            default:
+                console.warn(`Unknown status: ${status}, defaulting to PENDING`);
+                return 'PENDING';
+        }
+    }
+
+    public async updateDelegationState(stakingTxIdHex: string, state: string, network: Network) {
+        try {
+            const result = await this.delegationModel.findOneAndUpdate(
+                { 
+                    stakingTxIdHex,
+                    networkType: network.toLowerCase()
+                },
+                { state },
+                { new: true }
+            );
+
+            if (!result) {
+                console.error('No delegation found to update:', {
+                    stakingTxIdHex,
+                    network: network.toLowerCase()
+                });
+                return null;
+            }
+
+            return result;
+        } catch (error) {
+            console.error('Error updating delegation state:', error);
+            throw error;
+        }
+    }
+
+    private async getDelegationFromChain(txData: any, network: Network): Promise<any> {
+        try {
+            const chainDel = await this.fetchDelegationsFromChain(txData, network);
+            return chainDel;
+        } catch (error) {
+            console.error(`Error getting delegation from chain: ${error instanceof Error ? error.message : 'Unknown error'}`);
             return null;
         }
     }
 
-    private startUpdateJob(status: BTCDelegationStatus, network: Network) {
-        const cacheKey = this.getStatusCacheKey(status, network);
-        
-        if (this.updateJobs.has(cacheKey)) {
+    private async reconcileDelegations(chainDelegations: DelegationResponse[], network: Network) {
+        if (!chainDelegations || chainDelegations.length === 0) {
             return;
         }
 
-        const intervalId = setInterval(async () => {
-            try {
-                const cached = await this.cache.get<StatusDelegationsCache>(cacheKey);
-                if (!cached) return;
-
-                const lastKey = cached.pagination_keys[cached.pagination_keys.length - 1];
-                const newData = await this.fetchDelegationsByStatus(status, network, lastKey);
-                
-                if (newData.delegations.length > 0) {
-                    const existingTxIds = new Set(cached.delegations.map(d => d.transaction_id));
-                    const newUniqueDelegations = newData.delegations.filter(d => !existingTxIds.has(d.transaction_id));
-
-                    if (newUniqueDelegations.length > 0) {
-                        const oldStats = cached.total_stats;
-                        cached.delegations = [...cached.delegations, ...newUniqueDelegations];
-                        
-                        const totalAmountSat = cached.delegations.reduce((sum, d) => sum + d.amount_sat, 0);
-                        cached.total_stats = {
-                            total_amount: formatSatoshis(totalAmountSat),
-                            total_amount_sat: totalAmountSat
-                        };
-                        
-                        cached.last_updated = Date.now();
-                        
-                        if (newData.next_key) {
-                            cached.pagination_keys.push(newData.next_key);
+        // Küçük batch'ler için doğrudan işlem yap
+        if (chainDelegations.length <= 5) {
+            const results = await Promise.allSettled(
+                chainDelegations.map(async (chainDel) => {
+                    try {
+                        if (!chainDel?.transaction_id_hex) {
+                            return { type: 'error', error: 'Missing transaction_id_hex' };
                         }
 
-                        console.log(`Updated ${status} delegations:`, {
-                            new_unique_delegations: newUniqueDelegations.length,
-                            total_delegations: cached.delegations.length,
-                            old_total: oldStats.total_amount,
-                            new_total: cached.total_stats.total_amount,
-                            change: formatSatoshis(cached.total_stats.total_amount_sat - oldStats.total_amount_sat)
+                        const existingDel = await this.delegationModel.findOne({
+                            $or: [
+                                { stakingTxHex: chainDel.transaction_id },
+                                { stakingTxIdHex: chainDel.transaction_id_hex }
+                            ],
+                            networkType: network.toLowerCase()
                         });
-                        
-                        await this.cache.set(cacheKey, cached, this.CACHE_TTL.STATUS_DELEGATIONS);
-                    } else {
-                        console.log(`No new unique delegations found for ${status}`);
+
+                        if (!existingDel) {
+                            await this.createDelegationFromChainData(chainDel, network);
+                            return { type: 'created', id: chainDel.transaction_id_hex };
+                        } else if (existingDel.state !== chainDel.status) {
+                            await this.updateDelegationState(chainDel.transaction_id_hex, chainDel.status, network);
+                            return { type: 'updated', id: chainDel.transaction_id_hex };
+                        }
+                        return { type: 'unchanged', id: chainDel.transaction_id_hex };
+                    } catch (error) {
+                        return { 
+                            type: 'error', 
+                            id: chainDel.transaction_id_hex,
+                            error: error instanceof Error ? error.message : 'Unknown error'
+                        };
                     }
-                } else {
-                    console.log(`No new delegations found for ${status}`);
+                })
+            );
+
+            // Sadece değişiklikleri logla
+            const stats = results.reduce((acc, result) => {
+                if (result.status === 'fulfilled') {
+                    acc[result.value.type] = (acc[result.value.type] || 0) + 1;
                 }
-            } catch (error) {
-                console.error(`Error updating delegations cache for ${cacheKey}:`, error);
+                return acc;
+            }, {} as Record<string, number>);
+
+            if (Object.keys(stats).length > 0) {
+                console.log(`[${network}] Reconciliation results:`, stats);
             }
-        }, this.UPDATE_INTERVAL);
-        
-        this.updateJobs.set(cacheKey, intervalId);
-    }
 
-    public stopUpdateJob(status: BTCDelegationStatus, network: Network) {
-        const cacheKey = this.getStatusCacheKey(status, network);
-        if (this.updateJobs.has(cacheKey)) {
-            clearInterval(this.updateJobs.get(cacheKey)!);
-            this.updateJobs.delete(cacheKey);
+            return;
         }
+
+        // Büyük batch'ler için normal sync işlemini kullan
+        await this.syncDelegations(network);
     }
 
-    public async clearCache(status: BTCDelegationStatus, network: Network) {
-        const cacheKey = this.getStatusCacheKey(status, network);
-        await this.cache.del(cacheKey);
-        this.stopUpdateJob(status, network);
+    public async handleNewDelegationFromWebsocket(txData: any, network: Network): Promise<any> {
+        try {
+            const chainDel = await this.getDelegationFromChain(txData, network);
+            if (!chainDel) {
+                console.log(`[${network}] No valid delegation found in transaction data`);
+                return null;
+            }
+
+            // Tekli delegasyon için reconcile kullan
+            await this.reconcileDelegations([chainDel], network);
+            return chainDel;
+        } catch (error) {
+            console.error('Error handling new delegation from websocket:', error);
+            throw error;
+        }
     }
 } 

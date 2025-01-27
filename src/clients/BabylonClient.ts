@@ -1,19 +1,12 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
-import WebSocket from 'ws';
-import { EpochInfo } from '../types/finality';
-import { Network } from '../api/middleware/network-selector';
-import { FinalityProvider } from '../types/finality';
-
-interface Vote {
-    fp_btc_pk_hex: string;
-    signature: string;
-    timestamp: string;
-}
-
-interface CurrentEpochResponse {
-    current_epoch: number;
-    epoch_boundary: number;
-}
+import {
+    Network,
+    FinalityProvider,
+    EpochInfo,
+    FinalityParams,
+    Vote,
+    CurrentEpochResponse
+} from '../types/finality';
 
 // Axios config için custom tip tanımı
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -21,69 +14,112 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
     currentRetryCount?: number;
 }
 
+interface RetryConfig extends InternalAxiosRequestConfig {
+    retry?: boolean;
+    currentRetryCount?: number;
+}
+
 export class BabylonClient {
-    private static instance: BabylonClient | null = null;
+    private static instances: Map<Network, BabylonClient> = new Map();
     private readonly client: AxiosInstance;
     private readonly wsEndpoint: string;
+    private readonly network: Network;
+    private readonly baseUrl: string;
     private epochCache: Map<number, EpochInfo> = new Map();
     private currentEpochInfo: CurrentEpochResponse | null = null;
-    private readonly MAX_RETRIES = 3;
-    private readonly RETRY_DELAY = 1000; // 1 saniye
+    private readonly MAX_RETRIES = 5;
+    private readonly RETRY_DELAY = 2000; // 2 seconds
+    private readonly MAX_RETRY_DELAY = 10000; // 10 seconds
 
-    private constructor(babylonNodeUrl: string, babylonRpcUrl: string) {
+    private constructor(network: Network) {
+        this.network = network;
+        
+        const nodeUrl = network === Network.MAINNET 
+            ? process.env.BABYLON_NODE_URL 
+            : process.env.BABYLON_TESTNET_NODE_URL;
+            
+        const rpcUrl = network === Network.MAINNET 
+            ? process.env.BABYLON_RPC_URL 
+            : process.env.BABYLON_TESTNET_RPC_URL;
+            
+        const wsUrl = network === Network.MAINNET
+            ? process.env.BABYLON_WS_URL
+            : process.env.BABYLON_TESTNET_WS_URL;
+
+        if (!nodeUrl || !rpcUrl) {
+            throw new Error(`Missing configuration for ${network} network. Please check your environment variables: ${network === Network.MAINNET ? 'BABYLON_NODE_URL and BABYLON_RPC_URL' : 'BABYLON_TESTNET_NODE_URL and BABYLON_TESTNET_RPC_URL'}`);
+        }
+
+        this.baseUrl = nodeUrl;
+
+        if (!wsUrl) {
+            console.warn(`WebSocket URL not configured for ${network} network, falling back to RPC URL`);
+            this.wsEndpoint = `${rpcUrl.replace(/^http/, 'ws')}/websocket`;
+        } else {
+            this.wsEndpoint = wsUrl;
+        }
+
         this.client = axios.create({
-            baseURL: babylonNodeUrl,
-            timeout: 15000, // 15 saniye
+            baseURL: nodeUrl,
+            timeout: 30000,
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
+                'X-Network': network
             }
         });
 
-        // Retry interceptor ekle
-        this.client.interceptors.response.use(undefined, async (err: AxiosError) => {
-            const config = err.config as CustomAxiosRequestConfig;
+        // Add retry interceptor
+        this.client.interceptors.request.use((config: RetryConfig) => {
             if (!config || !config.retry) {
-                return Promise.reject(err);
+                return config;
             }
 
             config.currentRetryCount = config.currentRetryCount ?? 0;
 
             if (config.currentRetryCount >= this.MAX_RETRIES) {
-                return Promise.reject(err);
+                return Promise.reject(`Max retries (${this.MAX_RETRIES}) reached`);
             }
 
             config.currentRetryCount += 1;
-            
-            const delayTime = this.RETRY_DELAY * config.currentRetryCount;
-            await new Promise(resolve => setTimeout(resolve, delayTime));
 
-            console.debug(`[Retry] Attempt ${config.currentRetryCount} for ${config.url}`);
-            return this.client(config);
+            const delayTime = Math.min(
+                this.MAX_RETRY_DELAY,
+                this.RETRY_DELAY * Math.pow(2, config.currentRetryCount - 1)
+            );
+
+            if (config.currentRetryCount > 1) {
+                console.debug(`[Retry] Attempt ${config.currentRetryCount} for ${config.url}`);
+            }
+
+            return new Promise(resolve => setTimeout(() => resolve(config), delayTime));
         });
-        
-        // Her request'e retry config'i ekle
-        this.client.interceptors.request.use((config: CustomAxiosRequestConfig) => {
+
+        // Add retry config to each request
+        this.client.interceptors.request.use((config: RetryConfig) => {
             config.retry = true;
             config.currentRetryCount = 0;
             return config;
         });
-        
-        this.wsEndpoint = babylonRpcUrl.replace(/^http/, 'ws') + '/websocket';
     }
 
-    public static getInstance(babylonNodeUrl?: string, babylonRpcUrl?: string): BabylonClient {
-        if (!BabylonClient.instance) {
-            if (!babylonNodeUrl || !babylonRpcUrl) {
-                throw new Error('BabylonClient needs both babylonNodeUrl and babylonRpcUrl for initialization');
-            }
-            BabylonClient.instance = new BabylonClient(babylonNodeUrl, babylonRpcUrl);
+    public static getInstance(network: Network = Network.TESTNET): BabylonClient {
+        if (!BabylonClient.instances.has(network)) {
+            BabylonClient.instances.set(network, new BabylonClient(network));
         }
-        return BabylonClient.instance;
+        return BabylonClient.instances.get(network)!;
+    }
+
+    public getNetwork(): Network {
+        return this.network;
     }
 
     public getWsEndpoint(): string {
         return this.wsEndpoint;
+    }
+
+    public getBaseUrl(): string {
+        return this.baseUrl;
     }
 
     async getCurrentHeight(): Promise<number> {
@@ -174,17 +210,31 @@ export class BabylonClient {
         }
     }
 
-    public async getAllFinalityProviders(network: Network = Network.MAINNET): Promise<FinalityProvider[]> {
+    async getFinalityParams(): Promise<FinalityParams> {
         try {
-            const response = await this.client.get('/babylon/btcstaking/v1/finality_providers');
+            const response = await this.client.get('/babylon/finality/v1/params');
+            return response.data.params;
+        } catch (error) {
+            console.error('Error fetching finality params:', error);
+            throw error;
+        }
+    }
+
+    async getActiveFinalityProvidersAtHeight(height: number): Promise<FinalityProvider[]> {
+        try {
+            const response = await this.client.get(`/babylon/finality/v1/finality_providers/${height}`);
             return response.data.finality_providers.map((provider: any) => ({
-                fpBtcPkHex: provider.btc_pk,
-                power: provider.power,
+                fpBtcPkHex: provider.btc_pk_hex,
                 height: parseInt(provider.height),
+                votingPower: provider.voting_power,
+                slashedBabylonHeight: provider.slashed_babylon_height,
+                slashedBtcHeight: provider.slashed_btc_height,
+                jailed: provider.jailed,
+                highestVotedHeight: provider.highest_voted_height,
                 description: provider.description
             }));
         } catch (error) {
-            console.error('Error getting all finality providers:', error);
+            console.error(`Error getting active finality providers at height ${height}:`, error);
             throw error;
         }
     }

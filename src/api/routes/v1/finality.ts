@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { FinalitySignatureService } from '../../../services/finality/FinalitySignatureService';
 import { FinalityProviderService } from '../../../services/finality/FinalityProviderService';
-import { Network } from '../../middleware/network-selector';
+import { Network } from '../../../types/finality';
 import { v4 as uuidv4 } from 'uuid';
 import { FinalityEpochService } from '../../../services/finality/FinalityEpochService';
 import { FinalityDelegationService } from '../../../services/finality/FinalityDelegationService';

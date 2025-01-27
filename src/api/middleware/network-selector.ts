@@ -1,9 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-
-export enum Network {
-    MAINNET = 'mainnet',
-    TESTNET = 'testnet'
-}
+import { Network } from '../../types/finality';
 
 // Extend Express Request type to include network
 declare global {
@@ -15,7 +11,12 @@ declare global {
 }
 
 export const networkSelector = (req: Request, res: Response, next: NextFunction) => {
-    const network = (req.headers['x-network'] as Network) || Network.MAINNET;
+    // Check both query parameter and header for network
+    const network = (
+        (req.query.network as Network) || 
+        (req.headers['x-network'] as Network) || 
+        Network.TESTNET
+    ).toLowerCase() as Network;
     
     if (network && !Object.values(Network).includes(network as Network)) {
         return res.status(400).json({

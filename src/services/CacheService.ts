@@ -34,7 +34,11 @@ export class CacheService {
   async set(key: string, value: any, ttl: number = this.defaultTTL): Promise<void> {
     try {
       const stringValue = JSON.stringify(value);
-      await this.client.set(key, stringValue, { EX: ttl });
+      if (ttl === undefined) {
+        await this.client.set(key, stringValue);
+      } else {
+        await this.client.set(key, stringValue, { EX: ttl });
+      }
     } catch (error) {
       console.error('Cache set error:', error);
     }

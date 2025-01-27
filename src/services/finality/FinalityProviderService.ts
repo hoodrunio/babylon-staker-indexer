@@ -1,11 +1,13 @@
-import { Network } from '../../api/middleware/network-selector';
+import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { CacheService } from '../CacheService';
 import { 
     FinalityProvider, 
     FinalityProviderPower,
     QueryFinalityProvidersResponse,
-    QueryFinalityProviderResponse
+    QueryFinalityProviderResponse,
+    ActiveProviderResponse,
+    FinalityProviderWithMeta
 } from '../../types/finality/btcstaking';
 import { formatSatoshis, calculatePowerPercentage } from '../../utils/util';
 
@@ -22,20 +24,14 @@ export class FinalityProviderService {
     
     // Cache TTL değerleri (saniye cinsinden)
     private readonly CACHE_TTL = {
-        PROVIDERS_LIST: 60, // 1 dakika
+        PROVIDERS_LIST: 300, // 5 dakika
         PROVIDER_DETAILS: 300, // 5 dakika
-        POWER: 300, // 30 saniye
-        TOTAL_POWER: 300 // 30 saniye
+        POWER: 300, // 5 dakika
+        TOTAL_POWER: 300 // 5 dakika
     };
 
     private constructor() {
-        if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
-            throw new Error('BABYLON_NODE_URL and BABYLON_RPC_URL environment variables must be set');
-        }
-        this.babylonClient = BabylonClient.getInstance(
-            process.env.BABYLON_NODE_URL,
-            process.env.BABYLON_RPC_URL
-        );
+        this.babylonClient = BabylonClient.getInstance();
         this.cache = CacheService.getInstance();
     }
 
@@ -133,21 +129,52 @@ export class FinalityProviderService {
             this.CACHE_TTL.PROVIDERS_LIST,
             async () => {
                 const { nodeUrl } = this.getNetworkConfig(network);
-                const response = await fetch(`${nodeUrl}/babylon/btcstaking/v1/finality_providers`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json() as QueryFinalityProvidersResponse;
                 
-                return data.finality_providers?.filter(provider => {
-                    if (provider.highest_voted_height === 0) {
-                        return false;
+                // 1. Önce mevcut yüksekliği al
+                const currentHeight = await this.babylonClient.getCurrentHeight();
+                
+                // 2. Aktif finality provider'ları al
+                const activeResponse = await fetch(`${nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
+                if (!activeResponse.ok) {
+                    throw new Error(`HTTP error! status: ${activeResponse.status}`);
+                }
+                
+                const activeData = await activeResponse.json() as ActiveProviderResponse;
+                const activePkSet = new Set(
+                    activeData.finality_providers
+                        .filter((fp: FinalityProviderWithMeta) => !fp.jailed && Number(fp.voting_power) > 0)
+                        .map((fp: FinalityProviderWithMeta) => fp.btc_pk_hex)
+                );
+                
+                // 3. Tüm provider'ların detaylı bilgilerini al
+                const allProviders: FinalityProvider[] = [];
+                let nextKey = '';
+                
+                do {
+                    const url = new URL(`${nodeUrl}/babylon/btcstaking/v1/finality_providers`);
+                    if (nextKey) {
+                        url.searchParams.append('pagination.key', nextKey);
                     }
-                    if (provider.jailed) {
-                        return false;
+                    
+                    const response = await fetch(url.toString());
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
                     }
-                    return true;
-                }) || [];
+                    
+                    const data = await response.json() as QueryFinalityProvidersResponse;
+                    
+                    // Sadece aktif olan provider'ları filtrele ve ekle
+                    const activeProviders = data.finality_providers?.filter(provider => 
+                        activePkSet.has(provider.btc_pk) && 
+                        !provider.jailed
+                    ) || [];
+                    
+                    allProviders.push(...activeProviders);
+                    
+                    nextKey = data.pagination?.next_key || '';
+                } while (nextKey);
+                
+                return allProviders;
             }
         );
     }
@@ -158,14 +185,36 @@ export class FinalityProviderService {
             cacheKey,
             this.CACHE_TTL.PROVIDERS_LIST,
             async () => {
-                const { nodeUrl } = this.getNetworkConfig(network);
-                const response = await fetch(`${nodeUrl}/babylon/btcstaking/v1/finality_providers`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json() as QueryFinalityProvidersResponse;
+                const allProviders: FinalityProvider[] = [];
+                let nextKey = '';
                 
-                return data.finality_providers || [];
+                do {
+                    const { nodeUrl } = this.getNetworkConfig(network);
+                    const url = new URL(`${nodeUrl}/babylon/btcstaking/v1/finality_providers`);
+                    
+                    // Add pagination parameters if we have a next key
+                    if (nextKey) {
+                        url.searchParams.append('pagination.key', nextKey);
+                    }
+                    
+                    const response = await fetch(url.toString());
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json() as QueryFinalityProvidersResponse;
+                    
+                    // Add providers from current page to our collection
+                    if (data.finality_providers) {
+                        allProviders.push(...data.finality_providers);
+                    }
+                    
+                    // Get next key from pagination response
+                    nextKey = data.pagination?.next_key || '';
+                    
+                } while (nextKey); // Continue while we have a next key
+                
+                return allProviders;
             }
         );
     }

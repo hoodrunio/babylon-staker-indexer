@@ -47,21 +47,39 @@ export class Database {
     }
 
     try {
+      const mongoUri = process.env.MONGODB_URI;
+      if (!mongoUri) {
+        throw new Error('MONGODB_URI is not defined in environment variables');
+      }
+
       console.log('Connecting to MongoDB...');
-      console.log('MongoDB URI:', process.env.MONGODB_URI);
       
-      await mongoose.connect(process.env.MONGODB_URI!);
+      await mongoose.connect(mongoUri);
       this.isConnected = true;
       this.db = mongoose.connection;
       
-      console.log('Connected to MongoDB successfully');
+      console.log('MongoDB connected successfully');
       console.log('Database name:', this.db.name);
       /* if (this.db.db) {
         console.log('Collections:', await this.db.db.collections());
       } */
+
+      // Connection events
+      mongoose.connection.on('error', err => {
+        console.error('MongoDB connection error:', err);
+      });
+
+      mongoose.connection.on('disconnected', () => {
+        console.warn('MongoDB disconnected');
+      });
+
+      mongoose.connection.on('reconnected', () => {
+        console.log('MongoDB reconnected');
+      });
+
     } catch (error) {
-      console.error('MongoDB connection error:', error);
-      throw error;
+      console.error('Error connecting to MongoDB:', error);
+      process.exit(1);
     }
   }
 

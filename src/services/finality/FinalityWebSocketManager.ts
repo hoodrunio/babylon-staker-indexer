@@ -10,13 +10,7 @@ export class FinalityWebSocketManager {
     private onNewBlockCallback: ((height: number) => Promise<void>) | null = null;
 
     private constructor() {
-        if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
-            throw new Error('BABYLON_NODE_URL and BABYLON_RPC_URL environment variables must be set');
-        }
-        this.babylonClient = BabylonClient.getInstance(
-            process.env.BABYLON_NODE_URL,
-            process.env.BABYLON_RPC_URL
-        );
+        this.babylonClient = BabylonClient.getInstance();
     }
 
     public static getInstance(): FinalityWebSocketManager {
@@ -60,13 +54,13 @@ export class FinalityWebSocketManager {
         }
 
         try {
-            // Setup WebSocket connection
-            const wsUrl = `${process.env.BABYLON_RPC_URL!.replace('http', 'ws')}/websocket`;
+            // Get WebSocket URL from BabylonClient
+            const wsUrl = this.babylonClient.getWsEndpoint();
             console.debug(`[WebSocket] Connecting to ${wsUrl}`);
             this.ws = new WebSocket(wsUrl);
 
             this.ws.on('open', () => {
-                console.debug('[WebSocket] Connected successfully');
+                console.debug(`[WebSocket] Connected successfully to ${this.babylonClient.getNetwork()} network`);
                 this.subscribeToNewBlocks();
             });
 

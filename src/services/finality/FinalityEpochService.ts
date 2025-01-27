@@ -1,10 +1,12 @@
 import { BabylonClient } from '../../clients/BabylonClient';
-import { Network } from '../../api/middleware/network-selector';
+import { Network } from '../../types/finality';
 import { EpochInfo, EpochStats, SignatureStatsParams } from '../../types';
+import { FinalityProviderService } from './FinalityProviderService';
 
 export class FinalityEpochService {
     private static instance: FinalityEpochService | null = null;
     private babylonClient: BabylonClient;
+    private finalityProviderService: FinalityProviderService;
     private currentEpochInfo: { epochNumber: number; boundary: number } | null = null;
     private epochCache: Map<number, EpochInfo> = new Map();
     private currentEpochStatsCache: {
@@ -16,13 +18,8 @@ export class FinalityEpochService {
     private readonly STATS_UPDATE_INTERVAL = 60000; // 1 minute
 
     private constructor() {
-        if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
-            throw new Error('BABYLON_NODE_URL and BABYLON_RPC_URL environment variables must be set');
-        }
-        this.babylonClient = BabylonClient.getInstance(
-            process.env.BABYLON_NODE_URL,
-            process.env.BABYLON_RPC_URL
-        );
+        this.babylonClient = BabylonClient.getInstance();
+        this.finalityProviderService = FinalityProviderService.getInstance();
     }
 
     public static getInstance(): FinalityEpochService {
@@ -136,19 +133,19 @@ export class FinalityEpochService {
             
             const currentEpoch = await this.getCurrentEpochInfo();
             const currentHeight = await this.babylonClient.getCurrentHeight();
-            const safeHeight = currentHeight - 2; // Process up to 2 blocks behind
+            const safeHeight = currentHeight - 2; // Process up to 2 blocks behind (because there is a timeout for the finality providers to submit their votes)
             
             // Calculate epoch boundaries
             const epochStartHeight = currentEpoch.boundary - 360; // Each epoch is 360 blocks
             const epochEndHeight = Math.min(currentEpoch.boundary, safeHeight);
             
-            // Get all finality providers
-            const providers = await this.babylonClient.getAllFinalityProviders(network);
+            // Get active finality providers at current height
+            const providers = await this.babylonClient.getActiveFinalityProvidersAtHeight(safeHeight);
             
             // Calculate stats for each provider
             const providerStats = await Promise.all(
                 providers
-                    .filter(provider => provider.fpBtcPkHex)
+                    .filter(provider => !provider.jailed && provider.highestVotedHeight > 0)
                     .map(async (provider) => {
                         const stats = await getSignatureStats({
                             fpBtcPkHex: provider.fpBtcPkHex,
@@ -162,10 +159,14 @@ export class FinalityEpochService {
                             btcPk: provider.fpBtcPkHex,
                             signedBlocks: stats.signedBlocks,
                             missedBlocks: stats.missedBlocks,
-                            successRate: totalBlocks > 0 ? (stats.signedBlocks / totalBlocks * 100) : 0
+                            successRate: totalBlocks > 0 ? (stats.signedBlocks / totalBlocks * 100) : 0,
+                            votingPower: provider.votingPower
                         };
                     })
             );
+
+            // Sort providers by voting power in descending order
+            providerStats.sort((a, b) => parseInt(b.votingPower) - parseInt(a.votingPower));
 
             // Create stats object
             const epochStats: EpochStats = {

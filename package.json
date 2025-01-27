@@ -16,6 +16,7 @@
     "migrate-public-keys": "ts-node src/scripts/migrate-staker-public-keys.ts"
   },
   "dependencies": {
+    "@types/bitcoinjs-lib": "^4.0.1",
     "@types/cors": "^2.8.17",
     "@types/eventsource": "^1.1.15",
     "@types/ioredis": "^4.28.10",
@@ -24,6 +25,7 @@
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.5.13",
     "axios": "^1.7.9",
+    "bitcoinjs-lib": "^6.1.7",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -39,6 +41,7 @@
     "redis": "^4.7.0",
     "reflect-metadata": "^0.2.2",
     "swagger-ui-express": "^5.0.1",
+    "tiny-secp256k1": "^2.2.3",
     "uuid": "^11.0.5",
     "ws": "^8.18.0"
   },

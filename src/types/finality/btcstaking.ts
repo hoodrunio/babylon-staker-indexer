@@ -20,6 +20,7 @@ export interface FinalityProvider {
 
 export interface FinalityProviderWithMeta {
     btc_pk: string;
+    btc_pk_hex?: string;
     height: number;
     voting_power: number;
     slashed_babylon_height: number;
@@ -64,6 +65,7 @@ export interface BTCDelegation {
     total_sat: number;
     staking_tx_hex: string;
     slashing_tx_hex: string;
+    transaction_id_hex?: string;
     delegator_slash_sig_hex: string;
     covenant_sigs: CovenantAdaptorSignatures[];
     staking_output_idx: number;
@@ -85,6 +87,14 @@ export interface QueryFinalityProvidersResponse {
         total: number;
     };
 }
+
+export interface ActiveProviderResponse {
+    finality_providers: FinalityProviderWithMeta[];
+    pagination: {
+        next_key: string | null;
+        total: string;
+    };
+} 
 
 export interface QueryFinalityProviderResponse {
     finality_provider: FinalityProvider;
@@ -124,6 +134,9 @@ export interface FinalityProviderPower {
 export interface DelegationResponse {
     /** Delegator'ın adresi */
     staker_address: string;
+
+    /** Delegator'ın BTC adresi */
+    stakerBtcAddress?: string;
 
     /** Delegasyonun durum açıklaması */
     status: string;
@@ -166,13 +179,22 @@ export interface DelegationResponse {
         transaction_id_hex: string;
         /** Unbonding işleminin harcandığı işlem hash'i */
         spend_transaction_id?: string;
+        /** Unbonding işleminin harcandığı işlem hash'inin hex formatı */
+        spend_transaction_id_hex?: string;
     };
+
+    /** Finality provider'ların BTC public key'leri (hex formatında) */
+    finality_provider_btc_pks_hex?: string[];
+
+    /** Params version */
+    params_version?: number;
 }
 
 export enum BTCDelegationStatus {
     PENDING = 'PENDING',
+    VERIFIED = 'VERIFIED',
     ACTIVE = 'ACTIVE',
     UNBONDED = 'UNBONDED',
     EXPIRED = 'EXPIRED',
     ANY = 'ANY'
-} 
+}

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { BlockSignatureInfo, SignatureStatsParams } from '../../types';
-import { Network } from '../../api/middleware/network-selector';
+import { Network } from '../../types/finality';
 
 export class FinalitySSEManager {
     private static instance: FinalitySSEManager | null = null;

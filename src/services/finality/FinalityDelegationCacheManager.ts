@@ -1,6 +1,6 @@
 import { CacheService } from '../CacheService';
 import { DelegationResponse } from '../../types/finality/btcstaking';
-import { Network } from '../../api/middleware/network-selector';
+import { Network } from '../../types/finality';
 import { formatSatoshis } from '../../utils/util';
 
 interface PaginatedDelegations {
@@ -174,7 +174,7 @@ export class FinalityDelegationCacheManager {
                 console.log(`Fetched ${delegations.length} total delegations with stats:`, cached.total_stats);
                 
                 // Cache'i sonsuz TTL ile kaydet
-                await this.cache.set(cacheKey, cached, 0);
+                await this.cache.set(cacheKey, cached, undefined);
                 this.startUpdateJob(fpBtcPkHex, network, fetchCallback);
             } else if (now - cached.last_updated > this.CACHE_TTL.DELEGATIONS_UPDATES * 1000) {
                 // 5 dakikadan fazla zaman geçmişse arka planda güncelle
@@ -267,7 +267,7 @@ export class FinalityDelegationCacheManager {
                     }
 
                     // Cache'i sonsuz TTL ile güncelle
-                    await this.cache.set(cacheKey, updatedCache, 0);
+                    await this.cache.set(cacheKey, updatedCache, undefined);
                     
                     console.log(`Background update completed for ${cacheKey}:`, {
                         new_unique_delegations: newUniqueDelegations.length,

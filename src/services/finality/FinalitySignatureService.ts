@@ -6,7 +6,7 @@ import {
     EpochStats
 } from '../../types';
 import { Response } from 'express';
-import { Network } from '../../api/middleware/network-selector';
+import { Network } from '../../types/finality';
 import { FinalityHistoricalService } from './FinalityHistoricalService';
 import { FinalityEpochService } from './FinalityEpochService';
 import { FinalitySSEManager } from './FinalitySSEManager';
@@ -32,12 +32,7 @@ export class FinalitySignatureService {
     private readonly missingBlocksLogCache: Map<string, number> = new Map();
 
     private constructor() {
-        if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
-            throw new Error('BABYLON_NODE_URL and BABYLON_RPC_URL environment variables must be set');
-        }
         this.babylonClient = BabylonClient.getInstance(
-            process.env.BABYLON_NODE_URL,
-            process.env.BABYLON_RPC_URL
         );
         this.historicalService = FinalityHistoricalService.getInstance();
         this.epochService = FinalityEpochService.getInstance();
@@ -202,10 +197,15 @@ export class FinalitySignatureService {
             actualStartHeight = startHeight;
         } else if (lastNBlocks === this.DEFAULT_LAST_N_BLOCKS) {
             // Last 100 blocks for /stats endpoint
-            actualStartHeight = Math.max(1, actualEndHeight - lastNBlocks + 1);
+            actualStartHeight = actualEndHeight - lastNBlocks + 1;
         } else {
             // Start from oldest cached block for /performance endpoint
-            actualStartHeight = Math.max(1, actualEndHeight - this.MAX_LAST_N_BLOCKS + 1);
+            actualStartHeight = actualEndHeight - this.MAX_LAST_N_BLOCKS + 1;
+        }
+
+        // Ensure start height is not negative
+        if (actualStartHeight < 1) {
+            actualStartHeight = 1;
         }
 
         // Only fetch last 100 blocks for /stats endpoint

@@ -80,7 +80,7 @@ export class PointsProxyService {
               continue;
             }
           }
-          console.error(`Error updating cache for FP ${fpPkHex}:`, error);
+          console.error(`Error updating cache for FP ${fpPkHex}:`, error instanceof Error ? error.message : 'Unknown error');
           break;
         }
       }

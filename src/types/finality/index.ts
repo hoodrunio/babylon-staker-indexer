@@ -1,4 +1,27 @@
-import { Network } from '../../api/middleware/network-selector';
+export enum Network {
+    MAINNET = 'mainnet',
+    TESTNET = 'testnet'
+}
+export interface FinalityParams {
+    max_active_finality_providers: number;
+    signed_blocks_window: string;
+    finality_sig_timeout: string;
+    min_signed_per_window: string;
+    min_pub_rand: string;
+    jail_duration: string;
+    finality_activation_height: string;
+}
+
+export interface Vote {
+    fp_btc_pk_hex: string;
+    signature: string;
+    timestamp: string;
+}
+
+export interface CurrentEpochResponse {
+    current_epoch: number;
+    epoch_boundary: number;
+}
 
 export interface SignatureStatsParams {
     fpBtcPkHex: string;
@@ -49,15 +72,25 @@ export interface EpochStats {
     epochNumber: number;
     startHeight: number;
     currentHeight: number;
-    endHeight?: number;
+    endHeight: number;
+    providerStats: {
+        btcPk: string;
+        signedBlocks: number;
+        missedBlocks: number;
+        successRate: number;
+        votingPower: string;
+    }[];
     timestamp: number;
-    providerStats?: ProviderEpochStats[];
 }
 
 export interface FinalityProvider {
     fpBtcPkHex: string;
-    power: string;
     height: number;
+    votingPower: string;
+    slashedBabylonHeight: string;
+    slashedBtcHeight: number;
+    jailed: boolean;
+    highestVotedHeight: number;
     description?: {
         moniker?: string;
         identity?: string;

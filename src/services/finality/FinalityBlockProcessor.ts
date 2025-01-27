@@ -30,13 +30,7 @@ export class FinalityBlockProcessor {
     private signatureService: FinalitySignatureService | null = null;
 
     private constructor() {
-        if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
-            throw new Error('BABYLON_NODE_URL and BABYLON_RPC_URL environment variables must be set');
-        }
-        this.babylonClient = BabylonClient.getInstance(
-            process.env.BABYLON_NODE_URL,
-            process.env.BABYLON_RPC_URL
-        );
+        this.babylonClient = BabylonClient.getInstance();
         this.cacheManager = FinalityCacheManager.getInstance();
         this.epochService = FinalityEpochService.getInstance();
         this.sseManager = FinalitySSEManager.getInstance();

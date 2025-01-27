@@ -1,4 +1,4 @@
-import { Network } from '../../api/middleware/network-selector';
+import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { 
     QueryFinalityProviderDelegationsResponse,
@@ -15,13 +15,7 @@ export class FinalityDelegationService {
     private cacheManager: FinalityDelegationCacheManager;
 
     private constructor() {
-        if (!process.env.BABYLON_NODE_URL || !process.env.BABYLON_RPC_URL) {
-            throw new Error('BABYLON_NODE_URL and BABYLON_RPC_URL environment variables must be set');
-        }
-        this.babylonClient = BabylonClient.getInstance(
-            process.env.BABYLON_NODE_URL,
-            process.env.BABYLON_RPC_URL
-        );
+        this.babylonClient = BabylonClient.getInstance();
         this.cacheManager = FinalityDelegationCacheManager.getInstance();
     }
 

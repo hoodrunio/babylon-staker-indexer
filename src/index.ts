@@ -3,29 +3,37 @@ import dotenv from 'dotenv';
 import router from './api/routes';
 import { BabylonIndexer } from './services/BabylonIndexer';
 import { FinalitySignatureService } from './services/finality/FinalitySignatureService';
+import { WebsocketService } from './services/WebsocketService';
+import { BTCDelegationService } from './services/btc-delegations/BTCDelegationService';
 import cors from 'cors';
-
 // Load environment variables
 dotenv.config();
 
 async function startServer() {
-    console.log('Starting signature monitoring service...');
+    console.log('Starting services...');
     
     // Initialize and start the FinalitySignatureService
     const finalityService = FinalitySignatureService.getInstance();
     await finalityService.start();
 
+    // Initialize BTCDelegationService (this will start initial sync)
+    console.log('Initializing BTCDelegationService...');
+    BTCDelegationService.getInstance();
+
+    // Initialize and start the WebSocket service
+    const websocketService = WebsocketService.getInstance();
+    websocketService.startListening();
     const app = express();
     app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
     const port = process.env.PORT || 3000;
 
     // CORS ayarları
     app.use(cors({
-        origin: '*', // Tüm originlere izin ver (production'da spesifik domainleri belirtebilirsiniz)
+        origin: '*',
         methods: ['GET', 'POST', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
         credentials: true,
-        maxAge: 86400 // CORS preflight cache süresi
+        maxAge: 86400
     }));
 
     // Middleware
@@ -71,6 +79,21 @@ async function startServer() {
         indexer.scanBlocks(startHeight, endHeight).catch(console.error);
       }
     } 
+
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+        console.log('SIGTERM signal received. Closing HTTP server...');
+        websocketService.stop();
+        finalityService.stop();
+        process.exit(0);
+    });
+
+    process.on('SIGINT', () => {
+        console.log('SIGINT signal received. Closing HTTP server...');
+        websocketService.stop();
+        finalityService.stop();
+        process.exit(0);
+    });
 }
 
 startServer().catch(console.error); 
