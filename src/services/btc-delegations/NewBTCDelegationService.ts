@@ -218,8 +218,8 @@ export class NewBTCDelegationService {
 
         // Extract addresses from staking transaction
         const stakingTxHex = attributes.staking_tx_hex;
-        console.log('Transaction before parsing:', stakingTxHex);
-        console.log('Transaction type:', typeof stakingTxHex);
+        // console.log('Transaction before parsing:', stakingTxHex);
+        // console.log('Transaction type:', typeof stakingTxHex);
 
         // Parse if it's a JSON string
         const parsedTxHex = typeof stakingTxHex === 'string' && stakingTxHex.startsWith('"') 
@@ -311,8 +311,8 @@ export class NewBTCDelegationService {
                 return null;
             }
 
-            console.log('Raw staking_tx_hex:', attributes.staking_tx_hex);
-            console.log('Parsed staking_tx_hex:', JSON.parse(attributes.staking_tx_hex));
+            // console.log('Raw staking_tx_hex:', attributes.staking_tx_hex);
+            // console.log('Parsed staking_tx_hex:', JSON.parse(attributes.staking_tx_hex));
 
             const result = {
                 staking_tx_hex: JSON.parse(attributes.staking_tx_hex),

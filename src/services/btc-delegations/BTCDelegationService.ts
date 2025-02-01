@@ -27,13 +27,12 @@ export class BTCDelegationService {
         this.babylonClients = new Map();
         this.delegationModel = NewBTCDelegation;
         
-        // Her network için client oluşturmayı dene
         try {
             this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
             console.log('[Network] Testnet client initialized successfully');
         } catch (error) {
             if (error instanceof Error && error.message.includes('Missing configuration')) {
-                console.log('[Network] Testnet is not configured');
+                console.error('[Network] Testnet is not configured');
             } else {
                 console.error('[Network] Failed to initialize testnet client:', error);
             }
@@ -44,7 +43,7 @@ export class BTCDelegationService {
             console.log('[Network] Mainnet client initialized successfully');
         } catch (error) {
             if (error instanceof Error && error.message.includes('Missing configuration')) {
-                console.log('[Network] Mainnet is not configured');
+                console.error('[Network] Mainnet is not configured');
             } else {
                 console.error('[Network] Failed to initialize mainnet client:', error);
             }
@@ -54,12 +53,9 @@ export class BTCDelegationService {
             throw new Error('No network configurations available. Please configure at least one network (testnet or mainnet).');
         }
         
-        // İlk senkronizasyonu başlat
         const networks = Array.from(this.babylonClients.keys());
-        
-        
-        // ENABLE_FULL_SYNC kontrolü
         const enableFullSync = process.env.ENABLE_FULL_SYNC === 'true';
+        
         if (enableFullSync) {
             console.log(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
             for (const network of networks) {
@@ -70,9 +66,6 @@ export class BTCDelegationService {
         } else {
             console.log('[Network] Full sync is disabled, skipping initial delegation sync');
         }
-        
-        // Periyodik senkronizasyonu başlat
-        //this.startPeriodicSync();
     }
 
     public static getInstance(): BTCDelegationService {
@@ -136,7 +129,6 @@ export class BTCDelegationService {
     }
 
     private async syncDelegations(network: Network) {
-        // Senkronizasyon zaten çalışıyorsa, yeni bir senkronizasyon başlatma
         if (this.isSyncing) {
             console.log(`[${network}] Sync already in progress, skipping...`);
             return;
@@ -144,7 +136,6 @@ export class BTCDelegationService {
 
         try {
             this.isSyncing = true;
-            console.log(`[${network}] Starting delegation sync...`);
             
             const statuses = Object.values(BTCDelegationStatus);
             let totalDelegations = 0;
@@ -156,14 +147,11 @@ export class BTCDelegationService {
             for (const status of statuses) {
                 const chainDelegations = await this.fetchDelegationsFromChain(status, network);
                 if (!chainDelegations || chainDelegations.length === 0) {
-                    console.log(`[${network}] No delegations found with status ${status}`);
                     continue;
                 }
 
                 totalDelegations += chainDelegations.length;
-                console.log(`[${network}] Found ${chainDelegations.length} delegations with status ${status}`);
                 
-                // Process in larger batches for better performance
                 for (let i = 0; i < chainDelegations.length; i += BATCH_SIZE) {
                     const batch = chainDelegations.slice(i, i + BATCH_SIZE);
                     const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
@@ -205,7 +193,7 @@ export class BTCDelegationService {
             let senderAddress = '';
             try {
                 const addresses = await extractAddressesFromTransaction(del.staking_tx_hex);
-                console.log('Extracted addresses:', addresses);
+                // console.log('Extracted addresses:', addresses);
                 senderAddress = addresses.sender || '';
             } catch (error) {
                 console.error('Failed to extract sender address from staking transaction:', error);

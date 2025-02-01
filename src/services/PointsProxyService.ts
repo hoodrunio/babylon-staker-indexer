@@ -100,7 +100,12 @@ export class PointsProxyService {
       console.log('Starting cache update for all FPs...');
 
       const totalCount = await this.finalityProviderService.getFinalityProvidersCount();
-      const fps = await this.finalityProviderService.getAllFPs(0, totalCount);
+      if (totalCount <= 0) {
+        console.log('No finality providers found, skipping cache update');
+        return;
+      }
+
+      const fps = await this.finalityProviderService.getAllFPs(0, Math.max(totalCount, 1));
       const fpAddresses = fps.map(fp => fp.address);
 
       // Batch işleme

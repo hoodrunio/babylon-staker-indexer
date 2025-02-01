@@ -51,7 +51,6 @@ export class MissedBlocksProcessor {
                 range.map(height => this.processBlockWithRateLimit(network, height, babylonClient))
             );
 
-            // Sonuçları işle
             results.forEach((result, index) => {
                 if (result.status === 'fulfilled') {
                     if (result.value) processedBlocks++;
@@ -61,7 +60,6 @@ export class MissedBlocksProcessor {
                 }
             });
 
-            // Her batch sonrası kısa bir bekleme
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 

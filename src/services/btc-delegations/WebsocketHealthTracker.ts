@@ -43,12 +43,6 @@ export class WebsocketHealthTracker {
 
             if (currentHeight <= lastProcessedHeight) return;
 
-            console.log(`[${network}] Processing missed blocks:`, {
-                lastProcessed: lastProcessedHeight,
-                current: currentHeight,
-                difference: currentHeight - lastProcessedHeight
-            });
-
             await this.missedBlocksProcessor.processMissedBlocks(
                 network,
                 lastProcessedHeight + 1,
@@ -56,7 +50,6 @@ export class WebsocketHealthTracker {
                 babylonClient
             );
 
-            // State'i güncelle
             state.isConnected = true;
             state.lastProcessedHeight = currentHeight;
             state.disconnectedAt = undefined;
