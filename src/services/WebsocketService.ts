@@ -1,18 +1,52 @@
 import WebSocket from 'ws';
 import { Network } from '../types/finality';
 import { BTCDelegationEventHandler } from './btc-delegations/BTCDelegationEventHandler';
+import { WebsocketHealthTracker } from './btc-delegations/WebsocketHealthTracker';
+import { BabylonClient } from '../clients/BabylonClient';
 
 export class WebsocketService {
     private static instance: WebsocketService | null = null;
     private mainnetWs: WebSocket | null = null;
     private testnetWs: WebSocket | null = null;
     private eventHandler: BTCDelegationEventHandler;
+    private healthTracker: WebsocketHealthTracker;
+    private babylonClient: Map<Network, BabylonClient> = new Map();
     private reconnectAttempts: Map<Network, number> = new Map();
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
     private readonly RECONNECT_INTERVAL = 5000; // 5 seconds
 
     private constructor() {
         this.eventHandler = BTCDelegationEventHandler.getInstance();
+        this.healthTracker = WebsocketHealthTracker.getInstance();
+        
+        // Mainnet konfigürasyonu varsa ekle
+        try {
+            if (process.env.BABYLON_NODE_URL && process.env.BABYLON_RPC_URL) {
+                this.babylonClient.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
+                console.log('[WebSocket] Mainnet client initialized successfully');
+            } else {
+                console.log('[WebSocket] Mainnet is not configured, skipping');
+            }
+        } catch (error) {
+            console.warn('[WebSocket] Failed to initialize Mainnet client:', error);
+        }
+
+        // Testnet konfigürasyonu varsa ekle
+        try {
+            if (process.env.BABYLON_TESTNET_NODE_URL && process.env.BABYLON_TESTNET_RPC_URL) {
+                this.babylonClient.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
+                console.log('[WebSocket] Testnet client initialized successfully');
+            } else {
+                console.log('[WebSocket] Testnet is not configured, skipping');
+            }
+        } catch (error) {
+            console.warn('[WebSocket] Failed to initialize Testnet client:', error);
+        }
+
+        // En az bir network konfigüre edilmiş olmalı
+        if (this.babylonClient.size === 0) {
+            throw new Error('[WebSocket] No network configurations found. Please configure at least one network (MAINNET or TESTNET)');
+        }
     }
 
     public static getInstance(): WebsocketService {
@@ -23,8 +57,13 @@ export class WebsocketService {
     }
 
     public startListening() {
-        this.connectMainnet();
-        this.connectTestnet();
+        // Sadece konfigüre edilmiş networkler için bağlantı kur
+        if (this.babylonClient.has(Network.MAINNET)) {
+            this.connectMainnet();
+        }
+        if (this.babylonClient.has(Network.TESTNET)) {
+            this.connectTestnet();
+        }
     }
 
     private connectMainnet() {
@@ -98,8 +137,9 @@ export class WebsocketService {
                     return;
                 }
 
+                const height = parseInt(message.result.events['tx.height']?.[0]);
                 const txData = {
-                    height: message.result.events['tx.height']?.[0],
+                    height,
                     hash: message.result.events['tx.hash']?.[0],
                     events: txResult.result.events
                 };
@@ -108,7 +148,11 @@ export class WebsocketService {
                 if (!txData.height || !txData.hash || !txData.events) {
                     console.log(`${network} transaction missing required fields:`, txData);
                     return;
-                }                
+                }
+
+                // Update health tracker with current height
+                this.healthTracker.updateBlockHeight(network, height);
+                
                 // Event'i handler'a ilet
                 await this.eventHandler.handleEvent(txData, network);
             } catch (error) {
@@ -116,9 +160,10 @@ export class WebsocketService {
             }
         });
 
-        ws.on('close', () => {
+        ws.on('close', async () => {
             console.log(`${network} websocket connection closed`);
-            this.handleReconnect(network);
+            this.healthTracker.markDisconnected(network);
+            await this.handleReconnect(network);
         });
 
         ws.on('error', (error) => {
@@ -127,24 +172,36 @@ export class WebsocketService {
         });
     }
 
-    private handleReconnect(network: Network) {
+    private async handleReconnect(network: Network) {
         const attempts = this.reconnectAttempts.get(network) || 0;
         
         if (attempts < this.MAX_RECONNECT_ATTEMPTS) {
             this.reconnectAttempts.set(network, attempts + 1);
-            console.log(`Attempting to reconnect to ${network} websocket (attempt ${attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
+            console.log(`[${network}] Attempting to reconnect (attempt ${attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
             
-            setTimeout(() => {
-                if (network === Network.MAINNET) {
-                    this.mainnetWs = null;
-                    this.connectMainnet();
-                } else {
-                    this.testnetWs = null;
-                    this.connectTestnet();
+            try {
+                // Sadece konfigüre edilmiş client'lar için işlem yap
+                const client = this.babylonClient.get(network);
+                if (client) {
+                    await this.healthTracker.handleReconnection(network, client);
                 }
-            }, this.RECONNECT_INTERVAL);
+
+                setTimeout(() => {
+                    if (network === Network.MAINNET && this.babylonClient.has(Network.MAINNET)) {
+                        this.mainnetWs = null;
+                        this.connectMainnet();
+                    } else if (network === Network.TESTNET && this.babylonClient.has(Network.TESTNET)) {
+                        this.testnetWs = null;
+                        this.connectTestnet();
+                    }
+                }, this.RECONNECT_INTERVAL);
+            } catch (error) {
+                console.error(`[${network}] Error handling reconnection:`, error);
+                // Hata durumunda da reconnect dene
+                this.handleReconnect(network);
+            }
         } else {
-            console.error(`Max reconnection attempts reached for ${network} websocket`);
+            console.error(`[${network}] Max reconnection attempts reached`);
         }
     }
 

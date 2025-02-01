@@ -5,6 +5,8 @@ import { Network } from '../../../types/finality';
 import { v4 as uuidv4 } from 'uuid';
 import { FinalityEpochService } from '../../../services/finality/FinalityEpochService';
 import { FinalityDelegationService } from '../../../services/finality/FinalityDelegationService';
+import { BTCDelegationStatus } from '../../../types/finality/btcstaking';
+import { SortField, SortOrder } from '../../../services/finality/FinalityDelegationService';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
@@ -196,7 +198,15 @@ router.get('/providers/:fpBtcPkHex/power', async (req, res) => {
 router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
-        const { page = '1', limit = '10' } = req.query;
+        const { 
+            page = '1', 
+            limit = '10',
+            status,
+            sortBy,
+            sortOrder = 'desc',
+            minAmount,
+            maxAmount
+        } = req.query;
         const network = req.network || Network.MAINNET;
 
         // Parse pagination parameters
@@ -216,12 +226,56 @@ router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
             });
         }
 
+        // Validate status if provided
+        if (status && !Object.values(BTCDelegationStatus).includes(status as BTCDelegationStatus)) {
+            return res.status(400).json({
+                error: `Invalid status. Must be one of: ${Object.values(BTCDelegationStatus).join(', ')}`
+            });
+        }
+
+        // Validate sort parameters
+        const validSortFields = ['amount', 'startHeight', 'createdAt'];
+        if (sortBy && !validSortFields.includes(sortBy as string)) {
+            return res.status(400).json({
+                error: `Invalid sortBy parameter. Must be one of: ${validSortFields.join(', ')}`
+            });
+        }
+
+        if (sortOrder && !['asc', 'desc'].includes(sortOrder as string)) {
+            return res.status(400).json({
+                error: 'Invalid sortOrder parameter. Must be either "asc" or "desc"'
+            });
+        }
+
+        // Parse amount parameters
+        const minAmountNum = minAmount ? parseInt(minAmount as string, 10) : undefined;
+        const maxAmountNum = maxAmount ? parseInt(maxAmount as string, 10) : undefined;
+
+        if (minAmountNum && isNaN(minAmountNum)) {
+            return res.status(400).json({
+                error: 'Invalid minAmount parameter. Must be a number'
+            });
+        }
+
+        if (maxAmountNum && isNaN(maxAmountNum)) {
+            return res.status(400).json({
+                error: 'Invalid maxAmount parameter. Must be a number'
+            });
+        }
+
         const finalityDelegationService = FinalityDelegationService.getInstance();
         const result = await finalityDelegationService.getFinalityProviderDelegations(
             fpBtcPkHex, 
             network,
             pageNum,
-            limitNum
+            limitNum,
+            {
+                status: status as BTCDelegationStatus,
+                sortBy: sortBy as SortField,
+                sortOrder: sortOrder as SortOrder,
+                minAmount: minAmountNum,
+                maxAmount: maxAmountNum
+            }
         );
 
         res.json(result);

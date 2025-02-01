@@ -20,12 +20,12 @@ async function startServer() {
     console.log('Initializing BTCDelegationService...');
     BTCDelegationService.getInstance();
 
-    // Initialize and start the WebSocket service
-    const websocketService = WebsocketService.getInstance();
-    websocketService.startListening();
     const app = express();
     app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
     const port = process.env.PORT || 3000;
+    // Initialize and start the WebSocket service
+    const websocketService = WebsocketService.getInstance();
+    websocketService.startListening();
 
     // CORS ayarları
     app.use(cors({

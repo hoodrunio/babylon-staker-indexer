@@ -1,22 +1,28 @@
-import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import {
     Network,
     FinalityProvider,
-    EpochInfo,
     FinalityParams,
     Vote,
     CurrentEpochResponse
 } from '../types/finality';
 
-// Axios config için custom tip tanımı
-interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
+interface RetryConfig extends InternalAxiosRequestConfig {
     retry?: boolean;
     currentRetryCount?: number;
 }
 
-interface RetryConfig extends InternalAxiosRequestConfig {
-    retry?: boolean;
-    currentRetryCount?: number;
+export interface BlockResult {
+    height: number;
+    txs_results: Array<{
+        events: Array<{
+            type: string;
+            attributes: Array<{
+                key: string;
+                value: string;
+            }>;
+        }>;
+    }>;
 }
 
 export class BabylonClient {
@@ -25,7 +31,6 @@ export class BabylonClient {
     private readonly wsEndpoint: string;
     private readonly network: Network;
     private readonly baseUrl: string;
-    private epochCache: Map<number, EpochInfo> = new Map();
     private currentEpochInfo: CurrentEpochResponse | null = null;
     private readonly MAX_RETRIES = 5;
     private readonly RETRY_DELAY = 2000; // 2 seconds
@@ -235,6 +240,46 @@ export class BabylonClient {
             }));
         } catch (error) {
             console.error(`Error getting active finality providers at height ${height}:`, error);
+            throw error;
+        }
+    }
+
+    async getBlockResults(height: number): Promise<BlockResult | null> {
+        try {
+            console.debug(`[Block Results] Fetching results for height ${height}`);
+            const rpcUrl = this.network === Network.MAINNET 
+                ? process.env.BABYLON_RPC_URL 
+                : process.env.BABYLON_TESTNET_RPC_URL;
+
+            if (!rpcUrl) {
+                throw new Error(`RPC URL not configured for ${this.network} network`);
+            }
+
+            const response = await axios.get(`${rpcUrl}/block_results?height=${height}`);
+            
+            if (!response.data?.result) {
+                console.warn(`[Block Results] No data in response for height ${height}`);
+                return null;
+            }
+
+            // RPC response'unu MissedBlocksProcessor'ın beklediği formata dönüştür
+            const formattedResults: BlockResult = {
+                height: height,
+                txs_results: (response.data.result.txs_results || []).map((txResult: any) => ({
+                    events: (txResult.events || []).map((event: any) => ({
+                        type: event.type,
+                        attributes: event.attributes || []
+                    }))
+                }))
+            };
+
+            return formattedResults;
+        } catch (error) {
+            if (error instanceof Error) {
+                console.error(`[Block Results] Error fetching block results at height ${height}:`, error.message);
+            } else {
+                console.error(`[Block Results] Error fetching block results at height ${height}:`, error);
+            }
             throw error;
         }
     }

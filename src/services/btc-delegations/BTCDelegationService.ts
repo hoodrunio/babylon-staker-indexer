@@ -55,14 +55,21 @@ export class BTCDelegationService {
         }
         
         // İlk senkronizasyonu başlat
-       /*  const networks = Array.from(this.babylonClients.keys());
-        console.log(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
+        const networks = Array.from(this.babylonClients.keys());
         
-        for (const network of networks) {
-            this.syncDelegations(network).catch(err => 
-                console.error(`[${network}] Error in initial sync:`, err)
-            );
-        } */
+        
+        // ENABLE_FULL_SYNC kontrolü
+        const enableFullSync = process.env.ENABLE_FULL_SYNC === 'true';
+        if (enableFullSync) {
+            console.log(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
+            for (const network of networks) {
+                this.syncDelegations(network).catch(err => 
+                    console.error(`[${network}] Error in initial sync:`, err)
+                );
+            }
+        } else {
+            console.log('[Network] Full sync is disabled, skipping initial delegation sync');
+        }
         
         // Periyodik senkronizasyonu başlat
         //this.startPeriodicSync();

@@ -57,6 +57,7 @@ export interface BTCUndelegationResponse {
 
 export interface BTCDelegation {
     staker_addr: string;
+    stakerBtcAddress?: string;
     btc_pk: string;
     fp_btc_pk_list: string[];
     staking_time: number;

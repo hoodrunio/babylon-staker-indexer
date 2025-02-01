@@ -3,20 +3,49 @@ import { BabylonClient } from '../../clients/BabylonClient';
 import { 
     QueryFinalityProviderDelegationsResponse,
     DelegationResponse,
-    BTCDelegation
+    BTCDelegation,
+    BTCDelegationStatus
 } from '../../types/finality/btcstaking';
 import { formatSatoshis } from '../../utils/util';
 import { getTxHash } from '../../utils/generate-tx-hash';
-import { FinalityDelegationCacheManager } from './FinalityDelegationCacheManager';
+import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
+import { Document } from 'mongoose';
+
+interface DelegationDocument extends Document {
+    stakerAddress: string;
+    stakerBtcAddress?: string;
+    state: string;
+    stakerBtcPkHex: string;
+    totalSat: number;
+    startHeight: number;
+    endHeight?: number;
+    stakingTime: number;
+    stakingTxIdHex: string;
+    stakingTxHex: string;
+    unbondingTime: number;
+    unbondingTxHex?: string;
+    unbondingTxIdHex?: string;
+    spendStakeTxHex?: string;
+    spendStakeTxIdHex?: string;
+}
+
+export type SortOrder = 'asc' | 'desc';
+export type SortField = 'amount' | 'startHeight' | 'createdAt';
+
+export interface DelegationQueryOptions {
+    status?: BTCDelegationStatus;
+    sortBy?: SortField;
+    sortOrder?: SortOrder;
+    minAmount?: number;
+    maxAmount?: number;
+}
 
 export class FinalityDelegationService {
     private static instance: FinalityDelegationService | null = null;
     private babylonClient: BabylonClient;
-    private cacheManager: FinalityDelegationCacheManager;
 
     private constructor() {
         this.babylonClient = BabylonClient.getInstance();
-        this.cacheManager = FinalityDelegationCacheManager.getInstance();
     }
 
     public static getInstance(): FinalityDelegationService {
@@ -44,6 +73,7 @@ export class FinalityDelegationService {
 
         const response: DelegationResponse = {
             staker_address: del.staker_addr || '',
+            stakerBtcAddress: del.stakerBtcAddress || '',
             status: del.status_desc || '',
             btc_pk_hex: del.btc_pk || '',
             amount: formatSatoshis(totalSat),
@@ -104,11 +134,54 @@ export class FinalityDelegationService {
         };
     }
 
-    public async getFinalityProviderDelegations(
-        fpBtcPkHex: string, 
-        network: Network = Network.MAINNET,
+    private buildQuery(fpBtcPkHex: string, network: Network, options?: DelegationQueryOptions) {
+        const query: any = {
+            finalityProviderBtcPksHex: fpBtcPkHex,
+            networkType: network.toLowerCase()
+        };
+
+        if (options?.status && options.status !== BTCDelegationStatus.ANY) {
+            query.state = options.status;
+        }
+
+        if (options?.minAmount || options?.maxAmount) {
+            query.totalSat = {};
+            if (options.minAmount) {
+                query.totalSat.$gte = options.minAmount;
+            }
+            if (options.maxAmount) {
+                query.totalSat.$lte = options.maxAmount;
+            }
+        }
+
+        return query;
+    }
+
+    private getSortOptions(options?: DelegationQueryOptions): { [key: string]: 1 | -1 } {
+        if (!options?.sortBy) {
+            return { createdAt: -1 }; // Default sort
+        }
+
+        const sortOrder = options.sortOrder === 'asc' ? 1 : -1;
+        
+        switch (options.sortBy) {
+            case 'amount':
+                return { totalSat: sortOrder };
+            case 'startHeight':
+                return { startHeight: sortOrder };
+            case 'createdAt':
+                return { createdAt: sortOrder };
+            default:
+                return { createdAt: -1 };
+        }
+    }
+
+    private async getDelegationsFromDatabase(
+        fpBtcPkHex: string,
+        network: Network,
         page: number = 1,
-        limit: number = 10
+        limit: number = 10,
+        options?: DelegationQueryOptions
     ): Promise<{
         delegations: DelegationResponse[];
         pagination: {
@@ -129,12 +202,143 @@ export class FinalityDelegationService {
             unbonding_amount_sat: number;
         };
     }> {
-        return this.cacheManager.getDelegations(
-            fpBtcPkHex,
-            network,
-            page,
-            limit,
-            this.fetchDelegations.bind(this)
-        );
+        try {
+            const skip = (page - 1) * limit;
+            const baseQuery = this.buildQuery(fpBtcPkHex, network, options);
+            const sort = this.getSortOptions(options);
+
+            // Tek bir aggregation pipeline ile tüm verileri al
+            const [result] = await NewBTCDelegation.aggregate([
+                // İlk stage: Base query'i uygula
+                { $match: baseQuery },
+
+                // İkinci stage: Facet ile hem pagination hem de stats bilgilerini al
+                {
+                    $facet: {
+                        // Pagination için gerekli veriler
+                        paginatedResults: [
+                            { $sort: sort },
+                            { $skip: skip },
+                            { $limit: limit }
+                        ],
+                        // Toplam kayıt sayısı
+                        totalCount: [
+                            { $count: 'count' }
+                        ],
+                        // İstatistikler
+                        stats: [
+                            {
+                                $group: {
+                                    _id: null,
+                                    total_amount_sat: { $sum: '$totalSat' },
+                                    active_amount_sat: {
+                                        $sum: {
+                                            $cond: [
+                                                { $eq: ['$state', 'ACTIVE'] },
+                                                '$totalSat',
+                                                0
+                                            ]
+                                        }
+                                    },
+                                    unbonding_amount_sat: {
+                                        $sum: {
+                                            $cond: [
+                                                { $eq: ['$state', 'UNBONDED'] },
+                                                '$totalSat',
+                                                0
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]);
+
+            const totalCount = result.totalCount[0]?.count || 0;
+            const totalPages = Math.ceil(totalCount / limit);
+            const stats = result.stats[0] || {
+                total_amount_sat: 0,
+                active_amount_sat: 0,
+                unbonding_amount_sat: 0
+            };
+
+            // Format delegations
+            const formattedDelegations: DelegationResponse[] = result.paginatedResults.map((del: DelegationDocument) => ({
+                staker_address: del.stakerAddress,
+                stakerBtcAddress: del.stakerBtcAddress || '',
+                status: del.state,
+                btc_pk_hex: del.stakerBtcPkHex,
+                amount: formatSatoshis(del.totalSat),
+                amount_sat: del.totalSat,
+                start_height: del.startHeight,
+                end_height: del.endHeight || 0,
+                duration: del.stakingTime,
+                transaction_id_hex: del.stakingTxIdHex,
+                transaction_id: del.stakingTxHex,
+                active: del.state === 'ACTIVE',
+                unbonding_time: del.unbondingTime,
+                unbonding: del.unbondingTxHex ? {
+                    transaction_id: del.unbondingTxHex,
+                    transaction_id_hex: del.unbondingTxIdHex || '',
+                    spend_transaction_id: del.spendStakeTxHex || undefined,
+                    spend_transaction_id_hex: del.spendStakeTxIdHex || undefined
+                } : undefined,
+            }));
+
+            return {
+                delegations: formattedDelegations,
+                pagination: {
+                    total_count: totalCount,
+                    total_pages: totalPages,
+                    current_page: page,
+                    has_next: page < totalPages,
+                    has_previous: page > 1,
+                    next_page: page < totalPages ? page + 1 : null,
+                    previous_page: page > 1 ? page - 1 : null
+                },
+                total_stats: {
+                    total_amount: formatSatoshis(stats.total_amount_sat),
+                    total_amount_sat: stats.total_amount_sat,
+                    active_amount: formatSatoshis(stats.active_amount_sat),
+                    active_amount_sat: stats.active_amount_sat,
+                    unbonding_amount: formatSatoshis(stats.unbonding_amount_sat),
+                    unbonding_amount_sat: stats.unbonding_amount_sat
+                }
+            };
+        } catch (error) {
+            console.error('Error fetching delegations from database:', error);
+            throw error;
+        }
+    }
+
+    public async getFinalityProviderDelegations(
+        fpBtcPkHex: string, 
+        network: Network = Network.MAINNET,
+        page: number = 1,
+        limit: number = 10,
+        options?: DelegationQueryOptions
+    ): Promise<{
+        delegations: DelegationResponse[];
+        pagination: {
+            total_count: number;
+            total_pages: number;
+            current_page: number;
+            has_next: boolean;
+            has_previous: boolean;
+            next_page: number | null;
+            previous_page: number | null;
+        };
+        total_stats: {
+            total_amount: string;
+            total_amount_sat: number;
+            active_amount: string;
+            active_amount_sat: number;
+            unbonding_amount: string;
+            unbonding_amount_sat: number;
+        };
+    }> {
+        return this.getDelegationsFromDatabase(fpBtcPkHex, network, page, limit, options);
     }
 } 

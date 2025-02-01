@@ -30,6 +30,8 @@ export class NewBTCDelegationService {
         networkType: 'mainnet' | 'testnet';
         txHash: string;
         blockHeight: number;
+        unbondingTxHex?: string;
+        unbondingTxIdHex?: string;
     }) {
         const stakingTxIdHex = getTxHash(data.stakingTxHex, false);
         
@@ -243,7 +245,9 @@ export class NewBTCDelegationService {
             startHeight: parseInt(attributes.start_height || '0'),
             txHash: eventData.hash,
             blockHeight: eventData.height,
-            networkType: network.toLowerCase() as 'mainnet' | 'testnet'
+            networkType: network.toLowerCase() as 'mainnet' | 'testnet',
+            unbondingTxHex: attributes.unbonding_tx || undefined,
+            unbondingTxIdHex: attributes.unbonding_tx ? getTxHash(attributes.unbonding_tx, false) : undefined
         };
 
         try {
@@ -318,7 +322,8 @@ export class NewBTCDelegationService {
                 unbonding_time: attributes.unbonding_time ? JSON.parse(attributes.unbonding_time) : undefined,
                 staker_address: senderAttr?.value,
                 start_height: eventData.height,
-                total_sat: attributes.total_sat ? JSON.parse(attributes.total_sat) : undefined
+                total_sat: attributes.total_sat ? JSON.parse(attributes.total_sat) : undefined,
+                unbonding_tx: attributes.unbonding_tx ? JSON.parse(attributes.unbonding_tx) : undefined
             };
 
             // console.log('Parsed result:', result);
