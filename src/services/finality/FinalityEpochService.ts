@@ -137,7 +137,7 @@ export class FinalityEpochService {
             
             // Calculate epoch boundaries
             const epochStartHeight = currentEpoch.boundary - 360; // Each epoch is 360 blocks
-            const epochEndHeight = Math.min(currentEpoch.boundary, safeHeight);
+            const epochEndHeight = Math.min(currentEpoch.boundary);
             
             // Get active finality providers at current height
             const providers = await this.babylonClient.getActiveFinalityProvidersAtHeight(safeHeight);
