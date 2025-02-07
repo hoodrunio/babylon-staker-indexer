@@ -226,7 +226,9 @@ export class BTCDelegationService {
                 unbonding_time: del.unbonding_time,
                 unbonding: del.undelegation_response ? {
                     transaction_id: del.undelegation_response.unbonding_tx_hex,
-                    transaction_id_hex: getTxHash(del.undelegation_response.unbonding_tx_hex || '', false)
+                    transaction_id_hex: getTxHash(del.undelegation_response.unbonding_tx_hex || '', false),
+                    spend_transaction_id: del.undelegation_response.spend_stake_tx_hex,
+                    spend_transaction_id_hex: del.undelegation_response.spend_stake_tx_hex ? getTxHash(del.undelegation_response.spend_stake_tx_hex, false) : undefined
                 } : undefined,
                 params_version: del.params_version,
                 finality_provider_btc_pks_hex: del.fp_btc_pk_list || []
@@ -433,7 +435,11 @@ export class BTCDelegationService {
                 unbondingTime: chainDel.unbonding_time,
                 blockHeight: currentHeight,
                 txHash: chainDel.transaction_id_hex,
-                finalityProviderBtcPksHex: chainDel.finality_provider_btc_pks_hex || []
+                finalityProviderBtcPksHex: chainDel.finality_provider_btc_pks_hex || [],
+                unbondingTxHex: chainDel.unbonding?.transaction_id,
+                unbondingTxIdHex: chainDel.unbonding?.transaction_id_hex,
+                spendStakeTxHex: chainDel.unbonding?.spend_transaction_id,
+                spendStakeTxIdHex: chainDel.unbonding?.spend_transaction_id_hex
             });
 
             return await delegation.save();

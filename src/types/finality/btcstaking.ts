@@ -46,6 +46,7 @@ export interface CovenantAdaptorSignatures {
 
 export interface BTCUndelegationResponse {
     unbonding_tx_hex: string;
+    spend_stake_tx_hex?: string;
     covenant_unbonding_sig_list: SignatureInfo[];
     slashing_tx_hex: string;
     delegator_slashing_sig_hex: string;
