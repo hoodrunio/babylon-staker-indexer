@@ -153,7 +153,41 @@ export class BTCDelegationEventHandler {
 
     private async handleDelegationEvent(txData: any, network: Network) {
         try {
-            await this.delegationService.handleNewDelegationFromWebsocket(txData, network);
+            console.log('Handling delegation event with data');
+            
+            let eventDataWithHashAndSender;
+            
+            // Websocket event yapısı kontrolü
+            if (txData.value?.TxResult) {
+                // Websocket event'i
+                const txResult = txData.value.TxResult;
+                eventDataWithHashAndSender = {
+                    ...txData,
+                    events: txResult.result.events,
+                    height: parseInt(txResult.height),
+                    hash: txResult.tx_hash || txResult.tx, // tx_hash veya tx'den birini kullan
+                    sender: txResult.result.events.find((e: any) => e.type === 'message')
+                        ?.attributes.find((a: any) => a.key === 'sender')?.value
+                };
+            } else if (txData.events) {
+                // MissedBlocksProcessor'dan gelen event
+                eventDataWithHashAndSender = {
+                    ...txData,
+                    hash: txData.hash,
+                    sender: txData.sender
+                };
+            } else {
+                console.error('Unknown event data structure:', txData);
+                return;
+            }
+
+            console.log('Processed event data:', {
+                height: eventDataWithHashAndSender.height,
+                hash: eventDataWithHashAndSender.hash,
+                sender: eventDataWithHashAndSender.sender
+            });
+
+            await this.delegationService.handleNewDelegationFromWebsocket(eventDataWithHashAndSender, network);
         } catch (error) {
             console.error(`Error handling delegation event for ${network}:`, error);
         }

@@ -31,6 +31,7 @@ export class BabylonClient {
     private readonly wsEndpoint: string;
     private readonly network: Network;
     private readonly baseUrl: string;
+    private readonly baseRpcUrl: string;
     private currentEpochInfo: CurrentEpochResponse | null = null;
     private readonly MAX_RETRIES = 5;
     private readonly RETRY_DELAY = 2000; // 2 seconds
@@ -51,11 +52,13 @@ export class BabylonClient {
             ? process.env.BABYLON_WS_URL
             : process.env.BABYLON_TESTNET_WS_URL;
 
+        // Check if the requested network is configured
         if (!nodeUrl || !rpcUrl) {
-            throw new Error(`Missing configuration for ${network} network. Please check your environment variables: ${network === Network.MAINNET ? 'BABYLON_NODE_URL and BABYLON_RPC_URL' : 'BABYLON_TESTNET_NODE_URL and BABYLON_TESTNET_RPC_URL'}`);
+            throw new Error(`Network ${network} is not configured. Please check your environment variables for ${network === Network.MAINNET ? 'BABYLON_NODE_URL and BABYLON_RPC_URL' : 'BABYLON_TESTNET_NODE_URL and BABYLON_TESTNET_RPC_URL'}`);
         }
 
         this.baseUrl = nodeUrl;
+        this.baseRpcUrl = rpcUrl;
 
         if (!wsUrl) {
             console.warn(`WebSocket URL not configured for ${network} network, falling back to RPC URL`);
@@ -127,10 +130,24 @@ export class BabylonClient {
         return this.baseUrl;
     }
 
-    async getCurrentHeight(): Promise<number> {
+    public getRpcUrl(): string {
+        return this.baseRpcUrl;
+    }
+
+    public async getCurrentHeight(): Promise<number> {
         try {
-            const response = await this.client.get('/cosmos/base/tendermint/v1beta1/blocks/latest');
-            return parseInt(response.data.block.header.height, 10);
+            const response = await axios.post(this.baseRpcUrl, {
+                jsonrpc: "2.0",
+                id: -1,
+                method: "abci_info",
+                params: []
+            });
+
+            if (response.data?.result?.response?.last_block_height) {
+                return parseInt(response.data.result.response.last_block_height, 10);
+            }
+
+            throw new Error('Invalid response format from RPC endpoint');
         } catch (error) {
             if (error instanceof Error) {
                 console.error('[Height] Failed to get current height:', error.message);
@@ -282,5 +299,53 @@ export class BabylonClient {
             }
             throw error;
         }
+    }
+
+    async getModuleParams(module: string): Promise<any> {
+        try {
+            const response = await this.client.get(`/babylon/${module}/v1/params`);
+            return response.data.params;
+        } catch (error) {
+            console.error(`Error fetching ${module} params:`, error);
+            throw error;
+        }
+    }
+
+
+    async getIncentiveParams(): Promise<any> {
+        try {
+            const response = await this.client.get('/babylon/incentive/params');
+            return response.data.params;
+        } catch (error) {
+            console.error('Error fetching incentive params:', error);
+            throw error;
+        }
+    }
+
+    private async fetchWithTimeout(url: string, timeout: number = 10000): Promise<Response> {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+
+        try {
+            const response = await fetch(url, {
+                signal: controller.signal
+            });
+            clearTimeout(id);
+            return response;
+        } catch (error) {
+            clearTimeout(id);
+            throw error;
+        }
+    }
+
+    public async getTxSearch(height: number): Promise<any> {
+        const url = new URL(`${this.baseUrl}/tx_search`);
+        url.searchParams.append('query', `tx.height=${height}`);
+        url.searchParams.append('page', '1');
+        url.searchParams.append('per_page', '500');
+
+        const response = await this.fetchWithTimeout(url.toString());
+        const data = await response.json() as { result: any };
+        return data.result;
     }
 } 

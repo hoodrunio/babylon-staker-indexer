@@ -12,6 +12,24 @@ interface BTCStakingEvent {
         }>;
     }>;
     height: number;
+    hash?: string;
+    sender?: string;
+}
+
+interface TxSearchResult {
+    txs: Array<{
+        hash: string;
+        height: string;
+        tx_result: {
+            events: Array<{
+                type: string;
+                attributes: Array<{
+                    key: string;
+                    value: string;
+                }>;
+            }>;
+        };
+    }>;
 }
 
 export class MissedBlocksProcessor {
@@ -104,11 +122,29 @@ export class MissedBlocksProcessor {
         babylonClient: BabylonClient
     ): Promise<boolean> {
         try {
-            const blockResults = await babylonClient.getBlockResults(height);
-            if (!blockResults?.txs_results) return false;
+            const txSearchResults = await babylonClient.getTxSearch(height) as TxSearchResult;
+            if (!txSearchResults?.txs) return false;
 
-            const btcStakingEvents = this.extractBTCStakingEvents(blockResults);
+            const btcStakingEvents: BTCStakingEvent[] = [];
+
+            for (const tx of txSearchResults.txs) {
+                const events = tx.tx_result.events || [];
+                for (const event of events) {
+                    if (event.type.startsWith('babylon.btcstaking.v1.')) {
+                        btcStakingEvents.push({
+                            events: [event],
+                            height: parseInt(tx.height),
+                            hash: tx.hash,
+                            sender: events.find(e => e.type === 'message')?.attributes.find(a => a.key === 'sender')?.value
+                        });
+                    }
+                }
+            }
+
             if (btcStakingEvents.length === 0) return false;
+
+            // Log the events for debugging
+            console.log('Processing BTC staking events:', JSON.stringify(btcStakingEvents, null, 2));
 
             for (const event of btcStakingEvents) {
                 await this.eventHandler.handleEvent(event, network);
@@ -117,29 +153,11 @@ export class MissedBlocksProcessor {
             return true;
         } catch (error) {
             if (this.isRetryableError(error)) {
-                throw error; // Rate limiter tekrar deneyecek
+                throw error;
             }
             console.error(`[${network}] Non-retryable error for block ${height}:`, error);
             return false;
         }
-    }
-
-    private extractBTCStakingEvents(blockResults: BlockResult): BTCStakingEvent[] {
-        const btcStakingEvents: BTCStakingEvent[] = [];
-        
-        for (const txResult of blockResults.txs_results) {
-            const events = txResult.events || [];
-            for (const event of events) {
-                if (event.type.startsWith('babylon.btcstaking.v1.')) {
-                    btcStakingEvents.push({
-                        events: [event],
-                        height: blockResults.height
-                    });
-                }
-            }
-        }
-
-        return btcStakingEvents;
     }
 
     private isRetryableError(error: unknown): boolean {

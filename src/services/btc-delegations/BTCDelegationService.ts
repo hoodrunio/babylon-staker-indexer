@@ -27,26 +27,20 @@ export class BTCDelegationService {
         this.babylonClients = new Map();
         this.delegationModel = NewBTCDelegation;
         
+        // Try to initialize testnet client
         try {
             this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
             console.log('[Network] Testnet client initialized successfully');
         } catch (error) {
-            if (error instanceof Error && error.message.includes('Missing configuration')) {
-                console.error('[Network] Testnet is not configured');
-            } else {
-                console.error('[Network] Failed to initialize testnet client:', error);
-            }
+            console.debug('[Network] Testnet is not configured');
         }
 
+        // Try to initialize mainnet client
         try {
             this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
             console.log('[Network] Mainnet client initialized successfully');
         } catch (error) {
-            if (error instanceof Error && error.message.includes('Missing configuration')) {
-                console.error('[Network] Mainnet is not configured');
-            } else {
-                console.error('[Network] Failed to initialize mainnet client:', error);
-            }
+            console.debug('[Network] Mainnet is not configured');
         }
 
         if (this.babylonClients.size === 0) {
@@ -83,7 +77,16 @@ export class BTCDelegationService {
         return client;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
+    private getNetworkConfig(network?: Network) {
+        // If network is not specified, use the first available network
+        if (!network) {
+            const availableNetworks = Array.from(this.babylonClients.keys());
+            if (availableNetworks.length === 0) {
+                throw new Error('No networks are configured');
+            }
+            network = availableNetworks[0];
+        }
+
         const client = this.getBabylonClient(network);
         const baseUrl = client.getBaseUrl();
         

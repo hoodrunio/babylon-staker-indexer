@@ -201,12 +201,16 @@ export class NewBTCDelegationService {
     }
 
     public async handleNewDelegationFromWebsocket(eventData: any, network: Network) {
+        // console.log('Raw event data received:', JSON.stringify(eventData, null, 2));
+        
         const attributes = this.parseEventAttributes(eventData);
         
         if (!attributes) {
             console.error('Failed to parse websocket event attributes');
             return null;
         }
+
+        // console.log('Parsed attributes:', JSON.stringify(attributes, null, 2));
 
         // Extract amount from staking transaction
         const totalSat = extractAmountFromBTCTransaction(attributes.staking_tx_hex);
@@ -218,10 +222,6 @@ export class NewBTCDelegationService {
 
         // Extract addresses from staking transaction
         const stakingTxHex = attributes.staking_tx_hex;
-        // console.log('Transaction before parsing:', stakingTxHex);
-        // console.log('Transaction type:', typeof stakingTxHex);
-
-        // Parse if it's a JSON string
         const parsedTxHex = typeof stakingTxHex === 'string' && stakingTxHex.startsWith('"') 
             ? JSON.parse(stakingTxHex) 
             : stakingTxHex;
@@ -235,15 +235,15 @@ export class NewBTCDelegationService {
 
         const delegationData = {
             stakingTxHex: attributes.staking_tx_hex,
-            stakerAddress: attributes.staker_address, // Event'ten gelen pubkey formatındaki adres
-            stakerBtcAddress: addresses.sender || '', // Transaction'dan çıkarılan BTC adresi, bulunamazsa boş string
+            stakerAddress: eventData.sender || attributes.staker_address, // Önce eventData.sender'ı kontrol et
+            stakerBtcAddress: addresses.sender || '',
             stakerBtcPkHex: attributes.staker_btc_pk_hex,
             finalityProviderBtcPksHex: attributes.finality_provider_btc_pks_hex,
             stakingTime: parseInt(attributes.staking_time),
             unbondingTime: parseInt(attributes.unbonding_time),
             totalSat: totalSat || 0,
             startHeight: parseInt(attributes.start_height || '0'),
-            txHash: eventData.hash,
+            txHash: eventData.hash, // eventData.hash'i kullan
             blockHeight: eventData.height,
             networkType: network.toLowerCase() as 'mainnet' | 'testnet',
             unbondingTxHex: attributes.unbonding_tx || undefined,

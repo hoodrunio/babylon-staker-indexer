@@ -151,7 +151,7 @@ export class WebsocketService {
                 }
 
                 // Update health tracker with current height
-                this.healthTracker.updateBlockHeight(network, height);
+                await this.healthTracker.updateBlockHeight(network, height);
                 
                 // Event'i handler'a ilet
                 await this.eventHandler.handleEvent(txData, network);

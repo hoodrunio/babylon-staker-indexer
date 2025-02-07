@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { BabylonClient } from '../../clients/BabylonClient';
+import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
 
 export class FinalityWebSocketManager {
     private static instance: FinalityWebSocketManager | null = null;
@@ -7,10 +8,12 @@ export class FinalityWebSocketManager {
     private isRunning: boolean = false;
     private readonly RECONNECT_INTERVAL = 5000;
     private babylonClient: BabylonClient;
+    private healthTracker: WebsocketHealthTracker;
     private onNewBlockCallback: ((height: number) => Promise<void>) | null = null;
 
     private constructor() {
         this.babylonClient = BabylonClient.getInstance();
+        this.healthTracker = WebsocketHealthTracker.getInstance();
     }
 
     public static getInstance(): FinalityWebSocketManager {
@@ -72,6 +75,8 @@ export class FinalityWebSocketManager {
                         if (this.onNewBlockCallback && height > 2) {
                             // Process block with 2-block delay for finalization
                             await this.onNewBlockCallback(height - 2);
+                            // Update block height in health tracker
+                            await this.healthTracker.updateBlockHeight(this.babylonClient.getNetwork(), height - 2);
                         }
                     }
                 } catch (error) {

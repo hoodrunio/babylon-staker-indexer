@@ -10,8 +10,8 @@ package-lock.json
 src/scripts/
 src/tests/
 scripts
-.env
 docs
+.env
 prompt.md
 PROJECT_SCOPE.md
 CHANGELOG.md
