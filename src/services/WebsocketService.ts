@@ -110,7 +110,7 @@ export class WebsocketService {
             const btcStakingSubscription = {
                 jsonrpc: '2.0',
                 method: 'subscribe',
-                id: '1',
+                id: 'btc_staking',
                 params: {
                     query: "tm.event='Tx' AND message.module='btcstaking'"
                 }
@@ -121,9 +121,9 @@ export class WebsocketService {
             const checkpointingSubscription = {
                 jsonrpc: '2.0',
                 method: 'subscribe',
-                id: '2',
+                id: 'checkpoint_for_bls',
                 params: {
-                    query: "tm.event='Tx' AND message.module='checkpointing'"
+                    query: "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed CONTAINS 'checkpoint'"
                 }
             };
             ws.send(JSON.stringify(checkpointingSubscription));
@@ -139,39 +139,42 @@ export class WebsocketService {
                     return;
                 }
 
-                // Validate message structure
-                if (!message?.result?.data?.value?.TxResult) {
-                    console.log(`${network} received non-transaction message:`, message);
+                const messageValue = message?.result?.data?.value;
+                if (!messageValue) {
+                    console.log(`${network} received invalid message:`, message);
                     return;
                 }
 
-                const txResult = message.result.data.value.TxResult;
-                if (!txResult?.result?.events) {
-                    console.log(`${network} transaction missing events:`, txResult);
+                // Handle NewBlock events (for BLS checkpoints)
+                if (messageValue.result_finalize_block) {
+                    await this.blsCheckpointService.handleCheckpoint(messageValue, network);
                     return;
                 }
 
-                const height = parseInt(message.result.events['tx.height']?.[0]);
-                const txData = {
-                    height,
-                    hash: message.result.events['tx.hash']?.[0],
-                    events: txResult.result.events
-                };
+                // Handle Tx events (for BTC staking)
+                if (messageValue.TxResult?.result?.events) {
+                    const height = parseInt(message.result.events['tx.height']?.[0]);
+                    const txData = {
+                        height,
+                        hash: message.result.events['tx.hash']?.[0],
+                        events: messageValue.TxResult.result.events
+                    };
 
-                // Validate required fields
-                if (!txData.height || !txData.hash || !txData.events) {
-                    console.log(`${network} transaction missing required fields:`, txData);
+                    // Validate required fields
+                    if (!txData.height || !txData.hash || !txData.events) {
+                        console.log(`${network} transaction missing required fields:`, txData);
+                        return;
+                    }
+
+                    // Update health tracker with current height
+                    await this.healthTracker.updateBlockHeight(network, height);
+                    
+                    // Handle BTC delegation events
+                    await this.eventHandler.handleEvent(txData, network);
                     return;
                 }
 
-                // Update health tracker with current height
-                await this.healthTracker.updateBlockHeight(network, height);
-                
-                // Handle BTC delegation events
-                await this.eventHandler.handleEvent(txData, network);
-
-                // Handle BLS checkpoint events
-                await this.blsCheckpointService.handleCheckpoint(txData, network);
+                console.log(`${network} received unhandled message type:`, message);
             } catch (error) {
                 console.error(`Error handling ${network} websocket message:`, error);
             }
