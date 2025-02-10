@@ -32,6 +32,7 @@ export class NewBTCDelegationService {
         blockHeight: number;
         unbondingTxHex?: string;
         unbondingTxIdHex?: string;
+        paramsVersion?: number;
     }) {
         const stakingTxIdHex = getTxHash(data.stakingTxHex, false);
         
@@ -196,7 +197,9 @@ export class NewBTCDelegationService {
                 transaction_id_hex: delegation.unbondingTxIdHex,
                 spend_transaction_id: delegation.spendStakeTxHex,
                 spend_transaction_id_hex: delegation.spendStakeTxIdHex
-            } : undefined
+            } : undefined,
+            finality_provider_btc_pks_hex: delegation.finalityProviderBtcPksHex,
+            params_version: delegation.paramsVersion
         };
     }
 
@@ -235,7 +238,7 @@ export class NewBTCDelegationService {
 
         const delegationData = {
             stakingTxHex: attributes.staking_tx_hex,
-            stakerAddress: eventData.sender || attributes.staker_address, // Önce eventData.sender'ı kontrol et
+            stakerAddress: eventData.sender || attributes.staker_address,
             stakerBtcAddress: addresses.sender || '',
             stakerBtcPkHex: attributes.staker_btc_pk_hex,
             finalityProviderBtcPksHex: attributes.finality_provider_btc_pks_hex,
@@ -243,11 +246,12 @@ export class NewBTCDelegationService {
             unbondingTime: parseInt(attributes.unbonding_time),
             totalSat: totalSat || 0,
             startHeight: parseInt(attributes.start_height || '0'),
-            txHash: eventData.hash, // eventData.hash'i kullan
+            txHash: eventData.hash,
             blockHeight: eventData.height,
             networkType: network.toLowerCase() as 'mainnet' | 'testnet',
             unbondingTxHex: attributes.unbonding_tx || undefined,
-            unbondingTxIdHex: attributes.unbonding_tx ? getTxHash(attributes.unbonding_tx, false) : undefined
+            unbondingTxIdHex: attributes.unbonding_tx ? getTxHash(attributes.unbonding_tx, false) : undefined,
+            paramsVersion: attributes.params_version ? parseInt(attributes.params_version) : undefined
         };
 
         try {
@@ -323,7 +327,8 @@ export class NewBTCDelegationService {
                 staker_address: senderAttr?.value,
                 start_height: eventData.height,
                 total_sat: attributes.total_sat ? JSON.parse(attributes.total_sat) : undefined,
-                unbonding_tx: attributes.unbonding_tx ? JSON.parse(attributes.unbonding_tx) : undefined
+                unbonding_tx: attributes.unbonding_tx ? JSON.parse(attributes.unbonding_tx) : undefined,
+                params_version: attributes.params_version ? JSON.parse(attributes.params_version) : undefined
             };
 
             // console.log('Parsed result:', result);

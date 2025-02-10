@@ -3,6 +3,7 @@ import { Network } from '../types/finality';
 import { BTCDelegationEventHandler } from './btc-delegations/BTCDelegationEventHandler';
 import { WebsocketHealthTracker } from './btc-delegations/WebsocketHealthTracker';
 import { BabylonClient } from '../clients/BabylonClient';
+import { BLSCheckpointService } from './checkpointing/BLSCheckpointService';
 
 export class WebsocketService {
     private static instance: WebsocketService | null = null;
@@ -10,6 +11,7 @@ export class WebsocketService {
     private testnetWs: WebSocket | null = null;
     private eventHandler: BTCDelegationEventHandler;
     private healthTracker: WebsocketHealthTracker;
+    private blsCheckpointService: BLSCheckpointService;
     private babylonClient: Map<Network, BabylonClient> = new Map();
     private reconnectAttempts: Map<Network, number> = new Map();
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
@@ -18,6 +20,7 @@ export class WebsocketService {
     private constructor() {
         this.eventHandler = BTCDelegationEventHandler.getInstance();
         this.healthTracker = WebsocketHealthTracker.getInstance();
+        this.blsCheckpointService = BLSCheckpointService.getInstance();
         
         // Mainnet konfigürasyonu varsa ekle
         try {
@@ -103,19 +106,30 @@ export class WebsocketService {
             console.log(`Connected to ${network} websocket`);
             this.reconnectAttempts.set(network, 0);
             
-            // Subscribe to all BTC staking module events
-            const subscribeMsg = {
+            // Subscribe to BTC staking events
+            const btcStakingSubscription = {
                 jsonrpc: '2.0',
                 method: 'subscribe',
-                id: '0',
+                id: '1',
                 params: {
                     query: "tm.event='Tx' AND message.module='btcstaking'"
                 }
             };
-            ws.send(JSON.stringify(subscribeMsg));
+            ws.send(JSON.stringify(btcStakingSubscription));
+
+            // Subscribe to checkpointing events
+            const checkpointingSubscription = {
+                jsonrpc: '2.0',
+                method: 'subscribe',
+                id: '2',
+                params: {
+                    query: "tm.event='Tx' AND message.module='checkpointing'"
+                }
+            };
+            ws.send(JSON.stringify(checkpointingSubscription));
         });
 
-        ws.on('message', async (data: WebSocket.Data) => {
+        ws.on('message', async (data: Buffer) => {
             try {
                 const message = JSON.parse(data.toString());
                 
@@ -153,8 +167,11 @@ export class WebsocketService {
                 // Update health tracker with current height
                 await this.healthTracker.updateBlockHeight(network, height);
                 
-                // Event'i handler'a ilet
+                // Handle BTC delegation events
                 await this.eventHandler.handleEvent(txData, network);
+
+                // Handle BLS checkpoint events
+                await this.blsCheckpointService.handleCheckpoint(txData, network);
             } catch (error) {
                 console.error(`Error handling ${network} websocket message:`, error);
             }

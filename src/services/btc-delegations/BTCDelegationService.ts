@@ -439,7 +439,8 @@ export class BTCDelegationService {
                 unbondingTxHex: chainDel.unbonding?.transaction_id,
                 unbondingTxIdHex: chainDel.unbonding?.transaction_id_hex,
                 spendStakeTxHex: chainDel.unbonding?.spend_transaction_id,
-                spendStakeTxIdHex: chainDel.unbonding?.spend_transaction_id_hex
+                spendStakeTxIdHex: chainDel.unbonding?.spend_transaction_id_hex,
+                paramsVersion: chainDel.params_version
             });
 
             return await delegation.save();

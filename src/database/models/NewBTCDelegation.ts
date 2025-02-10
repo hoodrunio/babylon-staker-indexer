@@ -85,6 +85,10 @@ const newBTCDelegationSchema = new mongoose.Schema({
         type: Number,
         required: true,
         index: true
+    },
+    paramsVersion: {
+        type: Number,
+        required: false
     }
 }, {
     timestamps: true,
