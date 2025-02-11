@@ -91,7 +91,7 @@ export class BLSCheckpointFetcher {
                         // Store checkpoint in MongoDB
                         const checkpoint = {
                             epoch_num: parseInt(msg.ckpt.ckpt.epoch_num),
-                            block_hash: msg.ckpt.ckpt.block_hash,
+                            block_hash: convertBase64AddressToHex(msg.ckpt.ckpt.block_hash),
                             bitmap: msg.ckpt.ckpt.bitmap,
                             bls_multi_sig: msg.ckpt.ckpt.bls_multi_sig,
                             status: msg.ckpt.status,

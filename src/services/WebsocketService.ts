@@ -4,6 +4,7 @@ import { BTCDelegationEventHandler } from './btc-delegations/BTCDelegationEventH
 import { WebsocketHealthTracker } from './btc-delegations/WebsocketHealthTracker';
 import { BabylonClient } from '../clients/BabylonClient';
 import { BLSCheckpointService } from './checkpointing/BLSCheckpointService';
+import { CheckpointStatusHandler } from './checkpointing/CheckpointStatusHandler';
 
 export class WebsocketService {
     private static instance: WebsocketService | null = null;
@@ -16,11 +17,13 @@ export class WebsocketService {
     private reconnectAttempts: Map<Network, number> = new Map();
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
     private readonly RECONNECT_INTERVAL = 5000; // 5 seconds
+    private checkpointStatusHandler: CheckpointStatusHandler;
 
     private constructor() {
         this.eventHandler = BTCDelegationEventHandler.getInstance();
         this.healthTracker = WebsocketHealthTracker.getInstance();
         this.blsCheckpointService = BLSCheckpointService.getInstance();
+        this.checkpointStatusHandler = CheckpointStatusHandler.getInstance();
         
         // Mainnet konfigürasyonu varsa ekle
         try {
@@ -102,7 +105,7 @@ export class WebsocketService {
             this.testnetWs = ws;
         }
 
-        ws.on('open', () => {
+        ws.on('open', async () => {
             console.log(`Connected to ${network} websocket`);
             this.reconnectAttempts.set(network, 0);
             
@@ -117,8 +120,18 @@ export class WebsocketService {
             };
             ws.send(JSON.stringify(btcStakingSubscription));
 
+            const newBlockSubscription = {
+                jsonrpc: '2.0',
+                method: 'subscribe',
+                id: 'new_block',
+                params: {
+                    query: "tm.event='NewBlock'"
+                }
+            };
+            ws.send(JSON.stringify(newBlockSubscription));
+
             // Subscribe to checkpointing events
-            const checkpointingSubscription = {
+            const checkpointingSubscriptionForBls = {
                 jsonrpc: '2.0',
                 method: 'subscribe',
                 id: 'checkpoint_for_bls',
@@ -126,7 +139,7 @@ export class WebsocketService {
                     query: "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed.checkpoint CONTAINS 'epoch_num'"
                 }
             };
-            ws.send(JSON.stringify(checkpointingSubscription));
+            ws.send(JSON.stringify(checkpointingSubscriptionForBls));
         });
 
         ws.on('message', async (data: Buffer) => {
@@ -145,14 +158,15 @@ export class WebsocketService {
                     return;
                 }
 
-                // Handle NewBlock events (for BLS checkpoints)
-                if (messageValue.result_finalize_block) {
-                    /* console.log('[WebSocket] Sending checkpoint event to handler:', {
-                        hasResultFinalizeBlock: true,
-                        eventsCount: messageValue.result_finalize_block.events?.length,
-                        eventTypes: messageValue.result_finalize_block.events?.map((e: any) => e.type)
-                    }); */
+                // Handle BLS checkpoint events
+                if (messageValue.result_finalize_block && message.id === 'checkpoint_for_bls') {
                     await this.blsCheckpointService.handleCheckpoint(messageValue.result_finalize_block, network);
+                    return;
+                }
+
+                // Handle checkpoint status events
+                if (messageValue.result_finalize_block && message.id === 'new_block') {
+                    await this.checkpointStatusHandler.handleNewBlock(message, network);
                     return;
                 }
 

@@ -8,9 +8,17 @@ import { FinalityProviderService } from '../finality/FinalityProviderService';
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
     private readonly babylonClients: Map<Network, BabylonClient>;
+    private updateInterval: number;
+    private maxRetries: number;
+    private retryDelay: number;
 
     private constructor() {
         this.babylonClients = new Map();
+        // Default values - can be overridden via environment variables
+        this.updateInterval = parseInt(process.env.VALIDATOR_UPDATE_INTERVAL_MS || '3600000'); // 1 hour default
+        this.maxRetries = parseInt(process.env.VALIDATOR_UPDATE_MAX_RETRIES || '3');
+        this.retryDelay = parseInt(process.env.VALIDATOR_UPDATE_RETRY_DELAY_MS || '5000'); // 5 seconds
+
         // Initialize clients for both networks
         try {
             this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
@@ -44,13 +52,40 @@ export class ValidatorInfoService {
     }
 
     private async startPeriodicUpdates(): Promise<void> {
-        // Initial update
-        await this.updateAllValidators();
+        // Initial update with retries
+        await this.retryUpdate();
 
-        // Update every hour
+        // Schedule periodic updates
         setInterval(async () => {
-            await this.updateAllValidators();
-        }, 60 * 60 * 1000); // 1 hour
+            await this.retryUpdate();
+        }, this.updateInterval);
+    }
+
+    private async retryUpdate(): Promise<void> {
+        let retryCount = 0;
+        let success = false;
+
+        while (!success && retryCount < this.maxRetries) {
+            try {
+                await this.updateAllValidators();
+                success = true;
+                if (retryCount > 0) {
+                    console.log(`[ValidatorInfo] Successfully updated after ${retryCount + 1} attempts`);
+                }
+            } catch (error) {
+                retryCount++;
+                console.error(`[ValidatorInfo] Update attempt ${retryCount}/${this.maxRetries} failed:`, error);
+                
+                if (retryCount < this.maxRetries) {
+                    console.log(`[ValidatorInfo] Retrying in ${this.retryDelay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+                }
+            }
+        }
+
+        if (!success) {
+            console.error(`[ValidatorInfo] Failed to update validators after ${this.maxRetries} attempts`);
+        }
     }
 
     private async updateAllValidators(): Promise<void> {
