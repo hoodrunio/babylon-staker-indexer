@@ -65,6 +65,22 @@ const validatorInfoSchema = new mongoose.Schema({
         required: true,
         default: Date.now,
         index: true
+    },
+    finality_provider_btc_pk_hex: {
+        type: String,
+        index: true,
+        sparse: true
+    },
+    is_finality_provider: {
+        type: Boolean,
+        required: true,
+        default: false,
+        index: true
+    },
+    matched_by: {
+        type: String,
+        enum: ['moniker', 'website', 'identity', 'security_contact', null],
+        default: null
     }
 }, {
     timestamps: true,

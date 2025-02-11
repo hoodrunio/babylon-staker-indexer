@@ -15,6 +15,12 @@ export class BLSCheckpointService {
         this.validatorInfoService = ValidatorInfoService.getInstance();
         this.checkpointFetcher = BLSCheckpointFetcher.getInstance();
         this.checkpointHandler = BLSCheckpointHandler.getInstance();
+
+        // ENABLE_FULL_SYNC true ise geçmiş checkpointleri senkronize et
+        if (process.env.ENABLE_FULL_SYNC === 'false') {
+            console.log('[BLSCheckpoint] Full sync enabled, starting historical checkpoint sync');
+            this.initializeHistoricalSync();
+        }
     }
 
     public static getInstance(): BLSCheckpointService {
@@ -76,5 +82,26 @@ export class BLSCheckpointService {
 
     public async getCurrentEpoch(network: Network): Promise<number> {
         return this.checkpointFetcher.getCurrentEpoch(network);
+    }
+
+    private async initializeHistoricalSync() {
+        try {
+            // Her network için senkronizasyonu başlat
+            const networks = [Network.MAINNET, Network.TESTNET];
+            
+            for (const network of networks) {
+                try {
+                    const client = this.validatorInfoService.getBabylonClient(network);
+                    if (client) {
+                        console.log(`[BLSCheckpoint] Starting historical sync for ${network}`);
+                        await this.syncHistoricalCheckpoints(network);
+                    }
+                } catch (error) {
+                    console.error(`[BLSCheckpoint] Error syncing historical checkpoints for ${network}:`, error);
+                }
+            }
+        } catch (error) {
+            console.error('[BLSCheckpoint] Error initializing historical sync:', error);
+        }
     }
 } 

@@ -46,8 +46,9 @@ export class BLSCheckpointFetcher {
         try {
             const height = await this.calculateBlockHeightForEpoch(epochNum, network);
             await this.fetchCheckpointFromHeight(height, network);
-        } catch (error) {
-            console.error(`[BLSCheckpoint] Error fetching checkpoint for epoch ${epochNum}:`, error);
+        } catch (error: any) {
+            const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+            console.error(`[BLSCheckpoint] Error fetching checkpoint for epoch ${epochNum}: ${errorMessage}`);
             throw error;
         }
     }
@@ -62,6 +63,7 @@ export class BLSCheckpointFetcher {
             const baseUrl = client.getBaseUrl();
             console.log(`[BLSCheckpoint] Fetching checkpoint from height ${height} on ${network}`);
 
+            const timestamp = await this.getTimestampForHeight(height, network);
             const response = await axios.get(`${baseUrl}/cosmos/tx/v1beta1/txs/block/${height}`);
             const txs = response.data.txs || [];
 
@@ -96,7 +98,8 @@ export class BLSCheckpointFetcher {
                             bls_aggr_pk: msg.ckpt.bls_aggr_pk,
                             power_sum: msg.ckpt.power_sum,
                             network,
-                            lifecycle: msg.ckpt.lifecycle || []
+                            lifecycle: msg.ckpt.lifecycle || [],
+                            timestamp: timestamp
                         };
 
                         await BLSCheckpoint.findOneAndUpdate(
@@ -110,24 +113,25 @@ export class BLSCheckpointFetcher {
 
                         // Process validator votes if available
                         if (msg.extended_commit_info?.votes) {
-                            await this.processValidatorVotes(msg.extended_commit_info.votes, checkpoint.epoch_num, network);
+                            await this.processValidatorVotes(msg.extended_commit_info.votes, checkpoint.epoch_num, network, timestamp);
                         }
 
-                    } catch (error) {
-                        console.error(`[BLSCheckpoint] Error processing checkpoint message:`, error);
+                    } catch (error: any) {
+                        console.error(`[BLSCheckpoint] Error processing checkpoint message: ${error.message || 'Unknown error'}`);
                         continue;
                     }
                 }
             }
 
             console.log(`[BLSCheckpoint] Successfully processed ${checkpointTxs.length} checkpoint transaction(s) from height ${height}`);
-        } catch (error) {
-            console.error(`[BLSCheckpoint] Error fetching checkpoint from height ${height}:`, error);
+        } catch (error: any) {
+            const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+            console.error(`[BLSCheckpoint] Error fetching checkpoint from height ${height}: ${errorMessage}`);
             throw error;
         }
     }
 
-    private async processValidatorVotes(votes: any[], epochNum: number, network: Network): Promise<void> {
+    private async processValidatorVotes(votes: any[], epochNum: number, network: Network, timestamp: number): Promise<void> {
         try {
             const allValidators = await Promise.all(
                 votes.map(async (vote: any) => {
@@ -142,7 +146,8 @@ export class BLSCheckpointFetcher {
                         vote_extension: signed ? vote.vote_extension : undefined,
                         extension_signature: signed ? vote.extension_signature : undefined,
                         moniker: validatorInfo?.moniker || 'Unknown',
-                        valoper_address: validatorInfo?.valoper_address || ''
+                        valoper_address: validatorInfo?.valoper_address || '',
+                        timestamp: timestamp
                     };
                 })
             );
@@ -173,38 +178,14 @@ export class BLSCheckpointFetcher {
                         by_power: byPower,
                         signed_validators: signedValidators.length,
                         unsigned_validators: unsignedValidators.length
-                    }
+                    },
+                    timestamp: timestamp,
+                    updatedAt: new Date(timestamp * 1000)
                 },
-                { upsert: true, new: true }
+                { upsert: true, new: true, timestamps: false }
             );
 
-            // Enhanced logging with both signed and unsigned validator details
-            console.log(`[BLSCheckpoint] Processed validator votes for epoch ${epochNum}:`, {
-                network,
-                total_validators: allValidators.length,
-                signed: {
-                    count: signedValidators.length,
-                    power: signedPower,
-                    validators: signedValidators.map(v => ({
-                        moniker: v.moniker,
-                        valoper_address: v.valoper_address,
-                        power: v.validator_power
-                    }))
-                },
-                unsigned: {
-                    count: unsignedValidators.length,
-                    power: unsignedPower,
-                    validators: unsignedValidators.map(v => ({
-                        moniker: v.moniker,
-                        valoper_address: v.valoper_address,
-                        power: v.validator_power
-                    }))
-                },
-                participation_rate: {
-                    by_count: byCount,
-                    by_power: byPower
-                }
-            });
+            console.log(`[BLSCheckpoint] Processed validator votes for epoch ${epochNum}`);
         } catch (error) {
             console.error(`[BLSCheckpoint] Error processing validator votes:`, error);
             throw error;
@@ -236,19 +217,57 @@ export class BLSCheckpointFetcher {
         }
     }
 
+    public async getTimestampForHeight(height: number, network: Network): Promise<number> {
+        try {
+            const client = this.validatorInfoService.getBabylonClient(network);
+            if (!client) {
+                throw new Error(`No Babylon client found for network ${network}`);
+            }
+            const baseRpcUrl = client.getRpcUrl();
+            const response = await axios.get(`${baseRpcUrl}/block?height=${height}`);
+            const timeStr = response.data.result.block.header.time;
+            
+            // Remove nanoseconds part and parse ISO timestamp
+            const cleanTimeStr = timeStr.split('.')[0] + 'Z';
+            const timestamp = new Date(cleanTimeStr).getTime();
+            
+            if (isNaN(timestamp)) {
+                console.error(`[BLSCheckpoint] Invalid timestamp format received:`, timeStr);
+                throw new Error('Invalid timestamp from node');
+            }
+            
+            // Convert to seconds
+            return Math.floor(timestamp / 1000);
+        } catch (error: any) {
+            // Check if error is due to pruned height
+            if (error?.response?.data?.error?.data?.includes('is not available, lowest height is')) {
+                const match = error.response.data.error.data.match(/lowest height is (\d+)/);
+                if (match) {
+                    const lowestHeight = parseInt(match[1]);
+                    throw new Error(`height ${height} is not available, lowest height is ${lowestHeight}`);
+                }
+            }
+            throw error;
+        }
+    }
+
     public async syncHistoricalCheckpoints(network: Network): Promise<void> {
         try {
             const currentEpoch = await this.getCurrentEpoch(network);
             console.log(`[BLSCheckpoint] Starting historical sync from epoch ${currentEpoch - 1}`);
 
             let lowestAvailableHeight: number | null = null;
+            let consecutiveErrors = 0;
+            const MAX_CONSECUTIVE_ERRORS = 5;
+            const MAX_RETRIES = 3;
+            const RETRY_DELAY = 2000; // 2 seconds
 
             for (let epoch = currentEpoch - 1; epoch >= 0; epoch--) {
                 try {
                     if (lowestAvailableHeight !== null) {
                         const epochHeight = await this.calculateBlockHeightForEpoch(epoch, network);
                         if (epochHeight < lowestAvailableHeight) {
-                            console.log(`[BLSCheckpoint] Stopping sync as epoch ${epoch} (height ${epochHeight}) is below lowest available height ${lowestAvailableHeight}`);
+                            console.log(`[BLSCheckpoint] Historical sync stopped at epoch ${epoch} (height ${epochHeight} is below lowest available height ${lowestAvailableHeight})`);
                             break;
                         }
                     }
@@ -260,23 +279,66 @@ export class BLSCheckpointFetcher {
 
                     if (existingCheckpoint) {
                         console.log(`[BLSCheckpoint] Checkpoint for epoch ${epoch} already exists, skipping...`);
+                        consecutiveErrors = 0; // Reset error counter on success
                         continue;
                     }
 
-                    await this.fetchCheckpointForEpoch(epoch, network);
-                    console.log(`[BLSCheckpoint] Successfully synced checkpoint for epoch ${epoch}`);
+                    let success = false;
+                    let retryCount = 0;
+
+                    while (!success && retryCount < MAX_RETRIES) {
+                        try {
+                            await this.fetchCheckpointForEpoch(epoch, network);
+                            console.log(`[BLSCheckpoint] Successfully synced checkpoint for epoch ${epoch}`);
+                            success = true;
+                            consecutiveErrors = 0; // Reset error counter on success
+                        } catch (retryError: any) {
+                            retryCount++;
+                            // Check if error message contains pruned height information
+                            const errorMessage = retryError.message || '';
+                            if (errorMessage.includes('is not available, lowest height is')) {
+                                const match = errorMessage.match(/lowest height is (\d+)/);
+                                if (match) {
+                                    lowestAvailableHeight = parseInt(match[1]);
+                                    console.log(`[BLSCheckpoint] Node pruning detected - lowest available height: ${lowestAvailableHeight}`);
+                                    throw retryError; // Re-throw to break out of retry loop
+                                }
+                            }
+                            if (retryCount < MAX_RETRIES) {
+                                console.log(`[BLSCheckpoint] Retry ${retryCount}/${MAX_RETRIES} for epoch ${epoch} after ${RETRY_DELAY}ms`);
+                                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                            }
+                        }
+                    }
+
+                    if (!success) {
+                        throw new Error(`Failed to sync checkpoint after ${MAX_RETRIES} retries`);
+                    }
 
                 } catch (error: any) {
+                    // Node'un desteklemediği yükseklik hatası
                     if (error?.response?.data?.message?.includes('is not available, lowest height is')) {
                         const match = error.response.data.message.match(/lowest height is (\d+)/);
                         if (match) {
                             lowestAvailableHeight = parseInt(match[1]);
-                            console.log(`[BLSCheckpoint] Discovered lowest available height: ${lowestAvailableHeight}`);
+                            console.log(`[BLSCheckpoint] Node pruning detected - lowest available height: ${lowestAvailableHeight}`);
                             continue;
                         }
                     }
                     
-                    console.warn(`[BLSCheckpoint] Failed to sync checkpoint for epoch ${epoch}:`, error.message);
+                    consecutiveErrors++;
+                    
+                    if (error?.response?.status === 500) {
+                        console.warn(`[BLSCheckpoint] Server error (500) for epoch ${epoch}:`, error.response?.data?.message || 'Unknown server error');
+                    } else {
+                        console.warn(`[BLSCheckpoint] Failed to sync checkpoint for epoch ${epoch}:`, error.message || 'Unknown error');
+                    }
+
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        console.error(`[BLSCheckpoint] Stopping historical sync after ${MAX_CONSECUTIVE_ERRORS} consecutive errors`);
+                        break;
+                    }
+
                     continue;
                 }
 
@@ -285,7 +347,7 @@ export class BLSCheckpointFetcher {
 
             console.log('[BLSCheckpoint] Historical checkpoint sync completed');
         } catch (error: any) {
-            console.error('[BLSCheckpoint] Error during historical checkpoint sync:', error);
+            console.error('[BLSCheckpoint] Error during historical checkpoint sync:', error.message || 'Unknown error');
         }
     }
 } 

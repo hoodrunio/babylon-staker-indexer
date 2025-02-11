@@ -136,7 +136,7 @@ export class BabylonClient {
 
     public async getCurrentHeight(): Promise<number> {
         try {
-            const response = await axios.post(this.baseRpcUrl, {
+            const response = await this.client.post(this.baseRpcUrl, {
                 jsonrpc: "2.0",
                 id: -1,
                 method: "abci_info",

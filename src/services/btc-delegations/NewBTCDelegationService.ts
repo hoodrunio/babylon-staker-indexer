@@ -52,15 +52,8 @@ export class NewBTCDelegationService {
         startHeight?: number
     ) {
         try {
-            console.log('Updating delegation state:', {
-                stakingTxIdHex,
-                state,
-                network,
-                networkType: network.toLowerCase(),
-                endHeight,
-                startHeight
-            });
-
+            console.log('Updating delegation state:', stakingTxIdHex);
+            
             const updateData: any = { state };
             if (endHeight !== undefined) updateData.endHeight = endHeight;
             if (startHeight !== undefined) updateData.startHeight = startHeight;
@@ -82,15 +75,7 @@ export class NewBTCDelegationService {
                 return null;
             }
 
-            console.log('Delegation state updated successfully:', {
-                stakingTxIdHex,
-                oldState: result.state,
-                newState: state,
-                oldStartHeight: result.startHeight,
-                newStartHeight: startHeight,
-                oldEndHeight: result.endHeight,
-                newEndHeight: endHeight
-            });
+            console.log('Delegation state updated successfully:', stakingTxIdHex);
 
             return result;
         } catch (error) {
@@ -238,6 +223,7 @@ export class NewBTCDelegationService {
 
         const delegationData = {
             stakingTxHex: attributes.staking_tx_hex,
+            stakingTxIdHex: getTxHash(attributes.staking_tx_hex, false),
             stakerAddress: eventData.sender || attributes.staker_address,
             stakerBtcAddress: addresses.sender || '',
             stakerBtcPkHex: attributes.staker_btc_pk_hex,
@@ -257,7 +243,7 @@ export class NewBTCDelegationService {
         try {
             const existingDelegation = await this.getDelegationByTxHash(delegationData.stakingTxHex, network);
             if (existingDelegation) {
-                console.log(`Delegation already exists for tx: ${delegationData.stakingTxHex}`);
+                console.log(`Delegation already exists for tx: ${delegationData.stakingTxIdHex}`);
                 return existingDelegation;
             }
 

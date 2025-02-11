@@ -123,7 +123,7 @@ export class WebsocketService {
                 method: 'subscribe',
                 id: 'checkpoint_for_bls',
                 params: {
-                    query: "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed CONTAINS 'checkpoint'"
+                    query: "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed.checkpoint CONTAINS 'epoch_num'"
                 }
             };
             ws.send(JSON.stringify(checkpointingSubscription));
@@ -147,7 +147,12 @@ export class WebsocketService {
 
                 // Handle NewBlock events (for BLS checkpoints)
                 if (messageValue.result_finalize_block) {
-                    await this.blsCheckpointService.handleCheckpoint(messageValue, network);
+                    /* console.log('[WebSocket] Sending checkpoint event to handler:', {
+                        hasResultFinalizeBlock: true,
+                        eventsCount: messageValue.result_finalize_block.events?.length,
+                        eventTypes: messageValue.result_finalize_block.events?.map((e: any) => e.type)
+                    }); */
+                    await this.blsCheckpointService.handleCheckpoint(messageValue.result_finalize_block, network);
                     return;
                 }
 

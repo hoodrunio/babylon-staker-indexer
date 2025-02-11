@@ -19,19 +19,29 @@ export class BLSCheckpointHandler {
     public async handleCheckpoint(event: any, network: Network): Promise<void> {
         try {
             // Log raw event for debugging
-            console.log(`[BLSCheckpoint] Raw event received:`, {
+            /* console.log(`[BLSCheckpoint] Raw event received:`, {
                 network,
-                event: JSON.stringify(event, null, 2)
-            });
+                hasEvents: !!event.events,
+                eventsCount: event.events?.length,
+                eventTypes: event.events?.map((e: any) => e.type)
+            }); */
 
-            // Find checkpoint event in the NewBlock event structure
-            const checkpointEvent = event.data?.value?.result_finalize_block?.events?.find((e: any) => 
+            if (!event.events) {
+                console.log('[BLSCheckpoint] No events found in finalize block event');
+                return;
+            }
+
+            // Find checkpoint event in the events array
+            const checkpointEvent = event.events.find((e: any) => 
                 e.type === 'babylon.checkpointing.v1.EventCheckpointSealed'
             );
 
             if (!checkpointEvent) {
+                console.log('[BLSCheckpoint] No checkpoint event found in events array');
                 return;
             }
+
+            console.log('[BLSCheckpoint] Found checkpoint event');
 
             // Extract checkpoint data from attributes
             const checkpointAttr = checkpointEvent.attributes?.find((attr: any) => 
@@ -47,6 +57,7 @@ export class BLSCheckpointHandler {
             let checkpoint;
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
+                console.log('[BLSCheckpoint] New checkpoint sealed:', checkpoint?.ckpt?.epoch_num);
             } catch (error) {
                 console.error('[BLSCheckpoint] Error parsing checkpoint JSON:', error);
                 return;
@@ -60,13 +71,7 @@ export class BLSCheckpointHandler {
             }
 
             // Log checkpoint details
-            console.log(`[BLSCheckpoint] Processing checkpoint for epoch ${epochNum}:`, {
-                network,
-                status: checkpoint.status,
-                block_hash: checkpoint.ckpt.block_hash,
-                power_sum: checkpoint.power_sum,
-                lifecycle: checkpoint.lifecycle
-            });
+            console.log(`[BLSCheckpoint] Processing checkpoint for epoch ${epochNum}`);
 
             // Fetch complete checkpoint data including BLS signatures
             await this.checkpointFetcher.fetchCheckpointForEpoch(epochNum, network);

@@ -28,7 +28,7 @@ interface IBLSValidatorSignatures {
     network: Network;
     signatures: IValidatorSignature[];
     stats: IParticipationStats;
-    createdAt: Date;
+    timestamp: number;
     updatedAt: Date;
 }
 
@@ -40,7 +40,8 @@ const ValidatorSignatureSchema = new mongoose.Schema({
     vote_extension: { type: String },
     extension_signature: { type: String },
     moniker: { type: String, required: true },
-    valoper_address: { type: String, required: true }
+    valoper_address: { type: String, required: true },
+    timestamp: { type: Number, required: true }
 }, { _id: false });
 
 // Schema for participation statistics
@@ -58,7 +59,8 @@ const BLSValidatorSignaturesSchema = new mongoose.Schema<IBLSValidatorSignatures
     epoch_num: { type: Number, required: true },
     network: { type: String, required: true, enum: Object.values(Network) },
     signatures: [ValidatorSignatureSchema],
-    stats: { type: ParticipationStatsSchema, required: true }
+    stats: { type: ParticipationStatsSchema, required: true },
+    timestamp: { type: Number, required: true }
 }, {
     timestamps: true,
     collection: 'bls_validator_signatures'

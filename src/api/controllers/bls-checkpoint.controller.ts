@@ -35,13 +35,111 @@ export class BLSCheckpointController {
                 status: checkpoint.status,
                 bls_aggr_pk: checkpoint.bls_aggr_pk,
                 power_sum: checkpoint.power_sum,
-                created_at: checkpoint.createdAt,
-                updated_at: checkpoint.updatedAt
+                updated_at: checkpoint.updatedAt,
+                timestamp: checkpoint.timestamp
             };
 
             res.json(response);
         } catch (error) {
             console.error('Error in getCheckpointByEpoch:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    public static async getCheckpointsByEpochs(req: Request, res: Response) {
+        try {
+            const { start_epoch, end_epoch, last } = req.query;
+            const network = req.network || Network.TESTNET;
+            const limit = 100; // Maximum records per page
+
+            // Get current epoch from service for validation
+            const currentEpoch = await BLSCheckpointController.blsCheckpointService.getCurrentEpoch(network);
+
+            let startEpochNum: number | undefined;
+            let endEpochNum: number | undefined;
+
+            // Handle 'last' parameter if provided
+            if (last) {
+                const lastNum = parseInt(last as string);
+                if (isNaN(lastNum) || lastNum <= 0) {
+                    return res.status(400).json({ error: 'Invalid last parameter. Must be a positive number.' });
+                }
+                startEpochNum = Math.max(0, currentEpoch - lastNum);
+                endEpochNum = currentEpoch;
+            } else {
+                // Parse start and end epochs if provided
+                startEpochNum = start_epoch ? parseInt(start_epoch as string) : undefined;
+                endEpochNum = end_epoch ? parseInt(end_epoch as string) : undefined;
+
+                // Validate epoch numbers
+                if (startEpochNum !== undefined && (isNaN(startEpochNum) || startEpochNum < 0)) {
+                    return res.status(400).json({ error: 'Invalid start_epoch parameter' });
+                }
+                if (endEpochNum !== undefined && (isNaN(endEpochNum) || endEpochNum < 0)) {
+                    return res.status(400).json({ error: 'Invalid end_epoch parameter' });
+                }
+                if (startEpochNum !== undefined && endEpochNum !== undefined && startEpochNum > endEpochNum) {
+                    return res.status(400).json({ error: 'start_epoch cannot be greater than end_epoch' });
+                }
+            }
+
+            // Build query
+            const query: any = { network };
+            if (startEpochNum !== undefined || endEpochNum !== undefined) {
+                query.epoch_num = {};
+                if (startEpochNum !== undefined) query.epoch_num.$gte = startEpochNum;
+                if (endEpochNum !== undefined) query.epoch_num.$lte = endEpochNum;
+            }
+
+            // Get total count for pagination
+            const totalCount = await BLSCheckpoint.countDocuments(query);
+
+            // Get checkpoints with limit and sort by epoch_num in descending order
+            const checkpoints = await BLSCheckpoint.find(query)
+                .sort({ epoch_num: -1 })
+                .limit(limit);
+
+            if (checkpoints.length === 0) {
+                return res.status(404).json({ error: 'Checkpoints not found' });
+            }
+
+            // Calculate actual range from results
+            const actualStartEpoch = Math.min(...checkpoints.map(c => c.epoch_num));
+            const actualEndEpoch = Math.max(...checkpoints.map(c => c.epoch_num));
+
+            const response = {
+                checkpoints: checkpoints.map(checkpoint => ({
+                    epoch_num: checkpoint.epoch_num,
+                    network: checkpoint.network,
+                    block_hash: checkpoint.block_hash,
+                    bitmap: checkpoint.bitmap,
+                    bls_multi_sig: checkpoint.bls_multi_sig,
+                    status: checkpoint.status,
+                    bls_aggr_pk: checkpoint.bls_aggr_pk,
+                    power_sum: checkpoint.power_sum,
+                    updated_at: checkpoint.updatedAt,
+                    timestamp: checkpoint.timestamp
+                })),
+                pagination: {
+                    total_records: totalCount,
+                    limit,
+                    has_more: totalCount > limit
+                },
+                range: {
+                    requested: {
+                        start_epoch: startEpochNum,
+                        end_epoch: endEpochNum
+                    },
+                    actual: {
+                        start_epoch: actualStartEpoch,
+                        end_epoch: actualEndEpoch
+                    }
+                }
+            };
+
+            res.json(response);
+        } catch (error) {
+            console.error('Error in getCheckpointsByEpochs:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
@@ -70,7 +168,7 @@ export class BLSCheckpointController {
                 network: validatorSignatures.network,
                 signatures: validatorSignatures.signatures,
                 stats: validatorSignatures.stats,
-                created_at: validatorSignatures.createdAt,
+                timestamp: validatorSignatures.timestamp,
                 updated_at: validatorSignatures.updatedAt
             };
 
@@ -81,12 +179,12 @@ export class BLSCheckpointController {
         }
     }
 
-    public static async getCurrentEpochStats(req: Request, res: Response) {
+    public static async getLatestEpochStats(req: Request, res: Response) {
         try {
             const network = req.network || Network.MAINNET;
             
             // Get current epoch from service
-            const currentEpoch = await BLSCheckpointController.blsCheckpointService.getCurrentEpoch(network);
+            const currentEpoch = await BLSCheckpointController.blsCheckpointService.getCurrentEpoch(network) - 1;
             
             // Get validator signatures for current epoch
             const validatorSignatures = await BLSValidatorSignatures.findOne({

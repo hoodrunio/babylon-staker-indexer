@@ -3,6 +3,7 @@ import { Network } from '../../types/finality';
 import { Buffer } from 'buffer';
 import { BabylonClient } from '../../clients/BabylonClient';
 import axios from 'axios';
+import { FinalityProviderService } from '../finality/FinalityProviderService';
 
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
@@ -135,6 +136,9 @@ export class ValidatorInfoService {
                         { upsert: true, new: true }
                     );
 
+                    // After updating validator info, try to match with finality providers
+                    await this.matchValidatorWithFinalityProviders(validator, network);
+
                     updateCount++;
                 } catch (error: any) {
                     console.error(`[ValidatorInfo] Error processing validator:`, {
@@ -232,5 +236,72 @@ export class ValidatorInfoService {
 
     public getBabylonClient(network: Network): BabylonClient | undefined {
         return this.babylonClients.get(network);
+    }
+
+    private async matchValidatorWithFinalityProviders(validator: any, network: Network): Promise<void> {
+        try {
+            // Get all active finality providers
+            const finalityProviderService = FinalityProviderService.getInstance();
+            const providers = await finalityProviderService.getAllFinalityProviders(network);
+
+            let matched = false;
+            let matchedBy = null;
+            let matchedProviderPk = null;
+
+            for (const provider of providers) {
+                // Try matching by moniker
+                if (validator.description?.moniker && provider.description?.moniker && 
+                    validator.description.moniker.toLowerCase() === provider.description.moniker.toLowerCase()) {
+                    matched = true;
+                    matchedBy = 'moniker';
+                    matchedProviderPk = provider.btc_pk;
+                    break;
+                }
+
+                // Try matching by website
+                if (validator.description?.website && provider.description?.website && 
+                    validator.description.website.toLowerCase() === provider.description.website.toLowerCase()) {
+                    matched = true;
+                    matchedBy = 'website';
+                    matchedProviderPk = provider.btc_pk;
+                    break;
+                }
+
+                // Try matching by identity
+                if (validator.description?.identity && provider.description?.identity && 
+                    validator.description.identity.toLowerCase() === provider.description.identity.toLowerCase()) {
+                    matched = true;
+                    matchedBy = 'identity';
+                    matchedProviderPk = provider.btc_pk;
+                    break;
+                }
+
+                // Try matching by security contact
+                if (validator.description?.security_contact && provider.description?.details && 
+                    validator.description.security_contact.toLowerCase() === provider.description.details.toLowerCase()) {
+                    matched = true;
+                    matchedBy = 'security_contact';
+                    matchedProviderPk = provider.btc_pk;
+                    break;
+                }
+            }
+
+            // Update validator info with match results
+            await ValidatorInfo.findOneAndUpdate(
+                {
+                    consensus_hex_address: this.getConsensusHexAddress(validator.consensus_pubkey.key),
+                    network
+                },
+                {
+                    $set: {
+                        is_finality_provider: matched,
+                        finality_provider_btc_pk_hex: matchedProviderPk,
+                        matched_by: matchedBy
+                    }
+                }
+            );
+        } catch (error) {
+            console.error('[ValidatorInfo] Error matching validator with finality providers:', error);
+        }
     }
 } 

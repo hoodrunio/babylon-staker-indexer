@@ -148,7 +148,7 @@ export class BTCDelegationEventHandler {
             event: JSON.stringify(event, null, 2)
         }); */
 
-        console.log(`Parsed ${eventName} event data:`, parsedData);
+       // console.log(`Parsed ${eventName} event data:`, parsedData.stakingTxHash, 'network:', parsedData.network);
     }
 
     private async handleDelegationEvent(txData: any, network: Network) {
@@ -180,12 +180,8 @@ export class BTCDelegationEventHandler {
                 console.error('Unknown event data structure:', txData);
                 return;
             }
-
-            console.log('Processed event data:', {
-                height: eventDataWithHashAndSender.height,
-                hash: eventDataWithHashAndSender.hash,
-                sender: eventDataWithHashAndSender.sender
-            });
+            let tx_hash = eventDataWithHashAndSender.hash;
+            console.log('Processed event data:', tx_hash);
 
             await this.delegationService.handleNewDelegationFromWebsocket(eventDataWithHashAndSender, network);
         } catch (error) {
@@ -242,12 +238,7 @@ export class BTCDelegationEventHandler {
             if (!result) {
                 console.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', {
-                    ...parsedData,
-                    oldState: result.state,
-                    oldStartHeight: result.startHeight,
-                    oldEndHeight: result.endHeight
-                });
+                console.log('Successfully updated delegation state:', stakingTxHash);
             }
         } catch (error) {
             console.error('Error handling delegation state update:', error);
@@ -281,10 +272,7 @@ export class BTCDelegationEventHandler {
             );
 
             if (hasQuorumEvent) {
-                console.log('Found quorum event in the same transaction:', {
-                    stakingTxHash,
-                    network
-                });
+                console.log('Found quorum event in the same transaction:', stakingTxHash, network);
             }
         } catch (error) {
             console.error('Error handling covenant signature:', error);
@@ -333,10 +321,7 @@ export class BTCDelegationEventHandler {
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
             
             if (!delegation) {
-                console.error('Delegation not found for covenant quorum:', {
-                    stakingTxHash,
-                    network
-                });
+                console.error('Delegation not found for covenant quorum:', stakingTxHash);
                 return;
             }
 
@@ -351,17 +336,10 @@ export class BTCDelegationEventHandler {
                 if (!result) {
                     console.error('Failed to update delegation state:', parsedData);
                 } else {
-                    console.log('Successfully updated delegation state from PENDING:', {
-                        ...parsedData,
-                        oldState: delegation.status
-                    });
+                    console.log('Successfully updated delegation state from PENDING:', stakingTxHash);
                 }
             } else {
-                console.log('Skipping state update, delegation is not in PENDING state:', {
-                    stakingTxHash,
-                    currentState: delegation.status,
-                    newState
-                });
+                console.log('Skipping state update, delegation is not in PENDING state:', stakingTxHash);
             }
         } catch (error) {
             console.error('Error handling covenant quorum:', {
@@ -415,15 +393,7 @@ export class BTCDelegationEventHandler {
                 return;
             }
 
-            console.log('Found delegation for inclusion proof:', {
-                stakingTxIdHex,
-                currentState: delegation.status,
-                newState,
-                currentStartHeight: delegation.start_height,
-                newStartHeight: parsedData.startHeight,
-                currentEndHeight: delegation.end_height,
-                newEndHeight: parsedData.endHeight
-            });
+            console.log('Found delegation for inclusion proof:', stakingTxIdHex);
 
             const result = await this.delegationService.updateDelegationState(
                 stakingTxIdHex,
@@ -436,12 +406,7 @@ export class BTCDelegationEventHandler {
             if (!result) {
                 console.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', {
-                    ...parsedData,
-                    oldState: result.state,
-                    oldStartHeight: result.startHeight,
-                    oldEndHeight: result.endHeight
-                });
+                console.log('Successfully updated delegation state:', stakingTxIdHex);
             }
         } catch (error) {
             console.error('Error handling inclusion proof:', {
@@ -499,10 +464,7 @@ export class BTCDelegationEventHandler {
             if (!result) {
                 console.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', {
-                    ...parsedData,
-                    oldState: result.state
-                });
+                console.log('Successfully updated delegation state:', stakingTxHash);
             }
         } catch (error) {
             console.error('Error handling early unbonding:', error);
@@ -556,10 +518,7 @@ export class BTCDelegationEventHandler {
             if (!result) {
                 console.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', {
-                    ...parsedData,
-                    oldState: result.state
-                });
+                console.log('Successfully updated delegation state:', stakingTxHash);
             }
         } catch (error) {
             console.error('Error handling delegation expired:', error);

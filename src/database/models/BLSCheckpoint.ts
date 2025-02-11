@@ -53,6 +53,10 @@ const blsCheckpointSchema = new mongoose.Schema({
         required: true,
         enum: ['mainnet', 'testnet'],
         index: true
+    },
+    timestamp: {
+        type: Number,
+        required: true
     }
 }, {
     timestamps: true,

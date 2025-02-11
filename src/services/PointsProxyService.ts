@@ -157,7 +157,7 @@ export class PointsProxyService {
       if (error instanceof AxiosError && error.response?.status === 429) {
         throw error;
       }
-      console.error(`Failed to update cache for FP ${formattedPkHex}:`, error);
+      console.error(`Failed to update cache for FP ${formattedPkHex}:`, error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
   }
