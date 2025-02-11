@@ -10,7 +10,7 @@ export class CheckpointStatusHandler {
         this.checkpointStatusFetcher = CheckpointStatusFetcher.getInstance();
 
         // ENABLE_FULL_SYNC true ise geçmiş checkpoint'leri senkronize et
-        if (process.env.ENABLE_FULL_SYNC === 'true') {
+        if (process.env.CHECKPOINT_SYNC === 'true') {
             console.log('[CheckpointStatus] Full sync enabled, starting historical checkpoint sync');
             // Asenkron işlemi başlat ama bekleme
             this.initializeHistoricalSync().catch(error => {

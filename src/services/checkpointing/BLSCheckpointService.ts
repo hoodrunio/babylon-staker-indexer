@@ -17,7 +17,7 @@ export class BLSCheckpointService {
         this.checkpointHandler = BLSCheckpointHandler.getInstance();
 
         // ENABLE_FULL_SYNC true ise geçmiş checkpointleri senkronize et
-        if (process.env.ENABLE_FULL_SYNC === 'true') {
+        if (process.env.CHECKPOINT_SYNC === 'true') {
             console.log('[BLSCheckpoint] Full sync enabled, starting historical checkpoint sync');
             this.initializeHistoricalSync();
         }
