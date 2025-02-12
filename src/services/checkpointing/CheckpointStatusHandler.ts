@@ -1,6 +1,7 @@
 import { Network } from '../../types/finality';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { CheckpointStatusFetcher } from './CheckpointStatusFetcher';
+import { convertBase64AddressToHex } from '../../utils/util';
 
 export class CheckpointStatusHandler {
     private static instance: CheckpointStatusHandler | null = null;
@@ -33,6 +34,9 @@ export class CheckpointStatusHandler {
             const events = blockData?.result?.data?.value?.result_finalize_block?.events;
             const blockHeight = blockData?.result?.data?.value?.block?.header?.height;
             
+            console.log(`[CheckpointStatus] Processing block ${blockHeight} with ${events?.length || 0} events`);
+            // console.log(`[CheckpointStatus] Full block data:`, JSON.stringify(blockData, null, 2).slice(0, 1000));
+
             if (!events) {
                 console.log(`[CheckpointStatus] No events found in block ${blockHeight}`);
                 return;
@@ -104,7 +108,7 @@ export class CheckpointStatusHandler {
             const newCheckpoint = {
                 epoch_num: epochNum,
                 network,
-                block_hash: checkpoint.ckpt?.block_hash || '',
+                block_hash: convertBase64AddressToHex(checkpoint.ckpt?.block_hash || ''),
                 bitmap: checkpoint.ckpt?.bitmap || '',
                 bls_multi_sig: checkpoint.ckpt?.bls_multi_sig || '',
                 status: 'CKPT_STATUS_ACCUMULATING',
@@ -129,6 +133,36 @@ export class CheckpointStatusHandler {
         }
     }
 
+    private isValidStateTransition(currentState: string, newState: string): boolean {
+        type CheckpointState = 'CKPT_STATUS_ACCUMULATING' | 'CKPT_STATUS_SEALED' | 'CKPT_STATUS_SUBMITTED' | 'CKPT_STATUS_CONFIRMED' | 'CKPT_STATUS_FINALIZED';
+        
+        const stateOrder: Record<CheckpointState, number> = {
+            'CKPT_STATUS_ACCUMULATING': 0,
+            'CKPT_STATUS_SEALED': 1,
+            'CKPT_STATUS_SUBMITTED': 2,
+            'CKPT_STATUS_CONFIRMED': 3,
+            'CKPT_STATUS_FINALIZED': 4
+        };
+
+        // Eğer mevcut durum yoksa (yeni checkpoint), her duruma geçiş yapılabilir
+        if (!currentState) return true;
+
+        // Tip kontrolü
+        if (!(currentState in stateOrder) || !(newState in stateOrder)) {
+            console.warn(`[CheckpointStatus] Invalid state value: ${currentState} -> ${newState}`);
+            return false;
+        }
+
+        // SEALED durumu BLSCheckpointHandler tarafından işleniyor, bu yüzden bu durumu atlayarak geçiş kontrolü yapıyoruz
+        if (currentState === 'CKPT_STATUS_ACCUMULATING' && newState === 'CKPT_STATUS_SUBMITTED') return true;
+        if (currentState === 'CKPT_STATUS_SEALED' && newState === 'CKPT_STATUS_SUBMITTED') return true;
+        if (currentState === 'CKPT_STATUS_SUBMITTED' && newState === 'CKPT_STATUS_CONFIRMED') return true;
+        if (currentState === 'CKPT_STATUS_CONFIRMED' && newState === 'CKPT_STATUS_FINALIZED') return true;
+
+        // Diğer tüm geçişleri reddet
+        return false;
+    }
+
     private async handleStatusUpdateEvent(event: any, network: Network, blockData: any): Promise<void> {
         try {
             const checkpointAttr = event.attributes?.find((attr: any) => attr.key === 'checkpoint');
@@ -137,9 +171,12 @@ export class CheckpointStatusHandler {
                 return;
             }
 
+            // console.log(`[CheckpointStatus] Processing checkpoint attribute:`, checkpointAttr.value);
+
             let checkpoint;
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
+                // console.log(`[CheckpointStatus] Parsed checkpoint data:`, checkpoint);
             } catch (error) {
                 console.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
                 return;
@@ -155,6 +192,23 @@ export class CheckpointStatusHandler {
             const blockHeight = parseInt(blockData?.result?.data?.value?.block?.header?.height || '0');
             const now = new Date();
 
+            // Mevcut checkpoint'i kontrol et
+            const existingCheckpoint = await BLSCheckpoint.findOne({ 
+                epoch_num: epochNum,
+                network 
+            });
+
+            console.log(`[CheckpointStatus] Found existing checkpoint:`, existingCheckpoint ? 'yes' : 'no');
+            if (existingCheckpoint) {
+                console.log(`[CheckpointStatus] Current status: ${existingCheckpoint.status}, New status: ${status}`);
+
+                // Durum geçiş kontrolü
+                if (!this.isValidStateTransition(existingCheckpoint.status, status)) {
+                    console.warn(`[CheckpointStatus] Invalid state transition from ${existingCheckpoint.status} to ${status} for epoch ${epochNum}`);
+                    return;
+                }
+            }
+
             // Add new lifecycle entry
             const newLifecycleEntry = {
                 state: status,
@@ -162,28 +216,46 @@ export class CheckpointStatusHandler {
                 block_time: now
             };
 
-            // Update existing checkpoint with new status
-            await BLSCheckpoint.findOneAndUpdate(
-                { 
+            // Eğer checkpoint bulunamazsa yeni oluştur
+            if (!existingCheckpoint) {
+                console.log(`[CheckpointStatus] Creating new checkpoint for epoch ${epochNum}`);
+                await BLSCheckpoint.create({
                     epoch_num: epochNum,
-                    network 
-                },
-                { 
-                    $set: { 
-                        status,
-                        block_hash: checkpoint.ckpt?.block_hash,
-                        bitmap: checkpoint.ckpt?.bitmap,
-                        bls_multi_sig: checkpoint.ckpt?.bls_multi_sig,
-                        bls_aggr_pk: checkpoint.bls_aggr_pk,
-                        power_sum: checkpoint.power_sum
+                    network,
+                    block_hash: convertBase64AddressToHex(checkpoint.ckpt?.block_hash || ''),
+                    bitmap: checkpoint.ckpt?.bitmap,
+                    bls_multi_sig: checkpoint.ckpt?.bls_multi_sig,
+                    bls_aggr_pk: checkpoint.bls_aggr_pk,
+                    power_sum: checkpoint.power_sum,
+                    status,
+                    lifecycle: [newLifecycleEntry],
+                    timestamp: Math.floor(now.getTime() / 1000)
+                });
+            } else {
+                // Update existing checkpoint
+                await BLSCheckpoint.findOneAndUpdate(
+                    { 
+                        epoch_num: epochNum,
+                        network 
                     },
-                    $push: { lifecycle: newLifecycleEntry }
-                }
-            );
+                    { 
+                        $set: { 
+                            status,
+                            block_hash: convertBase64AddressToHex(checkpoint.ckpt?.block_hash || ''),
+                            bitmap: checkpoint.ckpt?.bitmap,
+                            bls_multi_sig: checkpoint.ckpt?.bls_multi_sig,
+                            bls_aggr_pk: checkpoint.bls_aggr_pk,
+                            power_sum: checkpoint.power_sum
+                        },
+                        $push: { lifecycle: newLifecycleEntry }
+                    }
+                );
+            }
 
-            console.log(`[CheckpointStatus] Updated checkpoint ${epochNum} status to ${status}`);
-        } catch (error) {
+            console.log(`[CheckpointStatus] Successfully updated checkpoint ${epochNum} status to ${status}`);
+        } catch (error: any) {
             console.error('[CheckpointStatus] Error handling status update event:', error);
+            console.error('[CheckpointStatus] Stack trace:', error.stack);
         }
     }
 
