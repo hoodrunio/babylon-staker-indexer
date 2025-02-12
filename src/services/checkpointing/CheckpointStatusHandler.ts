@@ -133,36 +133,6 @@ export class CheckpointStatusHandler {
         }
     }
 
-    private isValidStateTransition(currentState: string, newState: string): boolean {
-        type CheckpointState = 'CKPT_STATUS_ACCUMULATING' | 'CKPT_STATUS_SEALED' | 'CKPT_STATUS_SUBMITTED' | 'CKPT_STATUS_CONFIRMED' | 'CKPT_STATUS_FINALIZED';
-        
-        const stateOrder: Record<CheckpointState, number> = {
-            'CKPT_STATUS_ACCUMULATING': 0,
-            'CKPT_STATUS_SEALED': 1,
-            'CKPT_STATUS_SUBMITTED': 2,
-            'CKPT_STATUS_CONFIRMED': 3,
-            'CKPT_STATUS_FINALIZED': 4
-        };
-
-        // Eğer mevcut durum yoksa (yeni checkpoint), her duruma geçiş yapılabilir
-        if (!currentState) return true;
-
-        // Tip kontrolü
-        if (!(currentState in stateOrder) || !(newState in stateOrder)) {
-            console.warn(`[CheckpointStatus] Invalid state value: ${currentState} -> ${newState}`);
-            return false;
-        }
-
-        // SEALED durumu BLSCheckpointHandler tarafından işleniyor, bu yüzden bu durumu atlayarak geçiş kontrolü yapıyoruz
-        if (currentState === 'CKPT_STATUS_ACCUMULATING' && newState === 'CKPT_STATUS_SUBMITTED') return true;
-        if (currentState === 'CKPT_STATUS_SEALED' && newState === 'CKPT_STATUS_SUBMITTED') return true;
-        if (currentState === 'CKPT_STATUS_SUBMITTED' && newState === 'CKPT_STATUS_CONFIRMED') return true;
-        if (currentState === 'CKPT_STATUS_CONFIRMED' && newState === 'CKPT_STATUS_FINALIZED') return true;
-
-        // Diğer tüm geçişleri reddet
-        return false;
-    }
-
     private async handleStatusUpdateEvent(event: any, network: Network, blockData: any): Promise<void> {
         try {
             const checkpointAttr = event.attributes?.find((attr: any) => attr.key === 'checkpoint');
@@ -170,8 +140,6 @@ export class CheckpointStatusHandler {
                 console.warn('[CheckpointStatus] Could not find checkpoint attribute');
                 return;
             }
-
-            // console.log(`[CheckpointStatus] Processing checkpoint attribute:`, checkpointAttr.value);
 
             let checkpoint;
             try {
@@ -201,12 +169,6 @@ export class CheckpointStatusHandler {
             console.log(`[CheckpointStatus] Found existing checkpoint:`, existingCheckpoint ? 'yes' : 'no');
             if (existingCheckpoint) {
                 console.log(`[CheckpointStatus] Current status: ${existingCheckpoint.status}, New status: ${status}`);
-
-                // Durum geçiş kontrolü
-                if (!this.isValidStateTransition(existingCheckpoint.status, status)) {
-                    console.warn(`[CheckpointStatus] Invalid state transition from ${existingCheckpoint.status} to ${status} for epoch ${epochNum}`);
-                    return;
-                }
             }
 
             // Add new lifecycle entry
