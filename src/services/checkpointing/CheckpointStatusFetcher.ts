@@ -95,6 +95,7 @@ export class CheckpointStatusFetcher {
                 block_time: new Date()
             };
 
+            const rawBlockHash = checkpointData.ckpt?.block_hash_hex.toUpperCase();
             // Update checkpoint with new status
             await BLSCheckpoint.findOneAndUpdate(
                 { 
@@ -104,7 +105,7 @@ export class CheckpointStatusFetcher {
                 { 
                     $set: { 
                         status,
-                        block_hash: convertBase64AddressToHex(checkpointData.ckpt?.block_hash || ''),
+                        block_hash: rawBlockHash,
                         bitmap: checkpointData.ckpt?.bitmap,
                         bls_multi_sig: checkpointData.ckpt?.bls_multi_sig,
                         bls_aggr_pk: checkpointData.bls_aggr_pk,

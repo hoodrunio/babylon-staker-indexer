@@ -83,6 +83,8 @@ export class CheckpointStatusHandler {
             let checkpoint;
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
+                // console.log(`[CheckpointStatus] Raw checkpoint data:`, checkpoint);
+                console.log(`[CheckpointStatus] Raw block hash:`, checkpoint.ckpt?.block_hash);
             } catch (error) {
                 console.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
                 return;
@@ -91,6 +93,21 @@ export class CheckpointStatusHandler {
             const epochNum = parseInt(checkpoint.ckpt?.epoch_num);
             if (!epochNum) {
                 console.warn('[CheckpointStatus] Could not find epoch number in checkpoint data');
+                return;
+            }
+
+            // Block hash kontrolü ve dönüşümü
+            const rawBlockHash = checkpoint.ckpt?.block_hash;
+            if (!rawBlockHash) {
+                console.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
+                return;
+            }
+
+            const blockHash = convertBase64AddressToHex(rawBlockHash);
+            console.log(`[CheckpointStatus] Converted block hash from ${rawBlockHash} to ${blockHash}`);
+
+            if (!blockHash) {
+                console.warn(`[CheckpointStatus] Failed to convert block hash for epoch ${epochNum}`);
                 return;
             }
 
@@ -108,7 +125,7 @@ export class CheckpointStatusHandler {
             const newCheckpoint = {
                 epoch_num: epochNum,
                 network,
-                block_hash: convertBase64AddressToHex(checkpoint.ckpt?.block_hash || ''),
+                block_hash: blockHash,
                 bitmap: checkpoint.ckpt?.bitmap || '',
                 bls_multi_sig: checkpoint.ckpt?.bls_multi_sig || '',
                 status: 'CKPT_STATUS_ACCUMULATING',
@@ -126,7 +143,7 @@ export class CheckpointStatusHandler {
 
             if (!existingCheckpoint) {
                 await BLSCheckpoint.create(newCheckpoint);
-                console.log(`[CheckpointStatus] Created new checkpoint for epoch ${epochNum} with status ACCUMULATING`);
+                console.log(`[CheckpointStatus] Created new checkpoint for epoch ${epochNum} with block hash ${blockHash}`);
             }
         } catch (error) {
             console.error('[CheckpointStatus] Error handling accumulating event:', error);
@@ -144,7 +161,8 @@ export class CheckpointStatusHandler {
             let checkpoint;
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
-                // console.log(`[CheckpointStatus] Parsed checkpoint data:`, checkpoint);
+                console.log(`[CheckpointStatus] Raw checkpoint data:`, checkpoint);
+                console.log(`[CheckpointStatus] Raw block hash:`, checkpoint.ckpt?.block_hash);
             } catch (error) {
                 console.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
                 return;
@@ -155,6 +173,15 @@ export class CheckpointStatusHandler {
                 console.warn('[CheckpointStatus] Could not find epoch number in checkpoint data');
                 return;
             }
+
+            // Block hash kontrolü ve dönüşümü
+            const rawBlockHash = checkpoint.ckpt?.block_hash;
+            if (!rawBlockHash) {
+                console.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
+                return;
+            }
+
+            const blockHash = convertBase64AddressToHex(rawBlockHash);
 
             const status = this.getStatusFromEventType(event.type);
             const blockHeight = parseInt(blockData?.result?.data?.value?.block?.header?.height || '0');
@@ -184,11 +211,11 @@ export class CheckpointStatusHandler {
                 await BLSCheckpoint.create({
                     epoch_num: epochNum,
                     network,
-                    block_hash: convertBase64AddressToHex(checkpoint.ckpt?.block_hash || ''),
-                    bitmap: checkpoint.ckpt?.bitmap,
-                    bls_multi_sig: checkpoint.ckpt?.bls_multi_sig,
-                    bls_aggr_pk: checkpoint.bls_aggr_pk,
-                    power_sum: checkpoint.power_sum,
+                    block_hash: blockHash,
+                    bitmap: checkpoint.ckpt?.bitmap || '',
+                    bls_multi_sig: checkpoint.ckpt?.bls_multi_sig || '',
+                    bls_aggr_pk: checkpoint.bls_aggr_pk || '',
+                    power_sum: checkpoint.power_sum || '0',
                     status,
                     lifecycle: [newLifecycleEntry],
                     timestamp: Math.floor(now.getTime() / 1000)
@@ -203,18 +230,18 @@ export class CheckpointStatusHandler {
                     { 
                         $set: { 
                             status,
-                            block_hash: convertBase64AddressToHex(checkpoint.ckpt?.block_hash || ''),
-                            bitmap: checkpoint.ckpt?.bitmap,
-                            bls_multi_sig: checkpoint.ckpt?.bls_multi_sig,
-                            bls_aggr_pk: checkpoint.bls_aggr_pk,
-                            power_sum: checkpoint.power_sum
+                            block_hash: blockHash,
+                            bitmap: checkpoint.ckpt?.bitmap || '',
+                            bls_multi_sig: checkpoint.ckpt?.bls_multi_sig || '',
+                            bls_aggr_pk: checkpoint.bls_aggr_pk || '',
+                            power_sum: checkpoint.power_sum || '0'
                         },
                         $push: { lifecycle: newLifecycleEntry }
                     }
                 );
             }
 
-            console.log(`[CheckpointStatus] Successfully updated checkpoint ${epochNum} status to ${status}`);
+            console.log(`[CheckpointStatus] Successfully updated checkpoint ${epochNum} status to ${status} with block hash ${blockHash}`);
         } catch (error: any) {
             console.error('[CheckpointStatus] Error handling status update event:', error);
             console.error('[CheckpointStatus] Stack trace:', error.stack);
