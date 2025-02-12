@@ -2,6 +2,7 @@ import { Network } from '../../types/finality';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { ValidatorInfoService } from '../validator/ValidatorInfoService';
 import axios from 'axios';
+import { convertBase64AddressToHex } from '../../utils/util';
 
 export class CheckpointStatusFetcher {
     private static instance: CheckpointStatusFetcher | null = null;
@@ -103,7 +104,7 @@ export class CheckpointStatusFetcher {
                 { 
                     $set: { 
                         status,
-                        block_hash: checkpointData.ckpt?.block_hash,
+                        block_hash: convertBase64AddressToHex(checkpointData.ckpt?.block_hash || ''),
                         bitmap: checkpointData.ckpt?.bitmap,
                         bls_multi_sig: checkpointData.ckpt?.bls_multi_sig,
                         bls_aggr_pk: checkpointData.bls_aggr_pk,
