@@ -230,28 +230,42 @@ export class BLSCheckpointFetcher {
     }
 
     public async getCurrentEpoch(network: Network): Promise<number> {
-        try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 2000; // 2 seconds
+        let retryCount = 0;
+
+        while (retryCount < MAX_RETRIES) {
+            try {
+                const client = this.validatorInfoService.getBabylonClient(network);
+                if (!client) {
+                    throw new Error(`No Babylon client found for network ${network}`);
+                }
+
+                const baseUrl = client.getBaseUrl();
+                const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`, {
+                    timeout: 10000 // Increased timeout to 10 seconds
+                });
+                const currentEpoch = parseInt(response.data.current_epoch);
+
+                if (isNaN(currentEpoch)) {
+                    console.error('[BLSCheckpoint] Failed to get current epoch from node:', response.data);
+                    throw new Error('Invalid current epoch from node');
+                }
+
+                return currentEpoch;
+            } catch (error) {
+                retryCount++;
+                if (retryCount < MAX_RETRIES) {
+                    console.log(`[BLSCheckpoint] Retry ${retryCount}/${MAX_RETRIES} getting current epoch after ${RETRY_DELAY}ms`);
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                } else {
+                    console.error('[BLSCheckpoint] Error getting current epoch after all retries:', error);
+                    throw error;
+                }
             }
-
-            const baseUrl = client.getBaseUrl();
-            const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`, {
-                timeout: 5000
-            });
-            const currentEpoch = parseInt(response.data.current_epoch);
-
-            if (isNaN(currentEpoch)) {
-                console.error('[BLSCheckpoint] Failed to get current epoch from node:', response.data);
-                throw new Error('Invalid current epoch from node');
-            }
-
-            return currentEpoch;
-        } catch (error) {
-            console.error('[BLSCheckpoint] Error getting current epoch:', error);
-            throw error;
         }
+
+        throw new Error('Failed to get current epoch after max retries');
     }
 
     public async getTimestampForHeight(height: number, network: Network): Promise<number> {

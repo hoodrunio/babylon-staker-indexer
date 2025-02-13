@@ -85,29 +85,31 @@ export class ValidatorSignatureService {
             // İlk olarak, mevcut olmayan validatorları oluştur
             const createOps = Array.from(blockSignatures.keys()).map(validatorAddress => {
                 const validatorInfo = validatorInfoMap.get(validatorAddress);
+                const update: any = {
+                    $setOnInsert: {
+                        validatorMoniker: validatorInfo?.moniker || null,
+                        validatorConsensusAddress: validatorInfo?.valcons_address || null,
+                        validatorOperatorAddress: validatorInfo?.valoper_address || null,
+                        totalSignedBlocks: 0,
+                        totalBlocksInWindow: 0,
+                        recentBlocks: []
+                    }
+                };
+
                 return {
                     updateOne: {
                         filter: {
                             network: network.toLowerCase(),
                             validatorAddress
                         },
-                        update: {
-                            $setOnInsert: {
-                                validatorMoniker: validatorInfo?.moniker || null,
-                                validatorConsensusAddress: validatorInfo?.valcons_address || null,
-                                validatorOperatorAddress: validatorInfo?.valoper_address || null,
-                                totalSignedBlocks: 0,
-                                totalBlocksInWindow: 0,
-                                recentBlocks: []
-                            }
-                        },
+                        update,
                         upsert: true
                     }
-                };
+                } as any;
             });
 
             if (createOps.length > 0) {
-                await ValidatorSignature.bulkWrite(createOps, { ordered: false });
+                await ValidatorSignature.bulkWrite(createOps as any[], { ordered: false });
             }
 
             // Tüm validatörleri güncelle (aktif ve inaktif)
@@ -115,41 +117,44 @@ export class ValidatorSignatureService {
                 const signature = blockSignatures.get(validatorAddress);
                 const isSigned = Boolean(signature?.signature);
 
+                const update: any = {
+                    $push: {
+                        'recentBlocks': {
+                            $each: [{
+                                blockHeight: height,
+                                signed: isSigned,
+                                round,
+                                timestamp
+                            }],
+                            $slice: -this.RECENT_BLOCKS_LIMIT
+                        }
+                    },
+                    $inc: {
+                        totalSignedBlocks: isSigned ? 1 : 0,
+                        totalBlocksInWindow: 1
+                    }
+                };
+
+                if (isSigned) {
+                    update.$set = {
+                        lastSignedBlock: height,
+                        lastSignedBlockTime: timestamp
+                    };
+                }
+
                 return {
                     updateOne: {
                         filter: {
                             network: network.toLowerCase(),
                             validatorAddress
                         },
-                        update: {
-                            $push: {
-                                recentBlocks: {
-                                    $each: [{
-                                        blockHeight: height,
-                                        signed: isSigned,
-                                        round,
-                                        timestamp
-                                    }],
-                                    $slice: -this.RECENT_BLOCKS_LIMIT
-                                }
-                            },
-                            $inc: {
-                                totalSignedBlocks: isSigned ? 1 : 0,
-                                totalBlocksInWindow: 1
-                            },
-                            ...(isSigned ? {
-                                $set: {
-                                    lastSignedBlock: height,
-                                    lastSignedBlockTime: timestamp
-                                }
-                            } : {})
-                        }
+                        update
                     }
-                };
+                } as any;
             });
 
             if (updateOps.length > 0) {
-                await ValidatorSignature.bulkWrite(updateOps, { ordered: false });
+                await ValidatorSignature.bulkWrite(updateOps as any[], { ordered: false });
             }
 
             // İmza oranlarını güncelle
@@ -204,11 +209,11 @@ export class ValidatorSignatureService {
                             }
                         }
                     }
-                };
+                } as any;
             });
 
             if (rateUpdateOps.length > 0) {
-                await ValidatorSignature.bulkWrite(rateUpdateOps, { ordered: false });
+                await ValidatorSignature.bulkWrite(rateUpdateOps as any[], { ordered: false });
             }
 
             console.log(`[ValidatorSignature] Processed signatures for block ${height} on ${network}`);
@@ -306,4 +311,4 @@ export class ValidatorSignatureService {
 
         return missedBlocks;
     }
-} 
+}
