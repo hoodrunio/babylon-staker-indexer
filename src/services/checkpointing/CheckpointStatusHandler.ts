@@ -84,7 +84,6 @@ export class CheckpointStatusHandler {
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
                 // console.log(`[CheckpointStatus] Raw checkpoint data:`, checkpoint);
-                console.log(`[CheckpointStatus] Raw block hash:`, checkpoint.ckpt?.block_hash);
             } catch (error) {
                 console.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
                 return;
@@ -161,8 +160,6 @@ export class CheckpointStatusHandler {
             let checkpoint;
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
-                console.log(`[CheckpointStatus] Raw checkpoint data:`, checkpoint);
-                console.log(`[CheckpointStatus] Raw block hash:`, checkpoint.ckpt?.block_hash);
             } catch (error) {
                 console.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
                 return;

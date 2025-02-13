@@ -3,7 +3,8 @@ import { Network } from '../../types/finality';
 
 // Interface for individual validator signature
 interface IValidatorSignature {
-    validator_address: string;
+    validator_address: string;  // valcons address
+    hex_address: string;       // hex address
     validator_power: string;
     signed: boolean;
     vote_extension?: string;
@@ -34,7 +35,8 @@ interface IBLSValidatorSignatures {
 
 // Schema for individual validator signature
 const ValidatorSignatureSchema = new mongoose.Schema({
-    validator_address: { type: String, required: true },
+    validator_address: { type: String, required: true },  // valcons address
+    hex_address: { type: String, required: true },       // hex address
     validator_power: { type: String, required: true },
     signed: { type: Boolean, required: true },
     vote_extension: { type: String },

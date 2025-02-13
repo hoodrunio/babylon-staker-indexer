@@ -11,6 +11,8 @@ export class ValidatorInfoService {
     private updateInterval: number;
     private maxRetries: number;
     private retryDelay: number;
+    private isInitialized: boolean = false;
+    private updatePromise: Promise<void> | null = null;
 
     private constructor() {
         this.babylonClients = new Map();
@@ -52,13 +54,22 @@ export class ValidatorInfoService {
     }
 
     private async startPeriodicUpdates(): Promise<void> {
-        // Initial update with retries
-        await this.retryUpdate();
-
-        // Schedule periodic updates
-        setInterval(async () => {
+        try {
+            // Initial update with retries
             await this.retryUpdate();
-        }, this.updateInterval);
+            this.isInitialized = true;
+
+            // Schedule periodic updates
+            setInterval(() => {
+                // Store the update promise
+                this.updatePromise = this.retryUpdate().catch((error: Error) => {
+                    console.error('[ValidatorInfo] Periodic update failed:', error);
+                });
+            }, this.updateInterval);
+        } catch (error) {
+            console.error('[ValidatorInfo] Initial update failed:', error);
+            throw error;
+        }
     }
 
     private async retryUpdate(): Promise<void> {
@@ -125,7 +136,7 @@ export class ValidatorInfoService {
             }
 
             // Fetch all active validators from App API
-            const cosmosResponse = await axios.get(`${baseUrl}/cosmos/staking/v1beta1/validators?status=BOND_STATUS_BONDED&pagination.limit=500`);
+            const cosmosResponse = await axios.get(`${baseUrl}/cosmos/staking/v1beta1/validators?pagination.limit=500`);
             const cosmosValidators = cosmosResponse.data.validators;
             console.log(`[ValidatorInfo] Found ${cosmosValidators.length} validators from Cosmos API`);
 
@@ -134,8 +145,9 @@ export class ValidatorInfoService {
             let activeValidatorsWithPower = 0;
             for (const validator of cosmosValidators) {
                 try {
-                    // Get consensus key and convert to hex address
+                    // Get consensus key and convert to hex address and valcons address
                     const consensusHexAddress = this.getConsensusHexAddress(validator.consensus_pubkey.key);
+                    const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key, network);
 
                     // Check if this validator exists in tendermint validators
                     let tmValidator = tmValidatorMap.get(consensusHexAddress);
@@ -154,11 +166,12 @@ export class ValidatorInfoService {
                     // Update validator info
                     await ValidatorInfo.findOneAndUpdate(
                         {
-                            consensus_hex_address: consensusHexAddress,
+                            valcons_address: valconsAddress,
                             network
                         },
                         {
                             hex_address: consensusHexAddress,
+                            valcons_address: valconsAddress,
                             consensus_pubkey: validator.consensus_pubkey.key,
                             valoper_address: validator.operator_address,
                             moniker: validator.description.moniker,
@@ -217,17 +230,39 @@ export class ValidatorInfoService {
         }
     }
 
+    private getValconsAddress(consensusPubkey: string, network: Network): string {
+        try {
+            const hexAddress = this.getConsensusHexAddress(consensusPubkey);
+            const prefix = 'bbnvalcons';
+            
+            // Convert hex to Buffer
+            const addressBytes = Buffer.from(hexAddress, 'hex');
+            
+            // Bech32 encode
+            const { bech32 } = require('bech32');
+            const words = bech32.toWords(Buffer.from(addressBytes));
+            const valconsAddress = bech32.encode(prefix, words);
+
+            return valconsAddress;
+        } catch (error) {
+            console.error('[ValidatorInfo] Error converting to valcons address:', error);
+            throw error;
+        }
+    }
+
     public async updateValidatorInfo(validatorData: any, network: Network): Promise<void> {
         try {
             const consensusHexAddress = this.getConsensusHexAddress(validatorData.consensus_pubkey);
+            const valconsAddress = this.getValconsAddress(validatorData.consensus_pubkey, network);
 
             await ValidatorInfo.findOneAndUpdate(
                 {
-                    consensus_hex_address: consensusHexAddress,
+                    valcons_address: valconsAddress,
                     network
                 },
                 {
-                    hex_address: validatorData.hex_address,
+                    hex_address: consensusHexAddress,
+                    valcons_address: valconsAddress,
                     consensus_pubkey: validatorData.consensus_pubkey,
                     valoper_address: validatorData.operator_address,
                     moniker: validatorData.description.moniker,
@@ -257,14 +292,26 @@ export class ValidatorInfoService {
         }
     }
 
-    public async getValidatorByConsensusAddress(consensusHexAddress: string, network: Network): Promise<any> {
+    public async getValidatorByConsensusAddress(valconsAddress: string, network: Network): Promise<any> {
         try {
             return await ValidatorInfo.findOne({
-                consensus_hex_address: consensusHexAddress,
+                valcons_address: valconsAddress,
                 network
             });
         } catch (error) {
             console.error('[ValidatorInfo] Error getting validator by consensus address:', error);
+            throw error;
+        }
+    }
+
+    public async getValidatorByValoperAddress(valoperAddress: string, network: Network): Promise<any> {
+        try {
+            return await ValidatorInfo.findOne({
+                valoper_address: valoperAddress,
+                network
+            });
+        } catch (error) {
+            console.error('[ValidatorInfo] Error getting validator by valoper address:', error);
             throw error;
         }
     }
@@ -321,10 +368,12 @@ export class ValidatorInfoService {
                 }
             }
 
+            const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key, network);
+
             // Update validator info with match results
             await ValidatorInfo.findOneAndUpdate(
                 {
-                    consensus_hex_address: this.getConsensusHexAddress(validator.consensus_pubkey.key),
+                    valcons_address: valconsAddress,
                     network
                 },
                 {
@@ -337,6 +386,59 @@ export class ValidatorInfoService {
             );
         } catch (error) {
             console.error('[ValidatorInfo] Error matching validator with finality providers:', error);
+        }
+    }
+
+    public async waitForInitialization(): Promise<void> {
+        if (this.isInitialized) return;
+        
+        // Wait for up to 30 seconds
+        for (let i = 0; i < 30; i++) {
+            if (this.isInitialized) return;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        throw new Error('ValidatorInfo service initialization timeout');
+    }
+
+    public async waitForNextUpdate(): Promise<void> {
+        if (this.updatePromise) {
+            await this.updatePromise;
+        }
+    }
+
+    public async getAllValidators(
+        network: Network, 
+        showInactive: boolean = false,
+        page: number = 1,
+        limit: number = 100
+    ): Promise<{ validators: any[], total: number }> {
+        try {
+            const query: any = { 
+                network,
+                active: !showInactive
+            };
+
+            // Limit kontrolü
+            const validLimit = Math.min(Math.max(1, limit), 100);
+            const skip = (Math.max(1, page) - 1) * validLimit;
+
+            // Toplam kayıt sayısını al
+            const total = await ValidatorInfo.countDocuments(query);
+
+            // Validatörleri getir
+            const validators = await ValidatorInfo.find(query)
+                .sort({ voting_power: -1, moniker: 1 })
+                .skip(skip)
+                .limit(validLimit)
+                .lean();
+
+            return {
+                validators,
+                total
+            };
+        } catch (error) {
+            console.error('[ValidatorInfo] Error getting all validators:', error);
+            throw error;
         }
     }
 } 

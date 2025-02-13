@@ -44,7 +44,7 @@ export class BTCDelegationEventHandler {
                 return false;
             })) 
             {
-                console.log('Received new events.');
+                // console.log('Received new events.');
                 const logData = {
                     timestamp,
                     network,
@@ -97,7 +97,7 @@ export class BTCDelegationEventHandler {
                 }
 
                 if (eventType) {
-                    console.log(`Processing event: ${eventType}`);
+                   // console.log(`Processing event: ${eventType}`);
                     switch (eventType) {
                         case 'MsgCreateBTCDelegation':
                             await this.handleDelegationEvent(txData, network);

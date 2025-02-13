@@ -12,11 +12,11 @@ const validatorInfoSchema = new mongoose.Schema({
         required: true,
         index: true
     },
-    consensus_hex_address: {
+    valcons_address: {
         type: String,
         required: true,
         index: true,
-        match: /^[0-9A-F]{40}$/
+        match: /^bbnvalcons1[a-zA-Z0-9]{38}$/
     },
     valoper_address: {
         type: String,
@@ -89,7 +89,7 @@ const validatorInfoSchema = new mongoose.Schema({
 
 // Compound indexes
 validatorInfoSchema.index({ network: 1, hex_address: 1 }, { unique: true });
-validatorInfoSchema.index({ network: 1, consensus_hex_address: 1 }, { unique: true });
+validatorInfoSchema.index({ network: 1, valcons_address: 1 }, { unique: true });
 validatorInfoSchema.index({ network: 1, valoper_address: 1 }, { unique: true });
 validatorInfoSchema.index({ network: 1, voting_power: -1 }); // For sorting by voting power
 validatorInfoSchema.index({ network: 1, last_seen: -1 }); // For querying recently active validators

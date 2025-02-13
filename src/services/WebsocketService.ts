@@ -5,6 +5,8 @@ import { WebsocketHealthTracker } from './btc-delegations/WebsocketHealthTracker
 import { BabylonClient } from '../clients/BabylonClient';
 import { BLSCheckpointService } from './checkpointing/BLSCheckpointService';
 import { CheckpointStatusHandler } from './checkpointing/CheckpointStatusHandler';
+import { ValidatorSignatureService } from './validator/ValidatorSignatureService';
+import { ValidatorHistoricalSyncService } from './validator/ValidatorHistoricalSyncService';
 
 export class WebsocketService {
     private static instance: WebsocketService | null = null;
@@ -13,6 +15,8 @@ export class WebsocketService {
     private eventHandler: BTCDelegationEventHandler;
     private healthTracker: WebsocketHealthTracker;
     private blsCheckpointService: BLSCheckpointService;
+    private validatorSignatureService: ValidatorSignatureService;
+    private validatorHistoricalSync: ValidatorHistoricalSyncService;
     private babylonClient: Map<Network, BabylonClient> = new Map();
     private reconnectAttempts: Map<Network, number> = new Map();
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
@@ -24,6 +28,8 @@ export class WebsocketService {
         this.healthTracker = WebsocketHealthTracker.getInstance();
         this.blsCheckpointService = BLSCheckpointService.getInstance();
         this.checkpointStatusHandler = CheckpointStatusHandler.getInstance();
+        this.validatorSignatureService = ValidatorSignatureService.getInstance();
+        this.validatorHistoricalSync = ValidatorHistoricalSyncService.getInstance();
         
         // Mainnet konfigürasyonu varsa ekle
         try {
@@ -109,37 +115,48 @@ export class WebsocketService {
             console.log(`Connected to ${network} websocket`);
             this.reconnectAttempts.set(network, 0);
             
-            // Subscribe to BTC staking events
-            const btcStakingSubscription = {
-                jsonrpc: '2.0',
-                method: 'subscribe',
-                id: 'btc_staking',
-                params: {
-                    query: "tm.event='Tx' AND message.module='btcstaking'"
+            try {
+                // Start historical sync
+                const client = this.babylonClient.get(network);
+                if (client) {
+                    await this.validatorHistoricalSync.startSync(network, client);
                 }
-            };
-            ws.send(JSON.stringify(btcStakingSubscription));
+            } catch (error) {
+                console.error(`[WebSocket] Error during historical sync setup for ${network}:`, error);
+            }
+            
+            // Subscribe to events
+            const subscriptions = [
+                {
+                    jsonrpc: '2.0',
+                    method: 'subscribe',
+                    id: 'btc_staking',
+                    params: {
+                        query: "tm.event='Tx' AND message.module='btcstaking'"
+                    }
+                },
+                {
+                    jsonrpc: '2.0',
+                    method: 'subscribe',
+                    id: 'new_block',
+                    params: {
+                        query: "tm.event='NewBlock'"
+                    }
+                },
+                {
+                    jsonrpc: '2.0',
+                    method: 'subscribe',
+                    id: 'checkpoint_for_bls',
+                    params: {
+                        query: "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed.checkpoint CONTAINS 'epoch_num'"
+                    }
+                }
+            ];
 
-            const newBlockSubscription = {
-                jsonrpc: '2.0',
-                method: 'subscribe',
-                id: 'new_block',
-                params: {
-                    query: "tm.event='NewBlock'"
-                }
-            };
-            ws.send(JSON.stringify(newBlockSubscription));
-
-            // Subscribe to checkpointing events
-            const checkpointingSubscriptionForBls = {
-                jsonrpc: '2.0',
-                method: 'subscribe',
-                id: 'checkpoint_for_bls',
-                params: {
-                    query: "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed.checkpoint CONTAINS 'epoch_num'"
-                }
-            };
-            ws.send(JSON.stringify(checkpointingSubscriptionForBls));
+            // Send all subscriptions
+            for (const subscription of subscriptions) {
+                ws.send(JSON.stringify(subscription));
+            }
         });
 
         ws.on('message', async (data: Buffer) => {
@@ -158,16 +175,21 @@ export class WebsocketService {
                     return;
                 }
 
+                // Process all message types
+                const processPromises: Promise<void>[] = [];
+
                 // Handle BLS checkpoint events
                 if (messageValue.result_finalize_block && message.id === 'checkpoint_for_bls') {
-                    await this.blsCheckpointService.handleCheckpoint(messageValue.result_finalize_block, network);
-                    return;
+                    processPromises.push(
+                        this.blsCheckpointService.handleCheckpoint(messageValue.result_finalize_block, network)
+                    );
                 }
 
                 // Handle checkpoint status events
                 if (messageValue.result_finalize_block && message.id === 'new_block') {
-                    await this.checkpointStatusHandler.handleNewBlock(message, network);
-                    return;
+                    processPromises.push(
+                        this.checkpointStatusHandler.handleNewBlock(message, network)
+                    );
                 }
 
                 // Handle Tx events (for BTC staking)
@@ -180,20 +202,31 @@ export class WebsocketService {
                     };
 
                     // Validate required fields
-                    if (!txData.height || !txData.hash || !txData.events) {
+                    if (txData.height && txData.hash && txData.events) {
+                        // Update health tracker with current height
+                        processPromises.push(this.healthTracker.updateBlockHeight(network, height));
+                        
+                        // Handle BTC delegation events
+                        processPromises.push(this.eventHandler.handleEvent(txData, network));
+                    } else {
                         console.log(`${network} transaction missing required fields:`, txData);
-                        return;
                     }
-
-                    // Update health tracker with current height
-                    await this.healthTracker.updateBlockHeight(network, height);
-                    
-                    // Handle BTC delegation events
-                    await this.eventHandler.handleEvent(txData, network);
-                    return;
                 }
 
-                console.log(`${network} received unhandled message type:`, message);
+                // Handle validator signatures
+                if (message.result?.data?.type === 'tendermint/event/NewBlock') {
+                    const blockData = message.result.data.value;
+                    processPromises.push(
+                        this.validatorSignatureService.handleNewBlock(blockData, network)
+                    );
+                }
+
+                // Wait for all processes to complete
+                if (processPromises.length > 0) {
+                    await Promise.all(processPromises);
+                } else {
+                    console.log(`${network} received unhandled message type:`, message);
+                }
             } catch (error) {
                 console.error(`Error handling ${network} websocket message:`, error);
             }

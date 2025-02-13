@@ -214,7 +214,19 @@ export class BLSCheckpointController {
         try {
             const { valoper_address } = req.params;
             const network = req.network || Network.TESTNET;
-            const { start_epoch, end_epoch } = req.query;
+            const { start_epoch, end_epoch, page, limit: reqLimit } = req.query;
+
+            // Parse pagination parameters
+            const pageNum = page ? parseInt(page as string) : 1;
+            const limit = reqLimit ? parseInt(reqLimit as string) : 100;
+
+            if (isNaN(pageNum) || pageNum < 1) {
+                return res.status(400).json({ error: 'Invalid page parameter. Must be a positive number.' });
+            }
+
+            if (isNaN(limit) || limit < 1 || limit > 100) {
+                return res.status(400).json({ error: 'Invalid limit parameter. Must be between 1 and 100.' });
+            }
 
             // Parse epoch parameters
             const startEpochNum = start_epoch ? parseInt(start_epoch as string) : undefined;
@@ -234,83 +246,84 @@ export class BLSCheckpointController {
                 'signatures.valoper_address': valoper_address
             };
 
-            // Add epoch range if provided
-            if (startEpochNum !== undefined || endEpochNum !== undefined) {
-                query.epoch_num = {};
-                if (startEpochNum !== undefined) {
-                    query.epoch_num.$gte = startEpochNum;
+            // If no epoch range is provided, get the latest epoch to calculate default range
+            if (startEpochNum === undefined && endEpochNum === undefined) {
+                const latestSignature = await BLSValidatorSignatures.findOne({ network })
+                    .sort({ epoch_num: -1 })
+                    .limit(1);
+
+                if (latestSignature) {
+                    const latestEpoch = latestSignature.epoch_num;
+                    query.epoch_num = {
+                        $gte: Math.max(0, latestEpoch - 99), // Last 100 epochs (including current)
+                        $lte: latestEpoch
+                    };
                 }
-                if (endEpochNum !== undefined) {
-                    query.epoch_num.$lte = endEpochNum;
+            } else {
+                // Add provided epoch range if specified
+                if (startEpochNum !== undefined || endEpochNum !== undefined) {
+                    query.epoch_num = {};
+                    if (startEpochNum !== undefined) {
+                        query.epoch_num.$gte = startEpochNum;
+                    }
+                    if (endEpochNum !== undefined) {
+                        query.epoch_num.$lte = endEpochNum;
+                    }
                 }
             }
 
-            // Get validator signatures
-            const validatorSignatures = await BLSValidatorSignatures.find(query).sort({ epoch_num: -1 });
+            // Get total count for pagination
+            const totalCount = await BLSValidatorSignatures.countDocuments(query);
+            const totalPages = Math.ceil(totalCount / limit);
+            const skip = (pageNum - 1) * limit;
+
+            // Get validator signatures with pagination
+            const validatorSignatures = await BLSValidatorSignatures.find(query)
+                .sort({ epoch_num: -1 })
+                .skip(skip)
+                .limit(limit);
 
             if (validatorSignatures.length === 0) {
-                // Let's check if the validator exists in any records
-                const anyRecord = await BLSValidatorSignatures.findOne({
-                    'signatures.valoper_address': valoper_address
-                });
-
-                if (!anyRecord) {
-                    return res.status(404).json({ 
-                        error: 'No validator signatures found',
-                        details: 'Validator address not found in any records'
-                    });
-                }
-
                 return res.status(404).json({ 
                     error: 'No validator signatures found',
-                    details: 'No signatures found for the specified parameters'
+                    pagination: {
+                        total_records: 0,
+                        total_pages: 0,
+                        current_page: pageNum,
+                        limit
+                    }
                 });
             }
 
-            // Calculate overall statistics
-            let totalSigned = 0;
-            let totalPower = 0;
-            let signedPower = 0;
-            const epochStats: any[] = [];
-
-            validatorSignatures.forEach(epochData => {
-                const validatorData = epochData.signatures.find(sig => sig.valoper_address === valoper_address);
-                if (validatorData) {
-                    const power = parseInt(validatorData.validator_power);
-                    totalPower += power;
-                    if (validatorData.signed) {
-                        totalSigned++;
-                        signedPower += power;
-                    }
-
-                    epochStats.push({
-                        epoch_num: epochData.epoch_num,
-                        signed: validatorData.signed,
-                        power: validatorData.validator_power,
-                        moniker: validatorData.moniker,
-                        valoper_address: validatorData.valoper_address
-                    });
-                }
+            // Process validator signatures
+            const stats = validatorSignatures.map(vs => {
+                const validatorSig = vs.signatures.find(sig => sig.valoper_address === valoper_address);
+                return {
+                    epoch_num: vs.epoch_num,
+                    timestamp: vs.timestamp,
+                    signed: validatorSig?.signed || false,
+                    vote_extension: validatorSig?.vote_extension || null,
+                    validator_power: validatorSig?.validator_power || '0'
+                };
             });
+
+            // Get moniker from the first signature record
+            const firstValidatorSig = validatorSignatures[0]?.signatures.find(sig => sig.valoper_address === valoper_address);
+            const moniker = firstValidatorSig?.moniker || '';
 
             const response = {
                 valoper_address,
+                moniker,
                 network,
-                overall_stats: {
-                    total_epochs: validatorSignatures.length,
-                    signed_epochs: totalSigned,
-                    missed_epochs: validatorSignatures.length - totalSigned,
-                    participation_rate: ((totalSigned / validatorSignatures.length) * 100).toFixed(2) + '%',
-                    total_power: totalPower.toString(),
-                    signed_power: signedPower.toString(),
-                    power_participation_rate: ((signedPower / totalPower) * 100).toFixed(2) + '%'
-                },
-                epoch_stats: epochStats,
-                time_range: {
-                    start_epoch: Math.min(...validatorSignatures.map(v => v.epoch_num)),
-                    end_epoch: Math.max(...validatorSignatures.map(v => v.epoch_num))
-                },
-                timestamp: Date.now()
+                stats,
+                pagination: {
+                    total_records: totalCount,
+                    total_pages: totalPages,
+                    current_page: pageNum,
+                    limit,
+                    has_next: pageNum < totalPages,
+                    has_previous: pageNum > 1
+                }
             };
 
             res.json(response);
