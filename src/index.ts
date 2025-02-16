@@ -94,13 +94,21 @@ async function startServer() {
             // Wait a bit for cleanup
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            logger.info('All services stopped. Closing logger...');
+            logger.info('All services stopped. Waiting for final cleanup...');
             
-            // Close logger and wait for it to finish
-            await new Promise<void>((resolve) => {
-                logger.on('finish', resolve);
-                logger.end();
-            });
+            // PM2 için özel shutdown süreci
+            if (process.env.PM2_USAGE) {
+                // PM2'nin kendi log mekanizmasını kullanmasına izin ver
+                process.send?.('shutdown');
+                // Biraz daha bekle
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            } else {
+                // PM2 dışında çalışıyorsa Winston logger'ı kapat
+                await new Promise<void>((resolve) => {
+                    logger.on('finish', resolve);
+                    logger.end();
+                });
+            }
             
             process.exit(0);
         } catch (error) {
@@ -108,6 +116,13 @@ async function startServer() {
             process.exit(1);
         }
     };
+
+    // PM2 shutdown mesajını dinle
+    process.on('message', (msg) => {
+        if (msg === 'shutdown') {
+            shutdown('PM2');
+        }
+    });
 
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
