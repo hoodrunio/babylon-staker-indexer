@@ -127,7 +127,7 @@ winston.addColors(colors);
 
 // Logger oluşturma
 const logger = winston.createLogger({
-    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
     levels,
     defaultMeta: { 
         service: 'babylon-staker-indexer',

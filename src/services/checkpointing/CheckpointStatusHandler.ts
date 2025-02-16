@@ -35,7 +35,7 @@ export class CheckpointStatusHandler {
             const events = blockData?.result?.data?.value?.result_finalize_block?.events;
             const blockHeight = blockData?.result?.data?.value?.block?.header?.height;
             
-            logger.info(`[CheckpointStatus] Processing block ${blockHeight} with ${events?.length || 0} events`);
+            logger.debug(`[CheckpointStatus] Processing block ${blockHeight} with ${events?.length || 0} events`);
 
             if (!events) {
                 logger.info(`[CheckpointStatus] No events found in block ${blockHeight}`);
