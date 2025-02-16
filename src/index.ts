@@ -84,15 +84,8 @@ async function startServer() {
     } 
 
     // Graceful shutdown
-    process.on('SIGTERM', () => {
-        logger.info('SIGTERM signal received. Closing HTTP server...');
-        websocketService.stop();
-        finalityService.stop();
-        process.exit(0);
-    });
-
-    process.on('SIGINT', async () => {
-        logger.info('SIGINT signal received. Closing HTTP server...');
+    const shutdown = async (signal: string) => {
+        logger.info(`${signal} signal received. Starting graceful shutdown...`);
         try {
             // Stop all services
             websocketService.stop();
@@ -101,13 +94,23 @@ async function startServer() {
             // Wait a bit for cleanup
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            logger.info('All services stopped. Exiting...');
+            logger.info('All services stopped. Closing logger...');
+            
+            // Close logger and wait for it to finish
+            await new Promise<void>((resolve) => {
+                logger.on('finish', resolve);
+                logger.end();
+            });
+            
             process.exit(0);
         } catch (error) {
-            logger.error('Error during shutdown:', error);
+            console.error('Error during shutdown:', error);
             process.exit(1);
         }
-    });
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer().catch(logger.error); 
