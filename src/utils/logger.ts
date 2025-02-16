@@ -153,6 +153,13 @@ const logger = winston.createLogger({
             maxSize: '20m',
             zippedArchive: true,
             format: customFormat
+        }),
+
+        // Production ortamında stdout/stderr'e yazma
+        new winston.transports.Console({
+            format: process.env.NODE_ENV === 'production' ? customFormat : consoleFormat,
+            handleExceptions: true,
+            handleRejections: true
         })
     ]
 });
