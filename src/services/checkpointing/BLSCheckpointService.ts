@@ -4,6 +4,7 @@ import { ValidatorInfoService } from '../validator/ValidatorInfoService';
 import { Network } from '../../types/finality';
 import { BLSCheckpointFetcher } from './BLSCheckpointFetcher';
 import { BLSCheckpointHandler } from './BLSCheckpointHandler';
+import { logger } from '../../utils/logger';
 
 export class BLSCheckpointService {
     private static instance: BLSCheckpointService | null = null;
@@ -18,7 +19,7 @@ export class BLSCheckpointService {
 
         // ENABLE_FULL_SYNC true ise geçmiş checkpointleri senkronize et
         if (process.env.CHECKPOINT_SYNC === 'true') {
-            console.log('[BLSCheckpoint] Full sync enabled, starting historical checkpoint sync');
+            logger.info('[BLSCheckpoint] Full sync enabled, starting historical checkpoint sync');
             this.initializeHistoricalSync();
         }
     }
@@ -68,7 +69,7 @@ export class BLSCheckpointService {
 
             return null;
         } catch (error) {
-            console.error('Error getting checkpoint:', error);
+            logger.error('Error getting checkpoint:', error);
             throw error;
         }
     }
@@ -93,15 +94,15 @@ export class BLSCheckpointService {
                 try {
                     const client = this.validatorInfoService.getBabylonClient(network);
                     if (client) {
-                        console.log(`[BLSCheckpoint] Starting historical sync for ${network}`);
+                        logger.info(`[BLSCheckpoint] Starting historical sync for ${network}`);
                         await this.syncHistoricalCheckpoints(network);
                     }
                 } catch (error) {
-                    console.error(`[BLSCheckpoint] Error syncing historical checkpoints for ${network}:`, error);
+                    logger.error(`[BLSCheckpoint] Error syncing historical checkpoints for ${network}:`, error);
                 }
             }
         } catch (error) {
-            console.error('[BLSCheckpoint] Error initializing historical sync:', error);
+            logger.error('[BLSCheckpoint] Error initializing historical sync:', error);
         }
     }
 } 

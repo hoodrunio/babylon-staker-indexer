@@ -1,7 +1,7 @@
 import { PhaseStats } from '../models/phase-stats';
 import { Transaction } from '../models/Transaction';
 import { StakeTransaction } from '../../types';
-
+import { logger } from '../../utils/logger';
 export class PhaseStatsService {
   async initPhaseStats(phase: number, startHeight: number): Promise<void> {
     try {
@@ -24,7 +24,7 @@ export class PhaseStatsService {
         }
       );
     } catch (error) {
-      console.error('Error initializing phase stats:', error);
+      logger.error('Error initializing phase stats:', error);
       throw error;
     }
   }
@@ -40,9 +40,9 @@ export class PhaseStatsService {
         const stakeBTC = Number((transaction.stakeAmount / 100000000).toFixed(8));
         
         if (process.env.LOG_LEVEL === 'debug') {
-          console.log(`Updating phase ${phase} stats:`);
-          console.log(`Adding stake amount: ${transaction.stakeAmount} satoshi (${stakeBTC} BTC)`);
-          console.log(`Current total stake: ${stats.totalStakeBTC} BTC`);
+          logger.info(`Updating phase ${phase} stats:`);
+          logger.info(`Adding stake amount: ${transaction.stakeAmount} satoshi (${stakeBTC} BTC)`);
+          logger.info(`Current total stake: ${stats.totalStakeBTC} BTC`);
         }
 
         await PhaseStats.updateOne(
@@ -75,7 +75,7 @@ export class PhaseStatsService {
 
         if (process.env.LOG_LEVEL === 'debug') {
           const updatedStats = await PhaseStats.findOne({ phase });
-          console.log(`New total stake: ${updatedStats?.totalStakeBTC} BTC`);
+          logger.info(`New total stake: ${updatedStats?.totalStakeBTC} BTC`);
         }
       } else {
         await PhaseStats.updateOne(
@@ -89,7 +89,7 @@ export class PhaseStatsService {
         );
       }
     } catch (error) {
-      console.error('Error updating phase stats:', error);
+      logger.error('Error updating phase stats:', error);
       throw error;
     }
   }
@@ -133,7 +133,7 @@ export class PhaseStatsService {
         sum + Number((tx.stakeAmount / 100000000).toFixed(8)), 0);
 
       if (phase === 1 && stats.activeStakeBTC + activeStakeBTC > 1000) {
-        console.error('ERROR: Would exceed staking cap! Marking all transactions as overflow');
+        logger.error('ERROR: Would exceed staking cap! Marking all transactions as overflow');
         processedTxs.forEach(tx => tx.isOverflow = true);
         
         await Promise.all(processedTxs.map(tx => 
@@ -207,7 +207,7 @@ export class PhaseStatsService {
 
       if (process.env.LOG_LEVEL === 'debug') {
         const updatedStats = await PhaseStats.findOne({ phase });
-        console.log(`Phase ${phase} stats updated:`, {
+        logger.info(`Phase ${phase} stats updated:`, {
           height,
           totalTransactions: transactions.length,
           activeTransactions: activeTransactions.length,
@@ -218,7 +218,7 @@ export class PhaseStatsService {
         });
       }
     } catch (error) {
-      console.error('Error updating phase stats:', error);
+      logger.error('Error updating phase stats:', error);
       throw error;
     }
   }
@@ -237,7 +237,7 @@ export class PhaseStatsService {
         }
       );
     } catch (error) {
-      console.error('Error completing phase:', error);
+      logger.error('Error completing phase:', error);
       throw error;
     }
   }
@@ -278,7 +278,7 @@ export class PhaseStatsService {
       
       return stats;
     } catch (error) {
-      console.error('Error getting phase stats:', error);
+      logger.error('Error getting phase stats:', error);
       return null;
     }
   }
@@ -287,7 +287,7 @@ export class PhaseStatsService {
     try {
       return await PhaseStats.find().sort({ phase: 1 }).lean();
     } catch (error) {
-      console.error('Error getting all phase stats:', error);
+      logger.error('Error getting all phase stats:', error);
       throw error;
     }
   }

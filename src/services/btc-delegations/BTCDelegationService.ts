@@ -9,6 +9,8 @@ import { formatSatoshis } from '../../utils/util';
 import { getTxHash } from '../../utils/generate-tx-hash';
 import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
 import { extractAddressesFromTransaction } from '../../utils/btc-transaction';
+import { logger } from '../../utils/logger';
+
 interface ChainDelegationResponse {
     btc_delegations: BTCDelegation[];
     pagination?: {
@@ -30,17 +32,17 @@ export class BTCDelegationService {
         // Try to initialize testnet client
         try {
             this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-            console.log('[Network] Testnet client initialized successfully');
+            logger.info('[Network] Testnet client initialized successfully');
         } catch (error) {
-            console.debug('[Network] Testnet is not configured');
+            logger.debug('[Network] Testnet is not configured');
         }
 
         // Try to initialize mainnet client
         try {
             this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-            console.log('[Network] Mainnet client initialized successfully');
+            logger.info('[Network] Mainnet client initialized successfully');
         } catch (error) {
-            console.debug('[Network] Mainnet is not configured');
+            logger.debug('[Network] Mainnet is not configured');
         }
 
         if (this.babylonClients.size === 0) {
@@ -51,14 +53,14 @@ export class BTCDelegationService {
         const enableFullSync = process.env.ENABLE_FULL_SYNC === 'true';
         
         if (enableFullSync) {
-            console.log(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
+            logger.info(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
             for (const network of networks) {
                 this.syncDelegations(network).catch(err => 
-                    console.error(`[${network}] Error in initial sync:`, err)
+                    logger.error(`[${network}] Error in initial sync:`, err)
                 );
             }
         } else {
-            console.log('[Network] Full sync is disabled, skipping initial delegation sync');
+            logger.info('[Network] Full sync is disabled, skipping initial delegation sync');
         }
     }
 
@@ -105,26 +107,26 @@ export class BTCDelegationService {
 
         setInterval(async () => {
             if (isPeriodicSyncRunning) {
-                console.log('[Network] Previous periodic sync still running, skipping...');
+                logger.info('[Network] Previous periodic sync still running, skipping...');
                 return;
             }
 
             try {
                 isPeriodicSyncRunning = true;
                 const networks = Array.from(this.babylonClients.keys());
-                console.log(`[Network] Starting periodic delegation sync for configured networks: ${networks.join(', ')}`);
+                logger.info(`[Network] Starting periodic delegation sync for configured networks: ${networks.join(', ')}`);
                 
                 for (const network of networks) {
                     if (this.isSyncing) {
-                        console.log(`[${network}] Manual sync in progress, skipping periodic sync...`);
+                        logger.info(`[${network}] Manual sync in progress, skipping periodic sync...`);
                         continue;
                     }
                     await this.syncDelegations(network).catch(err => 
-                        console.error(`[${network}] Error in periodic sync:`, err)
+                        logger.error(`[${network}] Error in periodic sync:`, err)
                     );
                 }
             } catch (error) {
-                console.error('[Network] Error in periodic delegation sync:', error);
+                logger.error('[Network] Error in periodic delegation sync:', error);
             } finally {
                 isPeriodicSyncRunning = false;
             }
@@ -133,7 +135,7 @@ export class BTCDelegationService {
 
     private async syncDelegations(network: Network) {
         if (this.isSyncing) {
-            console.log(`[${network}] Sync already in progress, skipping...`);
+            logger.info(`[${network}] Sync already in progress, skipping...`);
             return;
         }
 
@@ -160,7 +162,7 @@ export class BTCDelegationService {
                     const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
                     const totalBatches = Math.ceil(chainDelegations.length / BATCH_SIZE);
                     
-                    console.log(`[${network}] Processing batch ${batchNumber}/${totalBatches} for status ${status}`);
+                    logger.info(`[${network}] Processing batch ${batchNumber}/${totalBatches} for status ${status}`);
                     
                     const batchResults = await this.processBatch(batch, network);
                     
@@ -168,18 +170,18 @@ export class BTCDelegationService {
                     totalUpdated += batchResults.updated || 0;
 
                     if (Object.keys(batchResults).length > 0) {
-                        console.log(`[${network}] Batch ${batchNumber}/${totalBatches} results:`, batchResults);
+                        logger.info(`[${network}] Batch ${batchNumber}/${totalBatches} results:`, batchResults);
                     }
                 }
             }
             
-            console.log(`[${network}] Sync completed:`, {
+            logger.info(`[${network}] Sync completed:`, {
                 totalDelegationsFound: totalDelegations,
                 newDelegationsCreated: totalCreated,
                 delegationsUpdated: totalUpdated
             });
         } catch (error) {
-            console.error(`[${network}] Error syncing delegations:`, error);
+            logger.error(`[${network}] Error syncing delegations:`, error);
         } finally {
             this.isSyncing = false;
         }
@@ -187,26 +189,26 @@ export class BTCDelegationService {
 
     private async processDelegation(del: BTCDelegation): Promise<DelegationResponse | null> {
         if (!del) {
-            console.warn('Delegation is null');
+            logger.warn('Delegation is null');
             return null;
         }
 
         try {
-            console.log('Processing delegation with staking_tx_hex:', del.staking_tx_hex);
+            logger.info('Processing delegation with staking_tx_hex:', del.staking_tx_hex);
             let senderAddress = '';
             try {
                 const addresses = await extractAddressesFromTransaction(del.staking_tx_hex);
-                // console.log('Extracted addresses:', addresses);
+                // logger.info('Extracted addresses:', addresses);
                 senderAddress = addresses.sender || '';
             } catch (error) {
-                console.error('Failed to extract sender address from staking transaction:', error);
-                console.error('Transaction hex that failed:', del.staking_tx_hex);
+                logger.error('Failed to extract sender address from staking transaction:', error);
+                logger.error('Transaction hex that failed:', del.staking_tx_hex);
                 return null;
             }
 
             const totalSat = Number(del.total_sat);
             if (isNaN(totalSat)) {
-                console.warn(`Invalid total_sat value for delegation:`, del);
+                logger.warn(`Invalid total_sat value for delegation:`, del);
                 return null;
             }
 
@@ -234,7 +236,7 @@ export class BTCDelegationService {
                 finality_provider_btc_pks_hex: del.fp_btc_pk_list || []
             };
         } catch (error) {
-            console.error('Error processing delegation:', error);
+            logger.error('Error processing delegation:', error);
             return null;
         }
     }
@@ -301,7 +303,7 @@ export class BTCDelegationService {
         }
 
         if (!pageKey) {
-            console.log(`[${network}] Fetching ${status} delegations...`);
+            logger.info(`[${network}] Fetching ${status} delegations...`);
         }
 
         try {
@@ -319,7 +321,7 @@ export class BTCDelegationService {
             
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error(`[${network}] HTTP error fetching delegations:`, {
+                logger.error(`[${network}] HTTP error fetching delegations:`, {
                     status: response.status,
                     url: url.toString(),
                     error: errorText,
@@ -328,7 +330,7 @@ export class BTCDelegationService {
 
                 if (retryCount < maxRetries) {
                     const delay = retryDelay(retryCount);
-                    console.log(`[${network}] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+                    logger.info(`[${network}] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return this.fetchDelegationsFromChain(status, network, pageKey, pageLimit, retryCount + 1);
                 }
@@ -345,7 +347,7 @@ export class BTCDelegationService {
                 try {
                     return await this.processDelegation(del);
                 } catch (error) {
-                    console.error(`[${network}] Error processing delegation:`, error);
+                    logger.error(`[${network}] Error processing delegation:`, error);
                     return null;
                 }
             });
@@ -363,7 +365,7 @@ export class BTCDelegationService {
                     );
                     return [...delegations, ...nextDelegations];
                 } catch (error) {
-                    console.error(`[${network}] Error fetching next page:`, error);
+                    logger.error(`[${network}] Error fetching next page:`, error);
                     // Return current page if next page fails
                     return delegations;
                 }
@@ -377,7 +379,7 @@ export class BTCDelegationService {
                  error.message.includes('ETIMEDOUT') ||
                  error.message.includes('ECONNREFUSED'));
 
-            console.error(`[${network}] Error fetching ${status} delegations:`, {
+            logger.error(`[${network}] Error fetching ${status} delegations:`, {
                 error: error instanceof Error ? error.message : 'Unknown error',
                 type: isAbortError ? 'timeout' : isConnectionError ? 'connection' : 'unknown',
                 url: url.toString(),
@@ -387,7 +389,7 @@ export class BTCDelegationService {
 
             if (retryCount < maxRetries && (isAbortError || isConnectionError)) {
                 const delay = retryDelay(retryCount);
-                console.log(`[${network}] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+                logger.info(`[${network}] Retrying in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 return this.fetchDelegationsFromChain(status, network, pageKey, pageLimit, retryCount + 1);
             }
@@ -461,7 +463,7 @@ export class BTCDelegationService {
             case 'UNBONDED':
                 return 'UNBONDED';
             default:
-                console.warn(`Unknown status: ${status}, defaulting to PENDING`);
+                logger.warn(`Unknown status: ${status}, defaulting to PENDING`);
                 return 'PENDING';
         }
     }
@@ -478,7 +480,7 @@ export class BTCDelegationService {
             );
 
             if (!result) {
-                console.error('No delegation found to update:', {
+                logger.error('No delegation found to update:', {
                     stakingTxIdHex,
                     network: network.toLowerCase()
                 });
@@ -487,7 +489,7 @@ export class BTCDelegationService {
 
             return result;
         } catch (error) {
-            console.error('Error updating delegation state:', error);
+            logger.error('Error updating delegation state:', error);
             throw error;
         }
     }
@@ -497,7 +499,7 @@ export class BTCDelegationService {
             const chainDel = await this.fetchDelegationsFromChain(txData, network);
             return chainDel;
         } catch (error) {
-            console.error(`Error getting delegation from chain: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            logger.error(`Error getting delegation from chain: ${error instanceof Error ? error.message : 'Unknown error'}`);
             return null;
         }
     }
@@ -551,7 +553,7 @@ export class BTCDelegationService {
             }, {} as Record<string, number>);
 
             if (Object.keys(stats).length > 0) {
-                console.log(`[${network}] Reconciliation results:`, stats);
+                logger.info(`[${network}] Reconciliation results:`, stats);
             }
 
             return;
@@ -565,7 +567,7 @@ export class BTCDelegationService {
         try {
             const chainDel = await this.getDelegationFromChain(txData, network);
             if (!chainDel) {
-                console.log(`[${network}] No valid delegation found in transaction data`);
+                logger.info(`[${network}] No valid delegation found in transaction data`);
                 return null;
             }
 
@@ -573,7 +575,7 @@ export class BTCDelegationService {
             await this.reconcileDelegations([chainDel], network);
             return chainDel;
         } catch (error) {
-            console.error('Error handling new delegation from websocket:', error);
+            logger.error('Error handling new delegation from websocket:', error);
             throw error;
         }
     }

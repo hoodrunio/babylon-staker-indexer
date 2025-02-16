@@ -1,5 +1,6 @@
 import { Network } from '../../types/finality';
 import { BLSCheckpointFetcher } from './BLSCheckpointFetcher';
+import { logger } from '../../utils/logger';
 
 export class BLSCheckpointHandler {
     private static instance: BLSCheckpointHandler | null = null;
@@ -19,7 +20,7 @@ export class BLSCheckpointHandler {
     public async handleCheckpoint(event: any, network: Network): Promise<void> {
         try {
             // Log raw event for debugging
-            /* console.log(`[BLSCheckpoint] Raw event received:`, {
+            /* logger.info(`[BLSCheckpoint] Raw event received:`, {
                 network,
                 hasEvents: !!event.events,
                 eventsCount: event.events?.length,
@@ -27,7 +28,7 @@ export class BLSCheckpointHandler {
             }); */
 
             if (!event.events) {
-                console.log('[BLSCheckpoint] No events found in finalize block event');
+                logger.info('[BLSCheckpoint] No events found in finalize block event');
                 return;
             }
 
@@ -37,11 +38,11 @@ export class BLSCheckpointHandler {
             );
 
             if (!checkpointEvent) {
-                console.log('[BLSCheckpoint] No checkpoint event found in events array');
+                logger.info('[BLSCheckpoint] No checkpoint event found in events array');
                 return;
             }
 
-            console.log('[BLSCheckpoint] Found checkpoint event');
+            logger.info('[BLSCheckpoint] Found checkpoint event');
 
             // Extract checkpoint data from attributes
             const checkpointAttr = checkpointEvent.attributes?.find((attr: any) => 
@@ -49,7 +50,7 @@ export class BLSCheckpointHandler {
             );
 
             if (!checkpointAttr) {
-                console.warn('[BLSCheckpoint] Could not find checkpoint attribute');
+                logger.warn('[BLSCheckpoint] Could not find checkpoint attribute');
                 return;
             }
 
@@ -57,27 +58,27 @@ export class BLSCheckpointHandler {
             let checkpoint;
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
-                console.log('[BLSCheckpoint] New checkpoint sealed:', checkpoint?.ckpt?.epoch_num);
+                logger.info('[BLSCheckpoint] New checkpoint sealed:', checkpoint?.ckpt?.epoch_num);
             } catch (error) {
-                console.error('[BLSCheckpoint] Error parsing checkpoint JSON:', error);
+                logger.error('[BLSCheckpoint] Error parsing checkpoint JSON:', error);
                 return;
             }
 
             // Extract epoch number from checkpoint data
             const epochNum = parseInt(checkpoint.ckpt?.epoch_num);
             if (!epochNum) {
-                console.warn('[BLSCheckpoint] Could not find epoch number in checkpoint data');
+                logger.warn('[BLSCheckpoint] Could not find epoch number in checkpoint data');
                 return;
             }
 
             // Log checkpoint details
-            console.log(`[BLSCheckpoint] Processing checkpoint for epoch ${epochNum}`);
+            logger.info(`[BLSCheckpoint] Processing checkpoint for epoch ${epochNum}`);
 
             // Fetch complete checkpoint data including BLS signatures
             await this.checkpointFetcher.fetchCheckpointForEpoch(epochNum, network);
 
         } catch (error) {
-            console.error('[BLSCheckpoint] Error handling checkpoint event:', error);
+            logger.error('[BLSCheckpoint] Error handling checkpoint event:', error);
             throw error;
         }
     }

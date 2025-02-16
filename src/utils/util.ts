@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-
+import { logger } from './logger';
 export const formatSatoshis = (satoshis: number): string => {
     return (satoshis / 100000000).toFixed(8);
 };
@@ -20,7 +20,7 @@ export const convertBase64AddressToHex = (base64Address: string): string => {
         const bytes = Buffer.from(base64Address, 'base64');
         return bytes.toString('hex').toUpperCase();
     } catch (error) {
-        console.error('[BLSCheckpoint] Error converting base64 address to hex:', error);
+        logger.error('[BLSCheckpoint] Error converting base64 address to hex:', error);
         throw error;
     }
 }

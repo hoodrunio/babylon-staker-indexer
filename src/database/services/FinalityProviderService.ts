@@ -3,6 +3,7 @@ import { Transaction } from '../models/Transaction';
 import { FinalityProviderStats, TimeRange, TopFinalityProviderStats, GroupedStakersResponse } from '../../types';
 import { PipelineStage } from 'mongoose';
 import { CacheService } from '../../services/CacheService';
+import { logger } from '../../utils/logger';
 
 interface QueryWithTimestamp {
   address: string;
@@ -385,7 +386,7 @@ export class FinalityProviderService {
 
       return response;
     } catch (error) {
-      console.error('Error in getAllFPs:', error);
+      logger.error('Error in getAllFPs:', error);
       throw error;
     }
   }
@@ -393,10 +394,10 @@ export class FinalityProviderService {
   async getFinalityProvidersCount(): Promise<number> {
     try {
       const count = await FinalityProvider.countDocuments({});
-      console.log('Total finality providers:', count);
+      logger.info('Total finality providers:', count);
       return count;
     } catch (error) {
-      console.error('Error in getFinalityProvidersCount:', error);
+      logger.error('Error in getFinalityProvidersCount:', error);
       throw error;
     }
   }
@@ -465,7 +466,7 @@ export class FinalityProviderService {
 
   async reindexFinalityProviders(): Promise<void> {
     try {
-      console.log('Starting finality provider reindexing...');
+      logger.info('Starting finality provider reindexing...');
       
       const transactions = await Transaction.find({}).sort({ timestamp: 1 });
       
@@ -554,9 +555,9 @@ export class FinalityProviderService {
       // Clear all FP-related cache after reindexing
       await this.cache.clearPattern(`${this.CACHE_PREFIX}:*`);
       
-      console.log('Finality provider reindexing completed');
+      logger.info('Finality provider reindexing completed');
     } catch (error) {
-      console.error('Error reindexing finality providers:', error);
+      logger.error('Error reindexing finality providers:', error);
       throw error;
     }
   }

@@ -3,6 +3,7 @@ import { MissedBlocksProcessor } from './MissedBlocksProcessor';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { Mutex } from 'async-mutex';
 import { CacheService } from '../CacheService';
+import { logger } from '../../utils/logger';
 
 export class WebsocketHealthTracker {
     private static instance: WebsocketHealthTracker | null = null;
@@ -32,10 +33,10 @@ export class WebsocketHealthTracker {
                 const state = this.getOrCreateState(network);
                 state.lastProcessedHeight = height;
                 this.state.set(network, state);
-                console.debug(`[${network}] Loaded last processed height from cache: ${height}`);
+                logger.debug(`[${network}] Loaded last processed height from cache: ${height}`);
             }
         } catch (error) {
-            console.error(`[${network}] Error loading last processed height from cache:`, error);
+            logger.error(`[${network}] Error loading last processed height from cache:`, error);
         }
     }
 
@@ -49,7 +50,7 @@ export class WebsocketHealthTracker {
     public async updateBlockHeight(network: Network, height: number) {
         const mutex = this.mutex.get(network);
         if (!mutex) {
-            console.error(`[${network}] No mutex found for network`);
+            logger.error(`[${network}] No mutex found for network`);
             return;
         }
 
@@ -60,7 +61,7 @@ export class WebsocketHealthTracker {
             
             // Sadece gerçek gap'leri işle (1'den fazla blok atlanmışsa)
             if (height > currentState.lastProcessedHeight + 1) {
-                console.debug(`[${network}] Gap detected: ${currentState.lastProcessedHeight} -> ${height}`);
+                logger.debug(`[${network}] Gap detected: ${currentState.lastProcessedHeight} -> ${height}`);
                 
                 // Eksik blokları işle
                 const client = BabylonClient.getInstance(network);
@@ -74,7 +75,7 @@ export class WebsocketHealthTracker {
 
             // Yeni yüksekliği güncelle
             if (height > currentState.lastProcessedHeight) {
-                console.debug(`[${network}] Updating block height from ${currentState.lastProcessedHeight} to ${height}`);
+                logger.debug(`[${network}] Updating block height from ${currentState.lastProcessedHeight} to ${height}`);
                 currentState.lastProcessedHeight = height;
                 this.state.set(network, currentState);
 
@@ -97,13 +98,13 @@ export class WebsocketHealthTracker {
         currentState.disconnectedAt = new Date();
         this.state.set(network, currentState);
         
-        console.log(`[${network}] Websocket disconnected at height ${currentState.lastProcessedHeight}`);
+        logger.info(`[${network}] Websocket disconnected at height ${currentState.lastProcessedHeight}`);
     }
 
     public async handleReconnection(network: Network, babylonClient: BabylonClient) {
         const mutex = this.mutex.get(network);
         if (!mutex) {
-            console.error(`[${network}] No mutex found for network`);
+            logger.error(`[${network}] No mutex found for network`);
             return;
         }
 
@@ -116,7 +117,7 @@ export class WebsocketHealthTracker {
 
             // Eksik blok varsa işle
             if (currentHeight > lastProcessedHeight) {
-                console.debug(`[${network}] Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
+                logger.debug(`[${network}] Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
                 
                 await this.missedBlocksProcessor.processMissedBlocks(
                     network,
@@ -142,7 +143,7 @@ export class WebsocketHealthTracker {
             this.state.set(network, state);
 
         } catch (error) {
-            console.error(`[${network}] Error processing missed blocks:`, error);
+            logger.error(`[${network}] Error processing missed blocks:`, error);
             throw error;
         } finally {
             // Her durumda mutex'i serbest bırak

@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import { CacheService } from './CacheService';
 import { FinalityProviderService } from '../database/services/FinalityProviderService';
+import { logger } from '../utils/logger';
 
 interface PointsResponse {
   finality_provider_pk_hex: string;
@@ -47,7 +48,7 @@ export class PointsProxyService {
 
   private async startPeriodicUpdate() {
     // İlk çalıştırmada cache'i doldur
-    await this.updateAllPointsCache().catch(console.error);
+    await this.updateAllPointsCache().catch(logger.error);
 
     // Periyodik güncelleme başlat
     setInterval(async () => {
@@ -80,7 +81,7 @@ export class PointsProxyService {
               continue;
             }
           }
-          console.error(`Error updating cache for FP ${fpPkHex}:`, error instanceof Error ? error.message : 'Unknown error');
+          logger.error(`Error updating cache for FP ${fpPkHex}:`, error instanceof Error ? error.message : 'Unknown error');
           break;
         }
       }
@@ -91,17 +92,17 @@ export class PointsProxyService {
 
   private async updateAllPointsCache() {
     if (this.isUpdating) {
-      console.log('Cache update already in progress, skipping...');
+      logger.info('Cache update already in progress, skipping...');
       return;
     }
 
     try {
       this.isUpdating = true;
-      console.log('Starting cache update for all FPs...');
+      logger.info('Starting cache update for all FPs...');
 
       const totalCount = await this.finalityProviderService.getFinalityProvidersCount();
       if (totalCount <= 0) {
-        console.log('No finality providers found, skipping cache update');
+        logger.info('No finality providers found, skipping cache update');
         return;
       }
 
@@ -117,9 +118,9 @@ export class PointsProxyService {
         }
       }
 
-      console.log('Cache update completed for all FPs');
+      logger.info('Cache update completed for all FPs');
     } catch (error) {
-      console.error('Error in periodic cache update:', error);
+      logger.error('Error in periodic cache update:', error);
     } finally {
       this.isUpdating = false;
     }
@@ -157,7 +158,7 @@ export class PointsProxyService {
       if (error instanceof AxiosError && error.response?.status === 429) {
         throw error;
       }
-      console.error(`Failed to update cache for FP ${formattedPkHex}:`, error instanceof Error ? error.message : 'Unknown error');
+      logger.error(`Failed to update cache for FP ${formattedPkHex}:`, error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
   }

@@ -25,11 +25,13 @@
     "@types/knex": "^0.15.2",
     "@types/swagger-ui-express": "^4.1.7",
     "@types/uuid": "^10.0.0",
+    "@types/winston": "^2.4.4",
     "@types/ws": "^8.5.13",
     "async-mutex": "^0.5.0",
     "axios": "^1.7.9",
     "bech32": "^2.0.0",
     "bitcoinjs-lib": "^6.1.7",
+    "chalk": "^4.1.2",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -47,6 +49,8 @@
     "swagger-ui-express": "^5.0.1",
     "tiny-secp256k1": "^2.2.3",
     "uuid": "^11.0.5",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

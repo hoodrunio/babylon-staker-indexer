@@ -2,6 +2,7 @@ import { Network } from '../../types/finality';
 import { RateLimiter } from '../../utils/RateLimiter';
 import { BTCDelegationEventHandler } from './BTCDelegationEventHandler';
 import { BabylonClient, BlockResult } from '../../clients/BabylonClient';
+import { logger } from '../../utils/logger';
 
 interface BTCStakingEvent {
     events: Array<{
@@ -58,7 +59,7 @@ export class MissedBlocksProcessor {
         endHeight: number,
         babylonClient: BabylonClient
     ) {
-        console.log(`[${network}] Processing missed blocks from ${startHeight} to ${endHeight}`);
+        logger.info(`[${network}] Processing missed blocks from ${startHeight} to ${endHeight}`);
         
         const heightRanges = this.createHeightRanges(startHeight, endHeight);
         let processedBlocks = 0;
@@ -74,18 +75,14 @@ export class MissedBlocksProcessor {
                     if (result.value) processedBlocks++;
                 } else {
                     failedBlocks++;
-                    console.error(`[${network}] Failed to process block ${range[index]}:`, result.reason);
+                    logger.error(`[${network}] Failed to process block ${range[index]}:`, result.reason);
                 }
             });
 
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        console.log(`[${network}] Completed processing missed blocks:`, {
-            total: endHeight - startHeight + 1,
-            processed: processedBlocks,
-            failed: failedBlocks
-        });
+        logger.info(`[${network}] Completed processing missed blocks: total: ${endHeight - startHeight + 1}, processed: ${processedBlocks}, failed: ${failedBlocks}`);
     }
 
     private createHeightRanges(startHeight: number, endHeight: number): number[][] {
@@ -111,7 +108,7 @@ export class MissedBlocksProcessor {
         try {
             return await this.processBlockResults(network, height, babylonClient);
         } catch (error) {
-            console.error(`[${network}] Error processing block ${height}:`, error);
+            logger.error(`[${network}] Error processing block ${height}:`, error);
             throw error;
         }
     }
@@ -144,7 +141,7 @@ export class MissedBlocksProcessor {
             if (btcStakingEvents.length === 0) return false;
 
             // Log the events for debugging
-            console.log('Processing BTC staking events:', JSON.stringify(btcStakingEvents, null, 2));
+            logger.info('Processing BTC staking events:', JSON.stringify(btcStakingEvents, null, 2));
 
             for (const event of btcStakingEvents) {
                 await this.eventHandler.handleEvent(event, network);
@@ -155,7 +152,7 @@ export class MissedBlocksProcessor {
             if (this.isRetryableError(error)) {
                 throw error;
             }
-            console.error(`[${network}] Non-retryable error for block ${height}:`, error);
+            logger.error(`[${network}] Non-retryable error for block ${height}:`, error);
             return false;
         }
     }

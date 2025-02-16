@@ -7,6 +7,7 @@ import { FinalityEpochService } from '../../../services/finality/FinalityEpochSe
 import { FinalityDelegationService } from '../../../services/finality/FinalityDelegationService';
 import { BTCDelegationStatus } from '../../../types/finality/btcstaking';
 import { SortField, SortOrder } from '../../../services/finality/FinalityDelegationService';
+import { logger } from '../../../utils/logger';
 
 const router = Router();
 const finalitySignatureService = FinalitySignatureService.getInstance();
@@ -31,7 +32,7 @@ router.get('/signatures/:fpBtcPkHex/stats', async (req, res) => {
 
         return res.json(stats);
     } catch (error) {
-        console.error('Error getting signature stats:', error);
+        logger.error('Error getting signature stats:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -90,7 +91,7 @@ router.get('/signatures/:fpBtcPkHex/performance', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting performance stats:', error);
+        logger.error('Error getting performance stats:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -105,7 +106,7 @@ router.get('/signatures/:fpBtcPkHex/stream', async (req, res) => {
         const network = req.network || Network.MAINNET;
         const clientId = uuidv4();
 
-        console.log(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
+        logger.info(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
 
         // SSE bağlantısını başlat
         await finalitySignatureService.addSSEClient(
@@ -116,10 +117,10 @@ router.get('/signatures/:fpBtcPkHex/stream', async (req, res) => {
 
         // Client bağlantısı kapandığında cleanup yap
         req.on('close', () => {
-            console.log(`[SSE] Client connection closed: ${clientId}`);
+            logger.info(`[SSE] Client connection closed: ${clientId}`);
         });
     } catch (error) {
-        console.error('[SSE] Error setting up SSE connection:', error);
+        logger.error('[SSE] Error setting up SSE connection:', error);
         res.status(500).end();
     }
 });
@@ -135,7 +136,7 @@ router.get('/providers/active', async (req, res) => {
             timestamp: Date.now()
         });
     } catch (error) {
-        console.error('Error getting active finality providers:', error);
+        logger.error('Error getting active finality providers:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -154,7 +155,7 @@ router.get('/providers', async (req, res) => {
             timestamp: Date.now()
         });
     } catch (error) {
-        console.error('Error getting all finality providers:', error);
+        logger.error('Error getting all finality providers:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -170,7 +171,7 @@ router.get('/providers/:fpBtcPkHex', async (req, res) => {
         const provider = await finalityProviderService.getFinalityProvider(fpBtcPkHex, network);
         return res.json(provider);
     } catch (error) {
-        console.error('Error getting finality provider:', error);
+        logger.error('Error getting finality provider:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -186,7 +187,7 @@ router.get('/providers/:fpBtcPkHex/power', async (req, res) => {
         const power = await finalityProviderService.getFinalityProviderPower(fpBtcPkHex, network);
         return res.json(power);
     } catch (error) {
-        console.error('Error getting finality provider power:', error);
+        logger.error('Error getting finality provider power:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -280,7 +281,7 @@ router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        console.error('Error fetching finality provider delegations:', error);
+        logger.error('Error fetching finality provider delegations:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -292,7 +293,7 @@ router.get('/epoch/current/stats', async (req, res) => {
         const stats = await finalityEpochService.getCurrentEpochStats(network);
         return res.json(stats);
     } catch (error) {
-        console.error('Error getting current epoch stats:', error);
+        logger.error('Error getting current epoch stats:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -312,7 +313,7 @@ router.get('/epoch/current/stats/:fpBtcPkHex', async (req, res) => {
         );
         return res.json(stats);
     } catch (error) {
-        console.error('Error getting current epoch stats for provider:', error);
+        logger.error('Error getting current epoch stats for provider:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'

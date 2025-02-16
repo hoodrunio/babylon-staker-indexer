@@ -7,12 +7,15 @@ import { BLSCheckpointService } from './checkpointing/BLSCheckpointService';
 import { CheckpointStatusHandler } from './checkpointing/CheckpointStatusHandler';
 import { ValidatorSignatureService } from './validator/ValidatorSignatureService';
 import { ValidatorHistoricalSyncService } from './validator/ValidatorHistoricalSyncService';
+import { CovenantEventHandler } from './covenant/CovenantEventHandler';
+import { logger } from '../utils/logger';
 
 export class WebsocketService {
     private static instance: WebsocketService | null = null;
     private mainnetWs: WebSocket | null = null;
     private testnetWs: WebSocket | null = null;
     private eventHandler: BTCDelegationEventHandler;
+    private covenantEventHandler: CovenantEventHandler;
     private healthTracker: WebsocketHealthTracker;
     private blsCheckpointService: BLSCheckpointService;
     private validatorSignatureService: ValidatorSignatureService;
@@ -25,6 +28,7 @@ export class WebsocketService {
 
     private constructor() {
         this.eventHandler = BTCDelegationEventHandler.getInstance();
+        this.covenantEventHandler = CovenantEventHandler.getInstance();
         this.healthTracker = WebsocketHealthTracker.getInstance();
         this.blsCheckpointService = BLSCheckpointService.getInstance();
         this.checkpointStatusHandler = CheckpointStatusHandler.getInstance();
@@ -35,24 +39,24 @@ export class WebsocketService {
         try {
             if (process.env.BABYLON_NODE_URL && process.env.BABYLON_RPC_URL) {
                 this.babylonClient.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-                console.log('[WebSocket] Mainnet client initialized successfully');
+                logger.info('[WebSocket] Mainnet client initialized successfully');
             } else {
-                console.log('[WebSocket] Mainnet is not configured, skipping');
+                logger.info('[WebSocket] Mainnet is not configured, skipping');
             }
         } catch (error) {
-            console.warn('[WebSocket] Failed to initialize Mainnet client:', error);
+            logger.warn('[WebSocket] Failed to initialize Mainnet client:', error);
         }
 
         // Testnet konfigürasyonu varsa ekle
         try {
             if (process.env.BABYLON_TESTNET_NODE_URL && process.env.BABYLON_TESTNET_RPC_URL) {
                 this.babylonClient.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-                console.log('[WebSocket] Testnet client initialized successfully');
+                logger.info('[WebSocket] Testnet client initialized successfully');
             } else {
-                console.log('[WebSocket] Testnet is not configured, skipping');
+                logger.info('[WebSocket] Testnet is not configured, skipping');
             }
         } catch (error) {
-            console.warn('[WebSocket] Failed to initialize Testnet client:', error);
+            logger.warn('[WebSocket] Failed to initialize Testnet client:', error);
         }
 
         // En az bir network konfigüre edilmiş olmalı
@@ -83,7 +87,7 @@ export class WebsocketService {
 
         const wsUrl = process.env.BABYLON_WS_URL;
         if (!wsUrl) {
-            console.error('BABYLON_WS_URL is not defined');
+            logger.error('BABYLON_WS_URL is not defined');
             return;
         }
 
@@ -95,7 +99,7 @@ export class WebsocketService {
 
         const wsUrl = process.env.BABYLON_TESTNET_WS_URL;
         if (!wsUrl) {
-            console.error('BABYLON_TESTNET_WS_URL is not defined');
+            logger.error('BABYLON_TESTNET_WS_URL is not defined');
             return;
         }
 
@@ -112,7 +116,7 @@ export class WebsocketService {
         }
 
         ws.on('open', async () => {
-            console.log(`Connected to ${network} websocket`);
+            logger.info(`Connected to ${network} websocket`);
             this.reconnectAttempts.set(network, 0);
             
             try {
@@ -122,7 +126,7 @@ export class WebsocketService {
                     await this.validatorHistoricalSync.startSync(network, client);
                 }
             } catch (error) {
-                console.error(`[WebSocket] Error during historical sync setup for ${network}:`, error);
+                logger.error(`[WebSocket] Error during historical sync setup for ${network}:`, error);
             }
             
             // Subscribe to events
@@ -165,13 +169,13 @@ export class WebsocketService {
                 
                 // Check if this is a subscription confirmation message
                 if (message.result && !message.result.data) {
-                    console.log(`${network} subscription confirmed:`, message);
+                    logger.info(`${network} subscription confirmed:`, message);
                     return;
                 }
 
                 const messageValue = message?.result?.data?.value;
                 if (!messageValue) {
-                    console.log(`${network} received invalid message:`, message);
+                    logger.info(`${network} received invalid message:`, message);
                     return;
                 }
 
@@ -192,7 +196,7 @@ export class WebsocketService {
                     );
                 }
 
-                // Handle Tx events (for BTC staking)
+                // Handle Tx events (for BTC staking and Covenant)
                 if (messageValue.TxResult?.result?.events) {
                     const height = parseInt(message.result.events['tx.height']?.[0]);
                     const txData = {
@@ -208,8 +212,11 @@ export class WebsocketService {
                         
                         // Handle BTC delegation events
                         processPromises.push(this.eventHandler.handleEvent(txData, network));
+                        
+                        // Handle Covenant events
+                        processPromises.push(this.covenantEventHandler.handleEvent(txData, network));
                     } else {
-                        console.log(`${network} transaction missing required fields:`, txData);
+                        logger.info(`${network} transaction missing required fields:`, txData);
                     }
                 }
 
@@ -225,21 +232,21 @@ export class WebsocketService {
                 if (processPromises.length > 0) {
                     await Promise.all(processPromises);
                 } else {
-                    console.log(`${network} received unhandled message type:`, message);
+                    logger.info(`${network} received unhandled message type:`, message);
                 }
             } catch (error) {
-                console.error(`Error handling ${network} websocket message:`, error);
+                logger.error(`Error handling ${network} websocket message:`, error);
             }
         });
 
         ws.on('close', async () => {
-            console.log(`${network} websocket connection closed`);
+            logger.info(`${network} websocket connection closed`);
             this.healthTracker.markDisconnected(network);
             await this.handleReconnect(network);
         });
 
         ws.on('error', (error) => {
-            console.error(`${network} websocket error:`, error);
+            logger.error(`${network} websocket error:`, error);
             ws.close();
         });
     }
@@ -249,7 +256,7 @@ export class WebsocketService {
         
         if (attempts < this.MAX_RECONNECT_ATTEMPTS) {
             this.reconnectAttempts.set(network, attempts + 1);
-            console.log(`[${network}] Attempting to reconnect (attempt ${attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
+            logger.info(`[${network}] Attempting to reconnect (attempt ${attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
             
             try {
                 // Sadece konfigüre edilmiş client'lar için işlem yap
@@ -268,12 +275,12 @@ export class WebsocketService {
                     }
                 }, this.RECONNECT_INTERVAL);
             } catch (error) {
-                console.error(`[${network}] Error handling reconnection:`, error);
+                logger.error(`[${network}] Error handling reconnection:`, error);
                 // Hata durumunda da reconnect dene
                 this.handleReconnect(network);
             }
         } else {
-            console.error(`[${network}] Max reconnection attempts reached`);
+            logger.error(`[${network}] Max reconnection attempts reached`);
         }
     }
 

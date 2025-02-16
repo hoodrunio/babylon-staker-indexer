@@ -1,5 +1,6 @@
 import { Network } from '../../types/finality';
 import { NewBTCDelegationService } from './NewBTCDelegationService';
+import { logger } from '../../utils/logger';
 
 export class BTCDelegationEventHandler {
     private static instance: BTCDelegationEventHandler | null = null;
@@ -19,7 +20,7 @@ export class BTCDelegationEventHandler {
     public async handleEvent(txData: any, network: Network) {
         try {
             if (!txData?.events || !Array.isArray(txData.events)) {
-                console.log('No valid events data in txData:', txData);
+                logger.info('No valid events data in txData:', txData);
                 return;
             }
 
@@ -44,7 +45,7 @@ export class BTCDelegationEventHandler {
                 return false;
             })) 
             {
-                // console.log('Received new events.');
+                // logger.info('Received new events.');
                 const logData = {
                     timestamp,
                     network,
@@ -97,7 +98,7 @@ export class BTCDelegationEventHandler {
                 }
 
                 if (eventType) {
-                   // console.log(`Processing event: ${eventType}`);
+                   // logger.info(`Processing event: ${eventType}`);
                     switch (eventType) {
                         case 'MsgCreateBTCDelegation':
                             await this.handleDelegationEvent(txData, network);
@@ -124,7 +125,7 @@ export class BTCDelegationEventHandler {
                 }
             }
         } catch (error) {
-            console.error('Error handling event:', error);
+            logger.error('Error handling event:', error);
         }
     }
 
@@ -133,7 +134,7 @@ export class BTCDelegationEventHandler {
         try {
             return attr.value.replace(/^"|"$/g, '');
         } catch (error) {
-            console.error('Error parsing attribute value:', error);
+            logger.error('Error parsing attribute value:', error);
             return null;
         }
     }
@@ -144,16 +145,16 @@ export class BTCDelegationEventHandler {
     }
 
     private logEventData(eventName: string, event: any, parsedData: any) {
-        /* console.log(`Raw ${eventName} event data:`, {
+        /* logger.info(`Raw ${eventName} event data:`, {
             event: JSON.stringify(event, null, 2)
         }); */
 
-       // console.log(`Parsed ${eventName} event data:`, parsedData.stakingTxHash, 'network:', parsedData.network);
+       // logger.info(`Parsed ${eventName} event data:`, parsedData.stakingTxHash, 'network:', parsedData.network);
     }
 
     private async handleDelegationEvent(txData: any, network: Network) {
         try {
-            console.log('Handling delegation event with data');
+            logger.info('Handling delegation event with data');
             
             let eventDataWithHashAndSender;
             
@@ -177,15 +178,15 @@ export class BTCDelegationEventHandler {
                     sender: txData.sender
                 };
             } else {
-                console.error('Unknown event data structure:', txData);
+                logger.error('Unknown event data structure:', txData);
                 return;
             }
             let tx_hash = eventDataWithHashAndSender.hash;
-            console.log('Processed event data:', tx_hash);
+            logger.info('Processed event data:', tx_hash);
 
             await this.delegationService.handleNewDelegationFromWebsocket(eventDataWithHashAndSender, network);
         } catch (error) {
-            console.error(`Error handling delegation event for ${network}:`, error);
+            logger.error(`Error handling delegation event for ${network}:`, error);
         }
     }
 
@@ -196,7 +197,7 @@ export class BTCDelegationEventHandler {
             );
             
             if (!event) {
-                console.log('No state update event found in txData');
+                logger.info('No state update event found in txData');
                 return;
             }
 
@@ -212,7 +213,7 @@ export class BTCDelegationEventHandler {
             this.logEventData('state update', event, parsedData);
 
             if (!stakingTxHash || !newState) {
-                console.error('Missing required attributes in state update event:', {
+                logger.error('Missing required attributes in state update event:', {
                     hasStakingTxHash: !!stakingTxHash,
                     hasNewState: !!newState,
                     rawEvent: event
@@ -223,7 +224,7 @@ export class BTCDelegationEventHandler {
             // Get existing delegation to preserve height values
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
             if (!delegation) {
-                console.error('No delegation found for staking tx id hex:', stakingTxHash);
+                logger.error('No delegation found for staking tx id hex:', stakingTxHash);
                 return;
             }
 
@@ -236,12 +237,12 @@ export class BTCDelegationEventHandler {
             );
             
             if (!result) {
-                console.error('Failed to update delegation state:', parsedData);
+                logger.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', stakingTxHash);
+                logger.info('Successfully updated delegation state:', stakingTxHash);
             }
         } catch (error) {
-            console.error('Error handling delegation state update:', error);
+            logger.error('Error handling delegation state update:', error);
         }
     }
 
@@ -252,14 +253,14 @@ export class BTCDelegationEventHandler {
             );
             
             if (!event) {
-                console.log('No covenant signature event found in txData');
+                logger.info('No covenant signature event found in txData');
                 return;
             }
 
             const stakingTxHash = this.getAttributeValue(event, 'staking_tx_hash');
             const covenantBtcPkHex = this.getAttributeValue(event, 'covenant_btc_pk_hex');
             
-            /* console.log('Received covenant signature:', {
+            /* logger.info('Received covenant signature:', {
                 stakingTxHash,
                 covenantBtcPkHex,
                 network,
@@ -272,17 +273,17 @@ export class BTCDelegationEventHandler {
             );
 
             if (hasQuorumEvent) {
-                console.log('Found quorum event in the same transaction:', stakingTxHash, network);
+                logger.info('Found quorum event in the same transaction:', stakingTxHash, network);
             }
         } catch (error) {
-            console.error('Error handling covenant signature:', error);
+            logger.error('Error handling covenant signature:', error);
         }
     }
 
     private async handleCovenantQuorum(txData: any, network: Network) {
         try {
             // Önce tüm event'leri logla
-            /* console.log('Processing transaction events:', {
+            /* logger.info('Processing transaction events:', {
                 allEvents: txData.events.map((e: any) => e.type),
                 network
             }); */
@@ -292,7 +293,7 @@ export class BTCDelegationEventHandler {
             );
             
             if (!event) {
-                console.log('No covenant quorum event found in txData');
+                logger.info('No covenant quorum event found in txData');
                 return;
             }
 
@@ -309,7 +310,7 @@ export class BTCDelegationEventHandler {
             this.logEventData('covenant quorum', event, parsedData);
 
             if (!stakingTxHash || !newState) {
-                console.error('Missing required attributes in covenant quorum event:', {
+                logger.error('Missing required attributes in covenant quorum event:', {
                     hasStakingTxHash: !!stakingTxHash,
                     hasNewState: !!newState,
                     rawEvent: event
@@ -321,7 +322,7 @@ export class BTCDelegationEventHandler {
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
             
             if (!delegation) {
-                console.error('Delegation not found for covenant quorum:', stakingTxHash);
+                logger.error('Delegation not found for covenant quorum:', stakingTxHash);
                 return;
             }
 
@@ -334,15 +335,15 @@ export class BTCDelegationEventHandler {
                 );
                 
                 if (!result) {
-                    console.error('Failed to update delegation state:', parsedData);
+                    logger.error('Failed to update delegation state:', parsedData);
                 } else {
-                    console.log('Successfully updated delegation state from PENDING:', stakingTxHash);
+                    logger.info('Successfully updated delegation state from PENDING:', stakingTxHash);
                 }
             } else {
-                console.log('Skipping state update, delegation is not in PENDING state:', stakingTxHash);
+                logger.info('Skipping state update, delegation is not in PENDING state:', stakingTxHash);
             }
         } catch (error) {
-            console.error('Error handling covenant quorum:', {
+            logger.error('Error handling covenant quorum:', {
                 error,
                 txData: JSON.stringify(txData, null, 2)
             });
@@ -356,7 +357,7 @@ export class BTCDelegationEventHandler {
             );
             
             if (!event) {
-                console.log('No inclusion proof event found in txData');
+                logger.info('No inclusion proof event found in txData');
                 return;
             }
 
@@ -376,7 +377,7 @@ export class BTCDelegationEventHandler {
             this.logEventData('inclusion proof', event, parsedData);
 
             if (!stakingTxIdHex || !newState || !startHeight || !endHeight) {
-                console.error('Missing required attributes in inclusion proof event:', {
+                logger.error('Missing required attributes in inclusion proof event:', {
                     hasStakingTxIdHex: !!stakingTxIdHex,
                     hasNewState: !!newState,
                     hasStartHeight: !!startHeight,
@@ -389,11 +390,11 @@ export class BTCDelegationEventHandler {
             // Önce delegasyonun var olduğunu kontrol et
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxIdHex, network);
             if (!delegation) {
-                console.error('No delegation found for staking tx id hex:', stakingTxIdHex);
+                logger.error('No delegation found for staking tx id hex:', stakingTxIdHex);
                 return;
             }
 
-            console.log('Found delegation for inclusion proof:', stakingTxIdHex);
+            logger.info('Found delegation for inclusion proof:', stakingTxIdHex);
 
             const result = await this.delegationService.updateDelegationState(
                 stakingTxIdHex,
@@ -404,12 +405,12 @@ export class BTCDelegationEventHandler {
             );
             
             if (!result) {
-                console.error('Failed to update delegation state:', parsedData);
+                logger.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', stakingTxIdHex);
+                logger.info('Successfully updated delegation state:', stakingTxIdHex);
             }
         } catch (error) {
-            console.error('Error handling inclusion proof:', {
+            logger.error('Error handling inclusion proof:', {
                 error,
                 txData,
                 network
@@ -424,7 +425,7 @@ export class BTCDelegationEventHandler {
             );
             
             if (!event) {
-                console.log('No early unbonding event found in txData');
+                logger.info('No early unbonding event found in txData');
                 return;
             }
 
@@ -440,7 +441,7 @@ export class BTCDelegationEventHandler {
             this.logEventData('early unbonding', event, parsedData);
 
             if (!stakingTxHash || !newState) {
-                console.error('Missing required attributes in early unbonding event:', {
+                logger.error('Missing required attributes in early unbonding event:', {
                     hasStakingTxHash: !!stakingTxHash,
                     hasNewState: !!newState,
                     rawEvent: event
@@ -451,7 +452,7 @@ export class BTCDelegationEventHandler {
             // Get existing delegation to preserve height values
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
             if (!delegation) {
-                console.error('No delegation found for staking tx id hex:', stakingTxHash);
+                logger.error('No delegation found for staking tx id hex:', stakingTxHash);
                 return;
             }
 
@@ -462,12 +463,12 @@ export class BTCDelegationEventHandler {
             );
             
             if (!result) {
-                console.error('Failed to update delegation state:', parsedData);
+                logger.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', stakingTxHash);
+                logger.info('Successfully updated delegation state:', stakingTxHash);
             }
         } catch (error) {
-            console.error('Error handling early unbonding:', error);
+            logger.error('Error handling early unbonding:', error);
         }
     }
 
@@ -478,7 +479,7 @@ export class BTCDelegationEventHandler {
             );
             
             if (!event) {
-                console.log('No delegation expired event found in txData');
+                logger.info('No delegation expired event found in txData');
                 return;
             }
 
@@ -494,7 +495,7 @@ export class BTCDelegationEventHandler {
             this.logEventData('delegation expired', event, parsedData);
 
             if (!stakingTxHash || !newState) {
-                console.error('Missing required attributes in delegation expired event:', {
+                logger.error('Missing required attributes in delegation expired event:', {
                     hasStakingTxHash: !!stakingTxHash,
                     hasNewState: !!newState,
                     rawEvent: event
@@ -505,7 +506,7 @@ export class BTCDelegationEventHandler {
             // Get existing delegation to preserve height values
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
             if (!delegation) {
-                console.error('No delegation found for staking tx id hex:', stakingTxHash);
+                logger.error('No delegation found for staking tx id hex:', stakingTxHash);
                 return;
             }
 
@@ -516,12 +517,12 @@ export class BTCDelegationEventHandler {
             );
             
             if (!result) {
-                console.error('Failed to update delegation state:', parsedData);
+                logger.error('Failed to update delegation state:', parsedData);
             } else {
-                console.log('Successfully updated delegation state:', stakingTxHash);
+                logger.info('Successfully updated delegation state:', stakingTxHash);
             }
         } catch (error) {
-            console.error('Error handling delegation expired:', error);
+            logger.error('Error handling delegation expired:', error);
         }
     }
 } 

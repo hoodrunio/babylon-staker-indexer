@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
+import { logger } from '../../utils/logger';
 
 export class FinalityWebSocketManager {
     private static instance: FinalityWebSocketManager | null = null;
@@ -29,17 +30,17 @@ export class FinalityWebSocketManager {
 
     public async start(): Promise<void> {
         if (this.isRunning) {
-            console.warn('[WebSocket] Service is already running');
+            logger.warn('[WebSocket] Service is already running');
             return;
         }
         
-        console.log('[WebSocket] Starting WebSocket service...');
+        logger.info('[WebSocket] Starting WebSocket service...');
         this.isRunning = true;
         await this.initializeWebSocket();
     }
 
     public stop(): void {
-        console.log('[WebSocket] Stopping WebSocket service...');
+        logger.info('[WebSocket] Stopping WebSocket service...');
         this.isRunning = false;
         
         if (this.ws) {
@@ -50,7 +51,7 @@ export class FinalityWebSocketManager {
 
     private async initializeWebSocket(): Promise<void> {
         if (this.ws) {
-            console.debug('[WebSocket] Closing existing connection');
+            logger.debug('[WebSocket] Closing existing connection');
             this.ws.removeAllListeners();
             this.ws.close();
             this.ws = null;
@@ -59,11 +60,11 @@ export class FinalityWebSocketManager {
         try {
             // Get WebSocket URL from BabylonClient
             const wsUrl = this.babylonClient.getWsEndpoint();
-            console.debug(`[WebSocket] Connecting to ${wsUrl}`);
+            logger.debug(`[WebSocket] Connecting to ${wsUrl}`);
             this.ws = new WebSocket(wsUrl);
 
             this.ws.on('open', () => {
-                console.debug(`[WebSocket] Connected successfully to ${this.babylonClient.getNetwork()} network`);
+                logger.debug(`[WebSocket] Connected successfully to ${this.babylonClient.getNetwork()} network`);
                 this.subscribeToNewBlocks();
             });
 
@@ -80,23 +81,23 @@ export class FinalityWebSocketManager {
                         }
                     }
                 } catch (error) {
-                    console.error('[WebSocket] Error processing message:', error);
+                    logger.error('[WebSocket] Error processing message:', error);
                 }
             });
 
             this.ws.on('close', () => {
                 if (!this.isRunning) return;
-                console.warn('[WebSocket] Disconnected, reconnecting...');
+                logger.warn('[WebSocket] Disconnected, reconnecting...');
                 setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
             });
 
             this.ws.on('error', (error) => {
-                console.error('[WebSocket] Connection error:', error);
+                logger.error('[WebSocket] Connection error:', error);
                 this.ws?.close();
             });
 
         } catch (error) {
-            console.error('[WebSocket] Initialization error:', error);
+            logger.error('[WebSocket] Initialization error:', error);
             if (this.isRunning) {
                 setTimeout(() => this.initializeWebSocket(), this.RECONNECT_INTERVAL);
             }

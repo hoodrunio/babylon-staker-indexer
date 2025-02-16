@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Network } from '../../types/finality';
 import { ValidatorInfoService } from '../../services/validator/ValidatorInfoService';
+import { logger } from '../../utils/logger';
 
 export class ValidatorInfoController {
     private static instance: ValidatorInfoController | null = null;
@@ -48,7 +49,7 @@ export class ValidatorInfoController {
                 data: validator
             });
         } catch (error) {
-            console.error('[ValidatorInfoController] Error getting validator by hex address:', error);
+            logger.error('[ValidatorInfoController] Error getting validator by hex address:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'
@@ -87,7 +88,7 @@ export class ValidatorInfoController {
                 data: validator
             });
         } catch (error) {
-            console.error('[ValidatorInfoController] Error getting validator by consensus address:', error);
+            logger.error('[ValidatorInfoController] Error getting validator by consensus address:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'
@@ -126,7 +127,7 @@ export class ValidatorInfoController {
                 data: validator
             });
         } catch (error) {
-            console.error('[ValidatorInfoController] Error getting validator by valoper address:', error);
+            logger.error('[ValidatorInfoController] Error getting validator by valoper address:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'
@@ -164,7 +165,7 @@ export class ValidatorInfoController {
                 }
             });
         } catch (error) {
-            console.error('[ValidatorInfoController] Error getting all validators:', error);
+            logger.error('[ValidatorInfoController] Error getting all validators:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'

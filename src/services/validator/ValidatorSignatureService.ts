@@ -1,6 +1,7 @@
 import { Network } from '../../types/finality';
 import { ValidatorSignature, IValidatorSignatureDocument } from '../../database/models/ValidatorSignature';
 import { ValidatorInfoService } from './ValidatorInfoService';
+import { logger } from '../../utils/logger';
 
 interface TendermintSignature {
     validator_address: string;
@@ -216,9 +217,9 @@ export class ValidatorSignatureService {
                 await ValidatorSignature.bulkWrite(rateUpdateOps as any[], { ordered: false });
             }
 
-            console.log(`[ValidatorSignature] Processed signatures for block ${height} on ${network}`);
+            logger.info(`[ValidatorSignature] Processed signatures for block ${height} on ${network}`);
         } catch (error) {
-            console.error('[ValidatorSignature] Error processing block signatures:', error);
+            logger.error('[ValidatorSignature] Error processing block signatures:', error);
             throw error;
         }
     }

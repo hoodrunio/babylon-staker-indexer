@@ -1,10 +1,6 @@
 import { Database } from '../database';
-import { PhaseConfig, getPhaseConfig, getPhaseForHeight } from '../config/phase-config';
+import { logger } from './logger';
 
-interface PhaseEndCondition {
-  type: 'total_stake' | 'block_height';
-  value: number;
-}
 
 export interface VersionParams {
   version: number;
@@ -49,24 +45,24 @@ async function loadParams(): Promise<GlobalParams> {
     cachedParams = params;
 
     // Log phase parameters
-    console.log('\n=== Phase Parameters ===');
+    logger.info('\n=== Phase Parameters ===');
     params.versions.forEach((version: VersionParams) => {
-      console.log(`\nPhase ${version.phase}:`);
-      console.log(`  Version: ${version.version}`);
-      console.log(`  Activation Height: ${version.activation_height}`);
-      console.log(`  Cap Height: ${version.cap_height || 'N/A'}`);
-      console.log(`  Min Staking Amount: ${version.min_staking_amount / 100000000} BTC`);
-      console.log(`  Max Staking Amount: ${version.max_staking_amount / 100000000} BTC`);
+      logger.info(`\nPhase ${version.phase}:`);
+      logger.info(`  Version: ${version.version}`);
+      logger.info(`  Activation Height: ${version.activation_height}`);
+      logger.info(`  Cap Height: ${version.cap_height || 'N/A'}`);
+      logger.info(`  Min Staking Amount: ${version.min_staking_amount / 100000000} BTC`);
+      logger.info(`  Max Staking Amount: ${version.max_staking_amount / 100000000} BTC`);
       if (version.phase === 1) {
-        console.log(`  Target Stake: ${parseInt(process.env.PHASE1_TARGET_STAKE || '0') / 100000000} BTC`);
-        console.log(`  Timeout Height: ${process.env.PHASE1_TIMEOUT_HEIGHT}`);
+        logger.info(`  Target Stake: ${parseInt(process.env.PHASE1_TARGET_STAKE || '0') / 100000000} BTC`);
+        logger.info(`  Timeout Height: ${process.env.PHASE1_TIMEOUT_HEIGHT}`);
       }
     });
-    console.log('\n===================\n');
+    logger.info('\n===================\n');
 
     return params;
   } catch (e) {
-    console.error('Error loading parameters:', e);
+    logger.error('Error loading parameters:', e);
     throw e;
   }
 }
@@ -81,7 +77,7 @@ async function findApplicableVersion(height: number, versions: VersionParams[], 
   const phase3Version = versions.find(v => v.phase === 3);
 
   if (!phase1Version || !phase2Version || !phase3Version) {
-    console.error('Missing phase configurations in global-params.json');
+    logger.error('Missing phase configurations in global-params.json');
     return null;
   }
 
@@ -112,7 +108,7 @@ async function findApplicableVersion(height: number, versions: VersionParams[], 
     
     // Skip if height is outside the valid range
     if (startHeight === 0 || endHeight === 0) {
-      console.error(`Invalid height range for phase ${version.phase}: ${startHeight} - ${endHeight}`);
+      logger.error(`Invalid height range for phase ${version.phase}: ${startHeight} - ${endHeight}`);
       continue;
     }
 
@@ -152,7 +148,7 @@ export async function getParamsForHeight(height: number): Promise<VersionParams 
     const applicableVersion = await findApplicableVersion(height, params.versions, dbInstance);
 
     if (!applicableVersion) {
-      console.log(`No applicable version found for height ${height}`);
+      logger.info(`No applicable version found for height ${height}`);
       return null;
     }
 
@@ -163,7 +159,7 @@ export async function getParamsForHeight(height: number): Promise<VersionParams 
       const isPhase1Complete = await checkPhase1End(totalStake);
       
       if (isPhase1Complete) {
-        console.log(`Phase 1 completed at height ${height} due to reaching target stake`);
+        logger.info(`Phase 1 completed at height ${height} due to reaching target stake`);
         return null;
       }
     }
@@ -174,7 +170,7 @@ export async function getParamsForHeight(height: number): Promise<VersionParams 
       activation_height: applicableVersion.activation_height
     };
   } catch (error) {
-    console.error('Error getting parameters for height:', error);
+    logger.error('Error getting parameters for height:', error);
     return null;
   }
 }

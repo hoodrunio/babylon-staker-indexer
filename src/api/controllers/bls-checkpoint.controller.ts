@@ -3,6 +3,7 @@ import { Network } from '../../types/finality';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { BLSValidatorSignatures } from '../../database/models/BLSValidatorSignatures';
 import { BLSCheckpointService } from '../../services/checkpointing/BLSCheckpointService';
+import { logger } from '../../utils/logger';
 
 export class BLSCheckpointController {
     private static blsCheckpointService = BLSCheckpointService.getInstance();
@@ -41,7 +42,7 @@ export class BLSCheckpointController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error in getCheckpointByEpoch:', error);
+            logger.error('Error in getCheckpointByEpoch:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
@@ -139,7 +140,7 @@ export class BLSCheckpointController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error in getCheckpointsByEpochs:', error);
+            logger.error('Error in getCheckpointsByEpochs:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
@@ -174,7 +175,7 @@ export class BLSCheckpointController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error in getValidatorSignaturesByEpoch:', error);
+            logger.error('Error in getValidatorSignaturesByEpoch:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
@@ -205,7 +206,7 @@ export class BLSCheckpointController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error in getCurrentEpochStats:', error);
+            logger.error('Error in getCurrentEpochStats:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
@@ -328,7 +329,7 @@ export class BLSCheckpointController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error in getValidatorStats:', error);
+            logger.error('Error in getValidatorStats:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }

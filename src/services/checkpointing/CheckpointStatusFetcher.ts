@@ -2,7 +2,7 @@ import { Network } from '../../types/finality';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { ValidatorInfoService } from '../validator/ValidatorInfoService';
 import axios from 'axios';
-import { convertBase64AddressToHex } from '../../utils/util';
+import { logger } from '../../utils/logger';
 
 export class CheckpointStatusFetcher {
     private static instance: CheckpointStatusFetcher | null = null;
@@ -25,7 +25,7 @@ export class CheckpointStatusFetcher {
 
     public async syncHistoricalCheckpoints(network: Network, batchSize: number = 50): Promise<void> {
         try {
-            console.log(`[CheckpointStatus] Starting historical checkpoint status sync for ${network}`);
+            logger.info(`[CheckpointStatus] Starting historical checkpoint status sync for ${network}`);
 
             // Get all checkpoints that need status update
             const checkpoints = await BLSCheckpoint.find({
@@ -33,13 +33,13 @@ export class CheckpointStatusFetcher {
                 status: { $ne: 'CKPT_STATUS_FINALIZED' } // Only get non-finalized checkpoints
             }).sort({ epoch_num: -1 });
 
-            console.log(`[CheckpointStatus] Found ${checkpoints.length} non-finalized checkpoints to check status for ${network}`);
+            logger.info(`[CheckpointStatus] Found ${checkpoints.length} non-finalized checkpoints to check status for ${network}`);
 
             let updatedCount = 0;
             // Process checkpoints in batches
             for (let i = 0; i < checkpoints.length; i += batchSize) {
                 const batch = checkpoints.slice(i, i + batchSize);
-                console.log(`[CheckpointStatus] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(checkpoints.length/batchSize)}`);
+                logger.info(`[CheckpointStatus] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(checkpoints.length/batchSize)}`);
 
                 // Collect all status updates first
                 const statusUpdates = await Promise.all(
@@ -62,7 +62,7 @@ export class CheckpointStatusFetcher {
                                 checkpointData: checkpointResponse.data.raw_checkpoint
                             };
                         } catch (error) {
-                            console.error(`[CheckpointStatus] Error fetching status for checkpoint ${checkpoint.epoch_num}:`, error);
+                            logger.error(`[CheckpointStatus] Error fetching status for checkpoint ${checkpoint.epoch_num}:`, error);
                             return null;
                         }
                     })
@@ -77,7 +77,7 @@ export class CheckpointStatusFetcher {
 
                         // Skip if status hasn't changed
                         if (status === checkpoint.status) {
-                            console.log(`[CheckpointStatus] Checkpoint ${checkpoint.epoch_num} status unchanged: ${checkpoint.status}`);
+                            logger.info(`[CheckpointStatus] Checkpoint ${checkpoint.epoch_num} status unchanged: ${checkpoint.status}`);
                             continue;
                         }
 
@@ -114,9 +114,9 @@ export class CheckpointStatusFetcher {
                         );
 
                         updatedCount++;
-                        console.log(`[CheckpointStatus] Updated checkpoint ${checkpoint.epoch_num} status from ${checkpoint.status} to ${status}`);
+                        logger.info(`[CheckpointStatus] Updated checkpoint ${checkpoint.epoch_num} status from ${checkpoint.status} to ${status}`);
                     } catch (error) {
-                        console.error(`[CheckpointStatus] Error updating checkpoint in database:`, error);
+                        logger.error(`[CheckpointStatus] Error updating checkpoint in database:`, error);
                     }
                 }
 
@@ -126,9 +126,9 @@ export class CheckpointStatusFetcher {
                 }
             }
 
-            console.log(`[CheckpointStatus] Completed historical checkpoint status sync for ${network}. Updated ${updatedCount}/${checkpoints.length} checkpoints`);
+            logger.info(`[CheckpointStatus] Completed historical checkpoint status sync for ${network}. Updated ${updatedCount}/${checkpoints.length} checkpoints`);
         } catch (error) {
-            console.error(`[CheckpointStatus] Error in historical checkpoint sync for ${network}:`, error);
+            logger.error(`[CheckpointStatus] Error in historical checkpoint sync for ${network}:`, error);
             throw error;
         }
     }
@@ -144,7 +144,7 @@ export class CheckpointStatusFetcher {
             const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`);
             return parseInt(response.data.epoch_number);
         } catch (error) {
-            console.error(`[CheckpointStatus] Error getting current epoch:`, error);
+            logger.error(`[CheckpointStatus] Error getting current epoch:`, error);
             throw error;
         }
     }

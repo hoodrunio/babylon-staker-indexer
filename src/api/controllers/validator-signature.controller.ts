@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Network } from '../../types/finality';
 import { ValidatorSignatureService } from '../../services/validator/ValidatorSignatureService';
+import { logger } from '../../utils/logger';
 
 export class ValidatorSignatureController {
     private static instance: ValidatorSignatureController | null = null;
@@ -42,7 +43,7 @@ export class ValidatorSignatureController {
                 data: signatures
             });
         } catch (error) {
-            console.error('[ValidatorSignatureController] Error getting validator signatures:', error);
+            logger.error('[ValidatorSignatureController] Error getting validator signatures:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'
@@ -81,7 +82,7 @@ export class ValidatorSignatureController {
                 data: signature
             });
         } catch (error) {
-            console.error('[ValidatorSignatureController] Error getting validator signature by consensus:', error);
+            logger.error('[ValidatorSignatureController] Error getting validator signature by consensus:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'
@@ -114,7 +115,7 @@ export class ValidatorSignatureController {
                 data: missedBlocks
             });
         } catch (error) {
-            console.error('[ValidatorSignatureController] Error getting validator missed blocks:', error);
+            logger.error('[ValidatorSignatureController] Error getting validator missed blocks:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'
@@ -153,7 +154,7 @@ export class ValidatorSignatureController {
                 data: signature
             });
         } catch (error) {
-            console.error('[ValidatorSignatureController] Error getting validator signature by valoper:', error);
+            logger.error('[ValidatorSignatureController] Error getting validator signature by valoper:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'

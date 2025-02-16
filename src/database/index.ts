@@ -8,7 +8,8 @@ import {
   IndexerStateService,
   StatsService
 } from './services';
-import { FinalityProvider, FinalityProviderStats, StakerStats, TimeRange } from '../types';
+import { FinalityProviderStats, StakerStats, TimeRange } from '../types';
+import { logger } from '../utils/logger';
 
 dotenv.config();
 
@@ -52,33 +53,33 @@ export class Database {
         throw new Error('MONGODB_URI is not defined in environment variables');
       }
 
-      console.log('Connecting to MongoDB...');
+      logger.info('Connecting to MongoDB...');
       
       await mongoose.connect(mongoUri);
       this.isConnected = true;
       this.db = mongoose.connection;
       
-      console.log('MongoDB connected successfully');
-      console.log('Database name:', this.db.name);
+      logger.info('MongoDB connected successfully');
+      logger.info('Database name:', this.db.name);
       /* if (this.db.db) {
-        console.log('Collections:', await this.db.db.collections());
+        logger.info('Collections:', await this.db.db.collections());
       } */
 
       // Connection events
       mongoose.connection.on('error', err => {
-        console.error('MongoDB connection error:', err);
+        logger.error('MongoDB connection error:', err);
       });
 
       mongoose.connection.on('disconnected', () => {
-        console.warn('MongoDB disconnected');
+        logger.warn('MongoDB disconnected');
       });
 
       mongoose.connection.on('reconnected', () => {
-        console.log('MongoDB reconnected');
+        logger.info('MongoDB reconnected');
       });
 
     } catch (error) {
-      console.error('Error connecting to MongoDB:', error);
+      logger.error('Error connecting to MongoDB:', error);
       process.exit(1);
     }
   }

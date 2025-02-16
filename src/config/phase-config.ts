@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { Database } from '../database';
+import { logger } from '../utils/logger';
 
 dotenv.config();
 
@@ -97,7 +98,7 @@ export function getPhaseConfig(): StakingPhaseConfig {
       ]
     };
   } catch (error) {
-    console.warn('Error parsing phase config from environment, using default:', error);
+    logger.warn('Error parsing phase config from environment, using default:', error);
     return defaultPhaseConfig;
   }
 }
@@ -165,14 +166,14 @@ export async function checkPhaseCondition(phase: PhaseConfig, currentHeight: num
       
       // Check primary condition (total stake reached)
       if (currentTotalStake >= phase.endCondition.value) {
-        console.log(`Phase ${phase.phase} ending: Total stake target reached (${currentTotalStake} >= ${phase.endCondition.value})`);
+        logger.info(`Phase ${phase.phase} ending: Total stake target reached (${currentTotalStake} >= ${phase.endCondition.value})`);
         return true;
       }
       
       // Check inactivity condition
       const isInactive = await checkInactivityCondition(phase, currentHeight);
       if (isInactive) {
-        console.log(`Phase ${phase.phase} ending: Inactivity threshold reached near target stake`);
+        logger.info(`Phase ${phase.phase} ending: Inactivity threshold reached near target stake`);
         return true;
       }
       

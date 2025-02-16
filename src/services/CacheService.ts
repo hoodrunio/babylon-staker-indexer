@@ -1,4 +1,5 @@
 import { createClient, RedisClientType } from 'redis';
+import { logger } from '../utils/logger';
 
 export class CacheService {
   private static instance: CacheService;
@@ -10,8 +11,8 @@ export class CacheService {
       url: process.env.REDIS_URL || 'redis://localhost:6379'
     });
 
-    this.client.on('error', (err) => console.error('Redis Client Error:', err));
-    this.client.connect().catch(console.error);
+    this.client.on('error', (err) => logger.error('Redis Client Error:', err));
+    this.client.connect().catch(logger.error);
   }
 
   public static getInstance(): CacheService {
@@ -26,7 +27,7 @@ export class CacheService {
       const data = await this.client.get(key);
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error('Cache get error:', error);
+      logger.error('Cache get error:', error);
       return null;
     }
   }
@@ -40,7 +41,7 @@ export class CacheService {
         await this.client.set(key, stringValue, { EX: ttl });
       }
     } catch (error) {
-      console.error('Cache set error:', error);
+      logger.error('Cache set error:', error);
     }
   }
 
@@ -48,7 +49,7 @@ export class CacheService {
     try {
       await this.client.del(key);
     } catch (error) {
-      console.error('Cache delete error:', error);
+      logger.error('Cache delete error:', error);
     }
   }
 
@@ -56,7 +57,7 @@ export class CacheService {
     try {
       return await this.client.keys(pattern);
     } catch (error) {
-      console.error('Cache keys error:', error);
+      logger.error('Cache keys error:', error);
       return [];
     }
   }
@@ -68,7 +69,7 @@ export class CacheService {
         await this.client.del(keys);
       }
     } catch (error) {
-      console.error('Cache clear pattern error:', error);
+      logger.error('Cache clear pattern error:', error);
     }
   }
 

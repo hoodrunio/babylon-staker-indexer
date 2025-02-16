@@ -3,6 +3,7 @@ import { Transaction } from '../models/Transaction';
 import { StakerStats, TimeRange, TransactionInfo, StakerDocument, GlobalStakerStats } from '../../types';
 import { PipelineStage } from 'mongoose';
 import { CacheService } from '../../services/CacheService';
+import { logger } from '../../utils/logger';
 
 export class StakerService {
   private cache: CacheService;
@@ -239,7 +240,7 @@ export class StakerService {
 
       return response;
     } catch (error) {
-      console.error('Error in getTopStakers:', error);
+      logger.error('Error in getTopStakers:', error);
       throw error;
     }
   }
@@ -252,7 +253,7 @@ export class StakerService {
 
   async reindexStakers(): Promise<void> {
     try {
-      console.log('Starting staker reindexing...');
+      logger.info('Starting staker reindexing...');
       
       const transactions = await Transaction.find({}).sort({ timestamp: 1 });
       
@@ -355,40 +356,40 @@ export class StakerService {
       // Clear all staker-related cache after reindexing
       await this.cache.clearPattern(`${this.CACHE_PREFIX}:*`);
       
-      console.log('Staker reindexing completed');
+      logger.info('Staker reindexing completed');
     } catch (error) {
-      console.error('Error reindexing stakers:', error);
+      logger.error('Error reindexing stakers:', error);
       throw error;
     }
   }
 
   async debugStakerSearch(address: string): Promise<void> {
-    console.log('\nDebugging staker search:');
+    logger.info('\nDebugging staker search:');
     
     const exactMatch = await Staker.findOne({ address });
-    console.log('Exact match:', exactMatch?.address);
+    logger.info('Exact match:', exactMatch?.address);
 
     const caseInsensitive = await Staker.findOne({ 
       address: { $regex: new RegExp('^' + address + '$', 'i') } 
     });
-    console.log('Case-insensitive match:', caseInsensitive?.address);
+    logger.info('Case-insensitive match:', caseInsensitive?.address);
 
     const similar = await Staker.find({ 
       address: { $regex: new RegExp(address.substring(0, 10), 'i') }
     });
-    console.log('Similar addresses:', similar.map(s => s.address));
+    logger.info('Similar addresses:', similar.map(s => s.address));
 
     const transaction = await Transaction.findOne({ stakerAddress: address });
-    console.log('Found in transactions:', transaction?.stakerAddress);
+    logger.info('Found in transactions:', transaction?.stakerAddress);
   }
 
   async getStakersCount(): Promise<number> {
     try {
       const count = await Staker.countDocuments({});
-      console.log('Total stakers:', count);
+      logger.info('Total stakers:', count);
       return count;
     } catch (error) {
-      console.error('Error in getStakersCount:', error);
+      logger.error('Error in getStakersCount:', error);
       throw error;
     }
   }

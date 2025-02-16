@@ -1,6 +1,7 @@
 import { BitcoinRPC } from '../utils/bitcoin-rpc';
 import { parseOpReturn } from '../utils/op-return-parser';
 import * as dotenv from 'dotenv';
+import { logger } from '../utils/logger';
 
 // Load environment variables
 dotenv.config();
@@ -74,13 +75,13 @@ async function validateWithBabylonAPI(txid: string): Promise<BabylonAPIResponse[
   try {
     const response = await fetch(`https://staking-api.babylonlabs.io/v1/delegation?staking_tx_hash_hex=${txid}`);
     if (!response.ok) {
-      console.log('No staking data found in Babylon API');
+      logger.info('No staking data found in Babylon API');
       return null;
     }
     const data = await response.json() as BabylonAPIResponse;
     return data.data;
   } catch (error) {
-    console.error('Error fetching from Babylon API:', error);
+    logger.error('Error fetching from Babylon API:', error);
     return null;
   }
 }
@@ -89,13 +90,13 @@ async function analyzeTaprootTransaction(txid: string) {
   const rpc = new BitcoinRPC(process.env.BTC_RPC_URL!);
   
   try {
-    console.log(`\n=== Analyzing transaction: ${txid} ===`);
+    logger.info(`\n=== Analyzing transaction: ${txid} ===`);
     const tx = await rpc.call('getrawtransaction', [txid, true]) as Transaction;
     
     // Validate against Babylon API
     const babylonData = await validateWithBabylonAPI(txid);
     if (babylonData) {
-      console.log('\nBabylon API Data:', {
+      logger.info('\nBabylon API Data:', {
         staking_value: `${babylonData.staking_value} satoshis (${satoshiToBtc(babylonData.staking_value)} BTC)`,
         output_index: babylonData.staking_tx.output_index,
         staker_pk: babylonData.staker_pk_hex,
@@ -107,17 +108,17 @@ async function analyzeTaprootTransaction(txid: string) {
     // 1. Find and validate OP_RETURN data
     const opReturnOutput = tx.vout.find((out: any) => out.scriptPubKey.type === 'nulldata');
     if (!opReturnOutput) {
-      console.log('No OP_RETURN output found');
+      logger.info('No OP_RETURN output found');
       return;
     }
 
     const opReturnData = parseOpReturn(opReturnOutput.scriptPubKey.hex);
     if (!opReturnData) {
-      console.log('Invalid OP_RETURN data');
+      logger.info('Invalid OP_RETURN data');
       return;
     }
 
-    console.log('\nOP_RETURN Data:', {
+    logger.info('\nOP_RETURN Data:', {
       version: opReturnData.version,
       staker_pk: opReturnData.staker_public_key,
       finality_provider: opReturnData.finality_provider,
@@ -129,11 +130,11 @@ async function analyzeTaprootTransaction(txid: string) {
       out.scriptPubKey.type === 'witness_v1_taproot'
     );
 
-    console.log(`\nFound ${taprootOutputs.length} Taproot outputs`);
+    logger.info(`\nFound ${taprootOutputs.length} Taproot outputs`);
 
     // 3. Analyze each Taproot output
     for (const [index, output] of taprootOutputs.entries()) {
-      console.log(`\nAnalyzing Taproot output ${index}:`, {
+      logger.info(`\nAnalyzing Taproot output ${index}:`, {
         value: output.value,
         address: output.scriptPubKey.address
       });
@@ -141,8 +142,8 @@ async function analyzeTaprootTransaction(txid: string) {
       const isStakingOutput = await analyzeTaprootOutput(output, opReturnData, tx, babylonData, index);
       
       if (isStakingOutput) {
-        console.log('✅ This is the staking output');
-        console.log('Staking amount:', output.value, 'BTC');
+        logger.info('✅ This is the staking output');
+        logger.info('Staking amount:', output.value, 'BTC');
         
         if (babylonData) {
           const expectedBtc = satoshiToBtc(babylonData.staking_value);
@@ -150,20 +151,20 @@ async function analyzeTaprootTransaction(txid: string) {
           const isCorrectValue = valueDiff < 0.00000001; // Account for floating point precision
           const isCorrectIndex = index === babylonData.staking_tx.output_index;
           
-          console.log(isCorrectValue 
+          logger.info(isCorrectValue 
             ? '✅ Matches Babylon API data (value)'
             : '❌ Does not match Babylon API data (value)');
-          console.log(isCorrectIndex 
+          logger.info(isCorrectIndex 
             ? '✅ Matches Babylon API data (index)'
             : '❌ Does not match Babylon API data (index)');
         }
       } else {
-        console.log('❌ This is not the staking output');
+        logger.info('❌ This is not the staking output');
       }
     }
 
   } catch (error) {
-    console.error(`Error analyzing transaction ${txid}:`, error);
+    logger.error(`Error analyzing transaction ${txid}:`, error);
   }
 }
 
@@ -178,23 +179,23 @@ async function analyzeTaprootOutput(
     // 1. Verify witness version (must be 1 for Taproot)
     const witnessVersion = output.scriptPubKey.hex.slice(0, 2);
     if (witnessVersion !== '51') { // 0x51 = OP_1 = witness v1
-      console.log('Invalid witness version');
+      logger.info('Invalid witness version');
       return false;
     }
 
     // 2. Extract output key (32 bytes after witness version)
     const outputKey = output.scriptPubKey.hex.slice(2);
-    console.log('\nOutput Key Analysis:');
-    console.log('Raw Output Key:', outputKey);
-    console.log('Expected components:');
-    console.log('- Staker PK:', stakingData.staker_public_key);
-    console.log('- FP Key:', stakingData.finality_provider);
-    console.log('- Staking Time:', stakingData.staking_time);
+    logger.info('\nOutput Key Analysis:');
+    logger.info('Raw Output Key:', outputKey);
+    logger.info('Expected components:');
+    logger.info('- Staker PK:', stakingData.staker_public_key);
+    logger.info('- FP Key:', stakingData.finality_provider);
+    logger.info('- Staking Time:', stakingData.staking_time);
     
     // 3. Basic validation
     const DUST_AMOUNT = 0.0001; // 10000 satoshis
     if (output.value <= DUST_AMOUNT) {
-      console.log('Output value too small, likely dust');
+      logger.info('Output value too small, likely dust');
       return false;
     }
 
@@ -206,10 +207,10 @@ async function analyzeTaprootOutput(
       const isCorrectIndex = outputIndex === babylonData.staking_tx.output_index;
       
       if (!isCorrectValue) {
-        console.log(`Value mismatch: expected ${expectedBtc} BTC, got ${output.value} BTC`);
+        logger.info(`Value mismatch: expected ${expectedBtc} BTC, got ${output.value} BTC`);
       }
       if (!isCorrectIndex) {
-        console.log(`Index mismatch: expected output ${babylonData.staking_tx.output_index}, got ${outputIndex}`);
+        logger.info(`Index mismatch: expected output ${babylonData.staking_tx.output_index}, got ${outputIndex}`);
       }
       
       return isCorrectValue && isCorrectIndex;
@@ -221,15 +222,15 @@ async function analyzeTaprootOutput(
     );
     
     // Check if this output matches the expected staking pattern
-    console.log('\nStaking pattern analysis:');
-    console.log('- Has valid witness version (v1)');
-    console.log('- Above dust threshold');
-    console.log(`- One of ${taprootOutputs.length} Taproot outputs`);
-    console.log('- OP_RETURN data matches staking format');
+    logger.info('\nStaking pattern analysis:');
+    logger.info('- Has valid witness version (v1)');
+    logger.info('- Above dust threshold');
+    logger.info(`- One of ${taprootOutputs.length} Taproot outputs`);
+    logger.info('- OP_RETURN data matches staking format');
     
     return true;
   } catch (error) {
-    console.error('Error in Taproot analysis:', error);
+    logger.error('Error in Taproot analysis:', error);
     return false;
   }
 }
@@ -244,8 +245,8 @@ function getRPC(): BitcoinRPC {
 }
 
 /* async function main() {
-  console.log('Starting Taproot transaction analysis...');
-  console.log('Bitcoin RPC URL:', process.env.BTC_RPC_URL);
+  logger.info('Starting Taproot transaction analysis...');
+  logger.info('Bitcoin RPC URL:', process.env.BTC_RPC_URL);
   
   for (const txid of TEST_TXIDS) {
     await analyzeTaprootTransaction(txid);
@@ -255,10 +256,10 @@ function getRPC(): BitcoinRPC {
   const rpc = getRPC();
   
   try {
-    console.log('\n=== Staking & Unbonding Transaction Analysis ===');
+    logger.info('\n=== Staking & Unbonding Transaction Analysis ===');
     
     // 1. Staking Transaction'ı analiz et
-    console.log('\n1. Staking Transaction Analysis:', stakingTxHash);
+    logger.info('\n1. Staking Transaction Analysis:', stakingTxHash);
     const stakingTx = await rpc.call('getrawtransaction', [stakingTxHash, true]);
     
     // OP_RETURN çıktısını bul ve parse et
@@ -268,55 +269,55 @@ function getRPC(): BitcoinRPC {
     // Taproot çıktılarını bul
     const taprootOutputs = stakingTx.vout.filter((out: any) => out.scriptPubKey.type === 'witness_v1_taproot');
     
-    console.log('\nStaking TX Details:');
-    console.log('- Total outputs:', stakingTx.vout.length);
-    console.log('- Taproot outputs:', taprootOutputs.length);
-    console.log('- Has OP_RETURN:', !!opReturnOutput);
+    logger.info('\nStaking TX Details:');
+    logger.info('- Total outputs:', stakingTx.vout.length);
+    logger.info('- Taproot outputs:', taprootOutputs.length);
+    logger.info('- Has OP_RETURN:', !!opReturnOutput);
     
     // Her bir output'u detaylı göster
     stakingTx.vout.forEach((out: any, index: number) => {
-      console.log(`\nOutput #${index}:`);
-      console.log('- Type:', out.scriptPubKey.type);
-      console.log('- Value:', out.value, 'BTC');
+      logger.info(`\nOutput #${index}:`);
+      logger.info('- Type:', out.scriptPubKey.type);
+      logger.info('- Value:', out.value, 'BTC');
       if (out.scriptPubKey.type === 'witness_v1_taproot') {
-        console.log('- Taproot Address:', out.scriptPubKey.address);
+        logger.info('- Taproot Address:', out.scriptPubKey.address);
       }
     });
 
     // 2. Unbonding Transaction'ı analiz et
-    console.log('\n2. Unbonding Transaction Analysis:', unbondingTxHash);
+    logger.info('\n2. Unbonding Transaction Analysis:', unbondingTxHash);
     const unbondingTx = await rpc.call('getrawtransaction', [unbondingTxHash, true]);
     
-    console.log('\nUnbonding TX Details:');
-    console.log('- Input count:', unbondingTx.vin.length);
-    console.log('- Output count:', unbondingTx.vout.length);
+    logger.info('\nUnbonding TX Details:');
+    logger.info('- Input count:', unbondingTx.vin.length);
+    logger.info('- Output count:', unbondingTx.vout.length);
     
     // Input analizi
     for (const [index, input] of unbondingTx.vin.entries()) {
-      console.log(`\nInput #${index}:`);
-      console.log('- Previous TX:', input.txid);
-      console.log('- Previous Output Index:', input.vout);
+      logger.info(`\nInput #${index}:`);
+      logger.info('- Previous TX:', input.txid);
+      logger.info('- Previous Output Index:', input.vout);
       
       // Input'un referans verdiği transaction'ı kontrol et
       const prevTx = await rpc.call('getrawtransaction', [input.txid, true]);
       const referencedOutput = prevTx.vout[input.vout];
       
-      console.log('\nReferenced Output Details:');
-      console.log('- Type:', referencedOutput.scriptPubKey.type);
-      console.log('- Value:', referencedOutput.value, 'BTC');
+      logger.info('\nReferenced Output Details:');
+      logger.info('- Type:', referencedOutput.scriptPubKey.type);
+      logger.info('- Value:', referencedOutput.value, 'BTC');
       
       // Eğer staking tx'e referans veriyorsa
       if (input.txid === stakingTxHash) {
-        console.log('\n🔍 STAKING CONNECTION FOUND!');
-        console.log(`This unbonding transaction spends output #${input.vout} of the staking transaction`);
+        logger.info('\n🔍 STAKING CONNECTION FOUND!');
+        logger.info(`This unbonding transaction spends output #${input.vout} of the staking transaction`);
         
         // Babylon API ile doğrula
         const babylonData = await validateWithBabylonAPI(stakingTxHash);
         if (babylonData) {
-          console.log('\nBabylon API Validation:');
-          console.log('Expected staking output index:', babylonData.staking_tx.output_index);
-          console.log('Actual referenced output index:', input.vout);
-          console.log(babylonData.staking_tx.output_index === input.vout 
+          logger.info('\nBabylon API Validation:');
+          logger.info('Expected staking output index:', babylonData.staking_tx.output_index);
+          logger.info('Actual referenced output index:', input.vout);
+          logger.info(babylonData.staking_tx.output_index === input.vout 
             ? '✅ Output index matches Babylon API'
             : '❌ Output index does not match Babylon API');
         }
@@ -325,16 +326,16 @@ function getRPC(): BitcoinRPC {
     
     // Output analizi
     unbondingTx.vout.forEach((out: any, index: number) => {
-      console.log(`\nOutput #${index}:`);
-      console.log('- Type:', out.scriptPubKey.type);
-      console.log('- Value:', out.value, 'BTC');
+      logger.info(`\nOutput #${index}:`);
+      logger.info('- Type:', out.scriptPubKey.type);
+      logger.info('- Value:', out.value, 'BTC');
       if (out.scriptPubKey.type === 'witness_v1_taproot') {
-        console.log('- Taproot Address:', out.scriptPubKey.address);
+        logger.info('- Taproot Address:', out.scriptPubKey.address);
       }
     });
 
   } catch (error) {
-    console.error('Error in analysis:', error);
+    logger.error('Error in analysis:', error);
   }
 }
 
@@ -348,7 +349,7 @@ const TEST_PAIRS = [
 
 // Main fonksiyonunu güncelle
 async function main() {
-  console.log('Starting Taproot transaction analysis...');
+  logger.info('Starting Taproot transaction analysis...');
   
   // Mevcut test transaction'ları analiz et
   for (const txid of TEST_TXIDS) {
@@ -362,4 +363,4 @@ async function main() {
 }
 
 // Run analysis
-main().catch(console.error);
+main().catch(logger.error);

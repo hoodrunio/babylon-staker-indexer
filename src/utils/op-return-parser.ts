@@ -1,5 +1,5 @@
 import { ValidationConfig, ValidationError, ParsedOpReturn } from '../types/validation';
-
+import { logger } from './logger';
 // Constants
 const OP_RETURN_PREFIX = '6a47';
 const BABYLON_TAG = '62626e31';
@@ -40,7 +40,7 @@ function parseComponents(hexData: string): ParsedComponents | null {
             staking_time: parseInt(data.slice(130, 134), 16)
         };
     } catch (e) {
-        console.error('Error parsing OP_RETURN components:', e);
+        logger.error('Error parsing OP_RETURN components:', e);
         return null;
     }
 }
@@ -102,7 +102,7 @@ export function parseOpReturn(hexData: string, config: ValidationConfig = DEFAUL
             }
         };
     } catch (e) {
-        console.error('Error parsing OP_RETURN:', e);
+        logger.error('Error parsing OP_RETURN:', e);
         return null;
     }
 }

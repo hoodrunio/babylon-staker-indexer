@@ -9,6 +9,7 @@ import {
     SignatureStats,
     SignatureStatsParams
 } from '../../types';
+import { logger } from '../../utils/logger';
 
 export class FinalityBlockProcessor {
     private static instance: FinalityBlockProcessor | null = null;
@@ -45,17 +46,17 @@ export class FinalityBlockProcessor {
 
     public async start(): Promise<void> {
         if (this.isRunning) {
-            console.warn('[BlockProcessor] Service is already running');
+            logger.warn('[BlockProcessor] Service is already running');
             return;
         }
         
-        console.log('[BlockProcessor] Starting block processor service...');
+        logger.info('[BlockProcessor] Starting block processor service...');
         this.isRunning = true;
         this.startPeriodicUpdate();
     }
 
     public stop(): void {
-        console.log('[BlockProcessor] Stopping block processor service...');
+        logger.info('[BlockProcessor] Stopping block processor service...');
         this.isRunning = false;
         
         if (this.updateInterval) {
@@ -83,7 +84,7 @@ export class FinalityBlockProcessor {
                     await this.fetchAndCacheSignatures(nextHeight);
                 }
             } catch (error) {
-                console.error('[BlockProcessor] Error in periodic update:', error);
+                logger.error('[BlockProcessor] Error in periodic update:', error);
             }
         }, this.UPDATE_INTERVAL);
     }
@@ -91,7 +92,7 @@ export class FinalityBlockProcessor {
     public async initializeFromHeight(startHeight: number): Promise<void> {
         const currentHeight = await this.babylonClient.getCurrentHeight();
         this.lastProcessedHeight = startHeight - 1;
-        console.debug(`[BlockProcessor] Starting from: ${startHeight}`);
+        logger.debug(`[BlockProcessor] Starting from: ${startHeight}`);
         
         // Process missing blocks
         const missingBlocks = [];
@@ -102,7 +103,7 @@ export class FinalityBlockProcessor {
         }
 
         if (missingBlocks.length > 0) {
-            console.debug(`[BlockProcessor] Processing ${missingBlocks.length} missing blocks`);
+            logger.debug(`[BlockProcessor] Processing ${missingBlocks.length} missing blocks`);
             
             // Batch size for parallel processing
             const BATCH_SIZE = 10;
@@ -149,7 +150,7 @@ export class FinalityBlockProcessor {
             
             // Ensure we're at least 2 blocks behind the current height
             if (currentHeight <= height + 2) {
-                console.debug(`[Cache] Block ${height} is too recent, waiting for finalization (current: ${currentHeight})`);
+                logger.debug(`[Cache] Block ${height} is too recent, waiting for finalization (current: ${currentHeight})`);
                 this.requestLocks.delete(requestKey);
                 await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));
                 return this.fetchAndCacheSignatures(height, retryCount);
@@ -160,7 +161,7 @@ export class FinalityBlockProcessor {
             // Retry if no votes on first attempt
             if (votes.length === 0 && retryCount < this.MAX_RETRIES && !this.cacheManager.hasSignatureData(height)) {
                 this.requestLocks.delete(requestKey);
-                console.debug(`[Cache] No votes found for block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms`);
+                logger.debug(`[Cache] No votes found for block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms`);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
@@ -169,7 +170,7 @@ export class FinalityBlockProcessor {
                 const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
                 await this.cacheManager.processBlock(height, signers);
                 
-                console.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.cacheManager.getCacheSize()}`);
+                logger.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.cacheManager.getCacheSize()}`);
                 
                 // Retry if new signatures found and max retries not reached
                 if (retryCount < this.MAX_RETRIES) {
@@ -178,16 +179,16 @@ export class FinalityBlockProcessor {
                     return this.fetchAndCacheSignatures(height, retryCount + 1);
                 }
             } else if (!this.cacheManager.hasSignatureData(height)) {
-                console.debug(`[Cache] No votes found for block ${height} after ${this.MAX_RETRIES} attempts`);
+                logger.debug(`[Cache] No votes found for block ${height} after ${this.MAX_RETRIES} attempts`);
             }
         } catch (error) {
             if (retryCount < this.MAX_RETRIES && !this.cacheManager.hasSignatureData(height)) {
                 this.requestLocks.delete(requestKey);
-                console.warn(`[Cache] Error processing block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms:`, error);
+                logger.warn(`[Cache] Error processing block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms:`, error);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
-            console.error(`[Cache] ❌ Error processing block ${height} after ${this.MAX_RETRIES} attempts:`, error);
+            logger.error(`[Cache] ❌ Error processing block ${height} after ${this.MAX_RETRIES} attempts:`, error);
         } finally {
             this.requestLocks.delete(requestKey);
             this.processingBlocks.delete(height);
@@ -216,7 +217,7 @@ export class FinalityBlockProcessor {
             }
 
             if (missingBlocks.length > 0) {
-                console.debug(`[BlockProcessor] Processing ${missingBlocks.length} missing blocks before ${previousHeight}`);
+                logger.debug(`[BlockProcessor] Processing ${missingBlocks.length} missing blocks before ${previousHeight}`);
                 // Process blocks sequentially
                 for (const blockHeight of missingBlocks) {
                     // Wait for block finalization
@@ -241,7 +242,7 @@ export class FinalityBlockProcessor {
             // Cleanup cache
             await this.cacheManager.cleanup();
         } catch (error) {
-            console.error('[BlockProcessor] Error processing new block:', error);
+            logger.error('[BlockProcessor] Error processing new block:', error);
         }
     }
 

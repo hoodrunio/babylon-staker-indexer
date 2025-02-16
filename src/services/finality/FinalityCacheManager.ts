@@ -1,4 +1,5 @@
 import { FinalityHistoricalService } from './FinalityHistoricalService';
+import { logger } from '../../utils/logger';
 
 export class FinalityCacheManager {
     private static instance: FinalityCacheManager | null = null;
@@ -37,9 +38,9 @@ export class FinalityCacheManager {
                 }
             }
 
-            console.debug(`[Cache] Loaded ${this.signatureCache.size} blocks from Redis`);
+            logger.debug(`[Cache] Loaded ${this.signatureCache.size} blocks from Redis`);
         } catch (error) {
-            console.error('[Cache] Error loading cache from Redis:', error);
+            logger.error('[Cache] Error loading cache from Redis:', error);
         }
     }
 
@@ -50,7 +51,7 @@ export class FinalityCacheManager {
                 timestamp: this.timestampCache.get(height)?.getTime() || Date.now()
             });
         } catch (error) {
-            console.error(`[Cache] Error saving block ${height} to Redis:`, error);
+            logger.error(`[Cache] Error saving block ${height} to Redis:`, error);
         }
     }
 
@@ -107,7 +108,7 @@ export class FinalityCacheManager {
                     this.timestampCache.delete(height);
                     this.processedBlocks.delete(height);
                 });
-                console.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from cache, current size: ${this.signatureCache.size}`);
+                logger.debug(`[Cache] Cleaned up ${oldestBlocks.length} old blocks from cache, current size: ${this.signatureCache.size}`);
             }
         }
     }

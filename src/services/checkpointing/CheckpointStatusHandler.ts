@@ -2,6 +2,7 @@ import { Network } from '../../types/finality';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { CheckpointStatusFetcher } from './CheckpointStatusFetcher';
 import { convertBase64AddressToHex } from '../../utils/util';
+import { logger } from '../../utils/logger';
 
 export class CheckpointStatusHandler {
     private static instance: CheckpointStatusHandler | null = null;
@@ -12,13 +13,13 @@ export class CheckpointStatusHandler {
 
         // ENABLE_FULL_SYNC true ise geçmiş checkpoint'leri senkronize et
         if (process.env.CHECKPOINT_SYNC === 'true') {
-            console.log('[CheckpointStatus] Full sync enabled, starting historical checkpoint sync');
+            logger.info('[CheckpointStatus] Full sync enabled, starting historical checkpoint sync');
             // Asenkron işlemi başlat ama bekleme
             this.initializeHistoricalSync().catch(error => {
-                console.error('[CheckpointStatus] Error in historical sync initialization:', error);
+                logger.error('[CheckpointStatus] Error in historical sync initialization:', error);
             });
         } else {
-            console.log('[CheckpointStatus] Full sync disabled, skipping historical checkpoint sync');
+            logger.info('[CheckpointStatus] Full sync disabled, skipping historical checkpoint sync');
         }
     }
 
@@ -34,18 +35,17 @@ export class CheckpointStatusHandler {
             const events = blockData?.result?.data?.value?.result_finalize_block?.events;
             const blockHeight = blockData?.result?.data?.value?.block?.header?.height;
             
-            console.log(`[CheckpointStatus] Processing block ${blockHeight} with ${events?.length || 0} events`);
-            // console.log(`[CheckpointStatus] Full block data:`, JSON.stringify(blockData, null, 2).slice(0, 1000));
+            logger.info(`[CheckpointStatus] Processing block ${blockHeight} with ${events?.length || 0} events`);
 
             if (!events) {
-                console.log(`[CheckpointStatus] No events found in block ${blockHeight}`);
+                logger.info(`[CheckpointStatus] No events found in block ${blockHeight}`);
                 return;
             }
 
             // Log checkpoint events found
             const checkpointEvents = events.filter((e: any) => e.type.includes('babylon.checkpointing.v1.EventCheckpoint'));
             if (checkpointEvents.length > 0) {
-                console.log(`[CheckpointStatus] Found ${checkpointEvents.length} checkpoint events:`, 
+                logger.info(`[CheckpointStatus] Found ${checkpointEvents.length} checkpoint events:`, 
                     checkpointEvents.map((e: any) => e.type));
             }
 
@@ -53,22 +53,22 @@ export class CheckpointStatusHandler {
             for (const event of events) {
                 switch (event.type) {
                     case 'babylon.checkpointing.v1.EventCheckpointAccumulating':
-                        console.log(`[CheckpointStatus] Processing ACCUMULATING event in block ${blockHeight}`);
+                        logger.info(`[CheckpointStatus] Processing ACCUMULATING event in block ${blockHeight}`);
                         await this.handleAccumulatingEvent(event, network, blockData);
                         break;
                     case 'babylon.checkpointing.v1.EventCheckpointSealed':
-                        console.log(`[CheckpointStatus] Skipping SEALED event in block ${blockHeight} (handled by BLSCheckpointHandler)`);
+                        logger.info(`[CheckpointStatus] Skipping SEALED event in block ${blockHeight} (handled by BLSCheckpointHandler)`);
                         break;
                     case 'babylon.checkpointing.v1.EventCheckpointSubmitted':
                     case 'babylon.checkpointing.v1.EventCheckpointConfirmed':
                     case 'babylon.checkpointing.v1.EventCheckpointFinalized':
-                        console.log(`[CheckpointStatus] Processing ${event.type.split('.').pop()} event in block ${blockHeight}`);
+                        logger.info(`[CheckpointStatus] Processing ${event.type.split('.').pop()} event in block ${blockHeight}`);
                         await this.handleStatusUpdateEvent(event, network, blockData);
                         break;
                 }
             }
         } catch (error) {
-            console.error('[CheckpointStatus] Error handling new block:', error);
+            logger.error('[CheckpointStatus] Error handling new block:', error);
         }
     }
 
@@ -76,37 +76,36 @@ export class CheckpointStatusHandler {
         try {
             const checkpointAttr = event.attributes?.find((attr: any) => attr.key === 'checkpoint');
             if (!checkpointAttr) {
-                console.warn('[CheckpointStatus] Could not find checkpoint attribute');
+                logger.warn('[CheckpointStatus] Could not find checkpoint attribute');
                 return;
             }
 
             let checkpoint;
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
-                // console.log(`[CheckpointStatus] Raw checkpoint data:`, checkpoint);
             } catch (error) {
-                console.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
+                logger.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
                 return;
             }
 
             const epochNum = parseInt(checkpoint.ckpt?.epoch_num);
             if (!epochNum) {
-                console.warn('[CheckpointStatus] Could not find epoch number in checkpoint data');
+                logger.warn('[CheckpointStatus] Could not find epoch number in checkpoint data');
                 return;
             }
 
             // Block hash kontrolü ve dönüşümü
             const rawBlockHash = checkpoint.ckpt?.block_hash;
             if (!rawBlockHash) {
-                console.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
+                logger.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
                 return;
             }
 
             const blockHash = convertBase64AddressToHex(rawBlockHash);
-            console.log(`[CheckpointStatus] Converted block hash from ${rawBlockHash} to ${blockHash}`);
+            logger.info(`[CheckpointStatus] Converted block hash from ${rawBlockHash} to ${blockHash}`);
 
             if (!blockHash) {
-                console.warn(`[CheckpointStatus] Failed to convert block hash for epoch ${epochNum}`);
+                logger.warn(`[CheckpointStatus] Failed to convert block hash for epoch ${epochNum}`);
                 return;
             }
 
@@ -142,10 +141,10 @@ export class CheckpointStatusHandler {
 
             if (!existingCheckpoint) {
                 await BLSCheckpoint.create(newCheckpoint);
-                console.log(`[CheckpointStatus] Created new checkpoint for epoch ${epochNum} with block hash ${blockHash}`);
+                logger.info(`[CheckpointStatus] Created new checkpoint for epoch ${epochNum} with block hash ${blockHash}`);
             }
         } catch (error) {
-            console.error('[CheckpointStatus] Error handling accumulating event:', error);
+            logger.error('[CheckpointStatus] Error handling accumulating event:', error);
         }
     }
 
@@ -153,7 +152,7 @@ export class CheckpointStatusHandler {
         try {
             const checkpointAttr = event.attributes?.find((attr: any) => attr.key === 'checkpoint');
             if (!checkpointAttr) {
-                console.warn('[CheckpointStatus] Could not find checkpoint attribute');
+                logger.warn('[CheckpointStatus] Could not find checkpoint attribute');
                 return;
             }
 
@@ -161,20 +160,20 @@ export class CheckpointStatusHandler {
             try {
                 checkpoint = JSON.parse(checkpointAttr.value);
             } catch (error) {
-                console.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
+                logger.error('[CheckpointStatus] Error parsing checkpoint JSON:', error);
                 return;
             }
 
             const epochNum = parseInt(checkpoint.ckpt?.epoch_num);
             if (!epochNum) {
-                console.warn('[CheckpointStatus] Could not find epoch number in checkpoint data');
+                logger.warn('[CheckpointStatus] Could not find epoch number in checkpoint data');
                 return;
             }
 
             // Block hash kontrolü ve dönüşümü
             const rawBlockHash = checkpoint.ckpt?.block_hash;
             if (!rawBlockHash) {
-                console.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
+                logger.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
                 return;
             }
 
@@ -190,9 +189,9 @@ export class CheckpointStatusHandler {
                 network 
             });
 
-            console.log(`[CheckpointStatus] Found existing checkpoint:`, existingCheckpoint ? 'yes' : 'no');
+            logger.info(`[CheckpointStatus] Found existing checkpoint:`, existingCheckpoint ? 'yes' : 'no');
             if (existingCheckpoint) {
-                console.log(`[CheckpointStatus] Current status: ${existingCheckpoint.status}, New status: ${status}`);
+                logger.info(`[CheckpointStatus] Current status: ${existingCheckpoint.status}, New status: ${status}`);
             }
 
             // Add new lifecycle entry
@@ -204,7 +203,7 @@ export class CheckpointStatusHandler {
 
             // Eğer checkpoint bulunamazsa yeni oluştur
             if (!existingCheckpoint) {
-                console.log(`[CheckpointStatus] Creating new checkpoint for epoch ${epochNum}`);
+                logger.info(`[CheckpointStatus] Creating new checkpoint for epoch ${epochNum}`);
                 await BLSCheckpoint.create({
                     epoch_num: epochNum,
                     network,
@@ -238,10 +237,10 @@ export class CheckpointStatusHandler {
                 );
             }
 
-            console.log(`[CheckpointStatus] Successfully updated checkpoint ${epochNum} status to ${status} with block hash ${blockHash}`);
+            logger.info(`[CheckpointStatus] Successfully updated checkpoint ${epochNum} status to ${status} with block hash ${blockHash}`);
         } catch (error: any) {
-            console.error('[CheckpointStatus] Error handling status update event:', error);
-            console.error('[CheckpointStatus] Stack trace:', error.stack);
+            logger.error('[CheckpointStatus] Error handling status update event:', error);
+            logger.error('[CheckpointStatus] Stack trace:', error.stack);
         }
     }
 
@@ -272,7 +271,7 @@ export class CheckpointStatusHandler {
 
     private async initializeHistoricalSync() {
         try {
-            console.log('[CheckpointStatus] Starting historical sync initialization');
+            logger.info('[CheckpointStatus] Starting historical sync initialization');
             // Her network için senkronizasyonu başlat
             const networks = [Network.MAINNET, Network.TESTNET];
             
@@ -280,17 +279,17 @@ export class CheckpointStatusHandler {
                 try {
                     const client = this.checkpointStatusFetcher.getBabylonClient(network);
                     if (client) {
-                        console.log(`[CheckpointStatus] Starting historical sync for ${network}`);
+                        logger.info(`[CheckpointStatus] Starting historical sync for ${network}`);
                         await this.checkpointStatusFetcher.syncHistoricalCheckpoints(network);
-                        console.log(`[CheckpointStatus] Completed historical sync for ${network}`);
+                        logger.info(`[CheckpointStatus] Completed historical sync for ${network}`);
                     }
                 } catch (error) {
-                    console.error(`[CheckpointStatus] Error syncing historical checkpoints for ${network}:`, error);
+                    logger.error(`[CheckpointStatus] Error syncing historical checkpoints for ${network}:`, error);
                 }
             }
-            console.log('[CheckpointStatus] Completed historical sync initialization');
+            logger.info('[CheckpointStatus] Completed historical sync initialization');
         } catch (error) {
-            console.error('[CheckpointStatus] Error initializing historical sync:', error);
+            logger.error('[CheckpointStatus] Error initializing historical sync:', error);
             throw error;
         }
     }

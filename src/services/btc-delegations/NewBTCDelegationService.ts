@@ -4,6 +4,7 @@ import { DelegationResponse } from '../../types/finality/btcstaking';
 import { formatSatoshis } from '../../utils/util';
 import { getTxHash } from '../../utils/generate-tx-hash';
 import { extractAmountFromBTCTransaction, extractAddressesFromTransaction } from '../../utils/btc-transaction';
+import { logger } from '../../utils/logger';
 
 export class NewBTCDelegationService {
     private static instance: NewBTCDelegationService | null = null;
@@ -52,7 +53,7 @@ export class NewBTCDelegationService {
         startHeight?: number
     ) {
         try {
-            console.log('Updating delegation state:', stakingTxIdHex);
+            logger.info('Updating delegation state:', stakingTxIdHex);
             
             const updateData: any = { state };
             if (endHeight !== undefined) updateData.endHeight = endHeight;
@@ -68,18 +69,18 @@ export class NewBTCDelegationService {
             );
 
             if (!result) {
-                console.error('No delegation found to update:', {
+                logger.error('No delegation found to update:', {
                     stakingTxIdHex,
                     network: network.toLowerCase()
                 });
                 return null;
             }
 
-            console.log('Delegation state updated successfully:', stakingTxIdHex);
+            logger.info('Delegation state updated successfully:', stakingTxIdHex);
 
             return result;
         } catch (error) {
-            console.error('Error updating delegation state:', error);
+            logger.error('Error updating delegation state:', error);
             throw error;
         }
     }
@@ -189,21 +190,21 @@ export class NewBTCDelegationService {
     }
 
     public async handleNewDelegationFromWebsocket(eventData: any, network: Network) {
-        // console.log('Raw event data received:', JSON.stringify(eventData, null, 2));
+        // logger.info('Raw event data received:', JSON.stringify(eventData, null, 2));
         
         const attributes = this.parseEventAttributes(eventData);
         
         if (!attributes) {
-            console.error('Failed to parse websocket event attributes');
+            logger.error('Failed to parse websocket event attributes');
             return null;
         }
 
-        // console.log('Parsed attributes:', JSON.stringify(attributes, null, 2));
+        // logger.info('Parsed attributes:', JSON.stringify(attributes, null, 2));
 
         // Extract amount from staking transaction
         const totalSat = extractAmountFromBTCTransaction(attributes.staking_tx_hex);
         if (!totalSat) {
-            console.warn('Failed to extract amount from staking transaction:', {
+            logger.warn('Failed to extract amount from staking transaction:', {
                 stakingTxHex: attributes.staking_tx_hex
             });
         }
@@ -216,7 +217,7 @@ export class NewBTCDelegationService {
 
         const addresses = await extractAddressesFromTransaction(parsedTxHex);
         if (!addresses.sender) {
-            console.warn('Failed to extract sender address from staking transaction:', {
+            logger.warn('Failed to extract sender address from staking transaction:', {
                 stakingTxHex: attributes.staking_tx_hex
             });
         }
@@ -243,31 +244,31 @@ export class NewBTCDelegationService {
         try {
             const existingDelegation = await this.getDelegationByTxHash(delegationData.stakingTxHex, network);
             if (existingDelegation) {
-                console.log(`Delegation already exists for tx: ${delegationData.stakingTxIdHex}`);
+                logger.info(`Delegation already exists for tx: ${delegationData.stakingTxIdHex}`);
                 return existingDelegation;
             }
 
             const newDelegation = await this.createDelegation(delegationData);
-            console.log(`Created new delegation from websocket event: ${newDelegation.txHash}, amount: ${formatSatoshis(totalSat)} BTC`);
+            logger.info(`Created new delegation from websocket event: ${newDelegation.txHash}, amount: ${formatSatoshis(totalSat)} BTC`);
             return this.formatDelegationResponse(newDelegation);
         } catch (error) {
-            console.error('Error handling new delegation from websocket:', error);
+            logger.error('Error handling new delegation from websocket:', error);
             throw error;
         }
     }
 
     private parseEventAttributes(eventData: any): any {
         try {
-            console.log('Received event data:', JSON.stringify(eventData).substring(0, 100));
+            logger.info('Received event data:', JSON.stringify(eventData).substring(0, 100));
             
             // Event verisi events içinde geliyor
             const events = eventData.events;
             if (!events) {
-                console.warn('No events found in event data');
+                logger.warn('No events found in event data');
                 return null;
             }
 
-            // console.log('Event keys:', Object.keys(events));
+            // logger.info('Event keys:', Object.keys(events));
 
             // BTCDelegationCreated event'ini bul
             const btcDelegationEvent = events.find((event: any) => 
@@ -275,7 +276,7 @@ export class NewBTCDelegationService {
             );
 
             if (!btcDelegationEvent) {
-                console.warn('No BTCDelegationCreated event found');
+                logger.warn('No BTCDelegationCreated event found');
                 return null;
             }
 
@@ -293,7 +294,7 @@ export class NewBTCDelegationService {
             const senderAttr = messageEvent?.attributes.find((attr: any) => attr.key === 'sender');
 
             if (!attributes.staking_tx_hex || !attributes.staker_btc_pk_hex || !attributes.finality_provider_btc_pks_hex) {
-                console.warn('Missing required event attributes:', {
+                logger.warn('Missing required event attributes:', {
                     hasStakingTxHex: !!attributes.staking_tx_hex,
                     hasStakerBtcPkHex: !!attributes.staker_btc_pk_hex,
                     hasFinalityProviderBtcPksHex: !!attributes.finality_provider_btc_pks_hex
@@ -301,8 +302,8 @@ export class NewBTCDelegationService {
                 return null;
             }
 
-            // console.log('Raw staking_tx_hex:', attributes.staking_tx_hex);
-            // console.log('Parsed staking_tx_hex:', JSON.parse(attributes.staking_tx_hex));
+            // logger.info('Raw staking_tx_hex:', attributes.staking_tx_hex);
+            // logger.info('Parsed staking_tx_hex:', JSON.parse(attributes.staking_tx_hex));
 
             const result = {
                 staking_tx_hex: JSON.parse(attributes.staking_tx_hex),
@@ -317,11 +318,11 @@ export class NewBTCDelegationService {
                 params_version: attributes.params_version ? JSON.parse(attributes.params_version) : undefined
             };
 
-            // console.log('Parsed result:', result);
+            // logger.info('Parsed result:', result);
             return result;
         } catch (error: any) {
-            console.error('Error parsing websocket event attributes:', error);
-            console.error('Error details:', {
+            logger.error('Error parsing websocket event attributes:', error);
+            logger.error('Error details:', {
                 message: error.message,
                 stack: error.stack
             });

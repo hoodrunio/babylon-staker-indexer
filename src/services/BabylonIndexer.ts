@@ -5,6 +5,7 @@ import { parseOpReturn } from '../utils/op-return-parser';
 import { getParamsForHeight } from '../utils/params-validator';
 import { validateStakeTransaction } from '../utils/stake-validator';
 import { StakerService } from '../database/services/StakerService';
+import { logger } from '../utils/logger';
 
 export class BabylonIndexer {
   private rpc: BitcoinRPC;
@@ -52,17 +53,17 @@ export class BabylonIndexer {
           throw new Error(`Invalid block height range: ${actualStartHeight} - ${actualEndHeight}. Expected heights around 864xxx.`);
         }
 
-        console.log(`Indexing Phase ${phaseToIndex} from block ${actualStartHeight} to ${actualEndHeight}`);
+        logger.info(`Indexing Phase ${phaseToIndex} from block ${actualStartHeight} to ${actualEndHeight}`);
         
         try {
           await this.db.initPhaseStats(targetPhase.phase, targetPhase.startHeight);
-          console.log(`Initialized stats for phase ${targetPhase.phase}`);
+          logger.info(`Initialized stats for phase ${targetPhase.phase}`);
         } catch (error) {
-          console.error(`Error initializing phase ${targetPhase.phase} stats:`, error);
+          logger.error(`Error initializing phase ${targetPhase.phase} stats:`, error);
         }
       }
 
-      console.log(`Scanning blocks: ${actualStartHeight} - ${actualEndHeight}`);
+      logger.info(`Scanning blocks: ${actualStartHeight} - ${actualEndHeight}`);
       let totalTransactions = 0;
       let babylonPrefix = 0;
       let validStakes = 0;
@@ -76,9 +77,9 @@ export class BabylonIndexer {
         for (const phase of phaseConfig.phases) {
           try {
             await this.db.initPhaseStats(phase.phase, phase.startHeight);
-            console.log(`Initialized stats for phase ${phase.phase}`);
+            logger.info(`Initialized stats for phase ${phase.phase}`);
           } catch (error) {
-            console.error(`Error initializing phase ${phase.phase} stats:`, error);
+            logger.error(`Error initializing phase ${phase.phase} stats:`, error);
           }
         }
       }
@@ -94,34 +95,34 @@ export class BabylonIndexer {
       while (currentHeight <= actualEndHeight) {
         const batchEnd = Math.min(currentHeight + BATCH_SIZE - 1, actualEndHeight);
         const progress = ((currentHeight - actualStartHeight) / (actualEndHeight - actualStartHeight)) * 100;
-        console.log(`Progress: ${progress.toFixed(1)}% | Processing blocks ${currentHeight} to ${batchEnd}`);
+        logger.info(`Progress: ${progress.toFixed(1)}% | Processing blocks ${currentHeight} to ${batchEnd}`);
 
         try {
           // Get the current phase
           const currentPhase = targetPhase || getPhaseForHeight(currentHeight);
           if (!currentPhase) {
-            console.log(`No active phase for height ${currentHeight}, skipping...`);
+            logger.info(`No active phase for height ${currentHeight}, skipping...`);
             
             // Find the next phase's start height
             const nextPhase = phaseConfig.phases.find(p => p.startHeight > currentHeight);
             if (nextPhase) {
-              console.log(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
+              logger.info(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
               
               // Initialize stats for the next phase if it's different from the current one
               if (nextPhase.phase !== currentPhaseNumber) {
                 try {
                   await this.db.initPhaseStats(nextPhase.phase, nextPhase.startHeight);
-                  console.log(`Initialized stats for phase ${nextPhase.phase}`);
+                  logger.info(`Initialized stats for phase ${nextPhase.phase}`);
                   currentPhaseNumber = nextPhase.phase;
                 } catch (error) {
-                  console.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
+                  logger.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
                 }
               }
               
               currentHeight = nextPhase.startHeight;
               continue;
             } else {
-              console.log('No more phases to process');
+              logger.info('No more phases to process');
               break;
             }
           }
@@ -130,10 +131,10 @@ export class BabylonIndexer {
           if (currentPhase.phase !== currentPhaseNumber) {
             try {
               await this.db.initPhaseStats(currentPhase.phase, currentPhase.startHeight);
-              console.log(`Initialized stats for phase ${currentPhase.phase}`);
+              logger.info(`Initialized stats for phase ${currentPhase.phase}`);
               currentPhaseNumber = currentPhase.phase;
             } catch (error) {
-              console.error(`Error initializing phase ${currentPhase.phase} stats:`, error);
+              logger.error(`Error initializing phase ${currentPhase.phase} stats:`, error);
             }
           }
 
@@ -175,20 +176,20 @@ export class BabylonIndexer {
 
             // Check if phase conditions are met
             if (!isReindexing && await checkPhaseCondition(currentPhase, height)) {
-              console.log(`Phase ${currentPhase.phase} conditions have been met at height ${height}`);
+              logger.info(`Phase ${currentPhase.phase} conditions have been met at height ${height}`);
               
               // Find the next phase's start height
               const nextPhase = phaseConfig.phases.find(p => p.startHeight > height);
               if (nextPhase) {
-                console.log(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
+                logger.info(`Jumping to next phase (${nextPhase.phase}) at height ${nextPhase.startHeight}`);
                 
                 // Initialize stats for the next phase
                 try {
                   await this.db.initPhaseStats(nextPhase.phase, nextPhase.startHeight);
-                  console.log(`Initialized stats for phase ${nextPhase.phase}`);
+                  logger.info(`Initialized stats for phase ${nextPhase.phase}`);
                   currentPhaseNumber = nextPhase.phase;
                 } catch (error) {
-                  console.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
+                  logger.error(`Error initializing phase ${nextPhase.phase} stats:`, error);
                 }
                 
                 currentHeight = nextPhase.startHeight - 1; // -1 because we'll increment at the end of the loop
@@ -219,19 +220,19 @@ export class BabylonIndexer {
 
           currentHeight = batchEnd + 1;
         } catch (error) {
-          console.error(`Error processing blocks ${currentHeight}-${batchEnd}:`, error);
+          logger.error(`Error processing blocks ${currentHeight}-${batchEnd}:`, error);
           currentHeight = batchEnd + 1;
         }
       }
 
-      console.log('\nIndexing completed!');
-      console.log(`Total transactions processed: ${totalTransactions}`);
-      console.log(`Babylon prefix transactions: ${babylonPrefix}`);
-      console.log(`Valid stakes: ${validStakes}`);
-      console.log(`Saved transactions: ${savedTransactions}`);
+      logger.info('\nIndexing completed!');
+      logger.info(`Total transactions processed: ${totalTransactions}`);
+      logger.info(`Babylon prefix transactions: ${babylonPrefix}`);
+      logger.info(`Valid stakes: ${validStakes}`);
+      logger.info(`Saved transactions: ${savedTransactions}`);
 
     } catch (error) {
-      console.error('Error scanning blocks:', error);
+      logger.error('Error scanning blocks:', error);
       throw error;
     }
   }
@@ -289,7 +290,7 @@ export class BabylonIndexer {
     }
 
     if (!stakerAddress) {
-      console.warn(`Warning: Could not find staker address for tx ${tx.txid}`);
+      logger.warn(`Warning: Could not find staker address for tx ${tx.txid}`);
       return null;
     }
 
@@ -301,7 +302,7 @@ export class BabylonIndexer {
     );
     
     if (!taprootOutput) {
-      console.warn(`Warning: Could not find taproot output for tx ${tx.txid}`);
+      logger.warn(`Warning: Could not find taproot output for tx ${tx.txid}`);
       return null;
     }
     
@@ -310,7 +311,7 @@ export class BabylonIndexer {
     const phase = getPhaseForHeight(block.height);
     
     if (!phase) {
-      console.warn(`Warning: No valid phase found for block height ${block.height}`);
+      logger.warn(`Warning: No valid phase found for block height ${block.height}`);
       return null;
     }
     
@@ -401,7 +402,7 @@ export class BabylonIndexer {
     // First pass: Collect all valid transactions with their timestamps
     for (const tx of block.tx) {
       if (!params) {
-        console.log(`Skip: No parameters found for height ${block.height}`);
+        logger.info(`Skip: No parameters found for height ${block.height}`);
         continue;
       }
 
@@ -463,13 +464,13 @@ export class BabylonIndexer {
       );
 
       if (!opReturnOutput?.scriptPubKey?.hex) {
-        console.warn(`Warning: No OP_RETURN data found in transaction ${tx.txid}`);
+        logger.warn(`Warning: No OP_RETURN data found in transaction ${tx.txid}`);
         continue;
       }
 
       const parsed = parseOpReturn(opReturnOutput.scriptPubKey.hex);
       if (!parsed) {
-        console.warn(`Warning: Failed to parse OP_RETURN data for transaction ${tx.txid}`);
+        logger.warn(`Warning: Failed to parse OP_RETURN data for transaction ${tx.txid}`);
         continue;
       }
 

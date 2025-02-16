@@ -6,6 +6,7 @@ import {
     Vote,
     CurrentEpochResponse
 } from '../types/finality';
+import { logger } from '../utils/logger';
 
 interface RetryConfig extends InternalAxiosRequestConfig {
     retry?: boolean;
@@ -61,7 +62,7 @@ export class BabylonClient {
         this.baseRpcUrl = rpcUrl;
 
         if (!wsUrl) {
-            console.warn(`WebSocket URL not configured for ${network} network, falling back to RPC URL`);
+            logger.warn(`WebSocket URL not configured for ${network} network, falling back to RPC URL`);
             this.wsEndpoint = `${rpcUrl.replace(/^http/, 'ws')}/websocket`;
         } else {
             this.wsEndpoint = wsUrl;
@@ -97,7 +98,7 @@ export class BabylonClient {
             );
 
             if (config.currentRetryCount > 1) {
-                console.debug(`[Retry] Attempt ${config.currentRetryCount} for ${config.url}`);
+                logger.debug(`[Retry] Attempt ${config.currentRetryCount} for ${config.url}`);
             }
 
             return new Promise(resolve => setTimeout(() => resolve(config), delayTime));
@@ -150,9 +151,9 @@ export class BabylonClient {
             throw new Error('Invalid response format from RPC endpoint');
         } catch (error) {
             if (error instanceof Error) {
-                console.error('[Height] Failed to get current height:', error.message);
+                logger.error('[Height] Failed to get current height:', error.message);
             } else {
-                console.error('[Height] Failed to get current height:', error);
+                logger.error('[Height] Failed to get current height:', error);
             }
             throw new Error('Failed to get current height');
         }
@@ -160,37 +161,37 @@ export class BabylonClient {
 
     async getVotesAtHeight(height: number): Promise<Vote[]> {
         try {
-            console.debug(`[Votes] Fetching votes for height ${height}`);
+            logger.debug(`[Votes] Fetching votes for height ${height}`);
             const response = await this.client.get(`/babylon/finality/v1/votes/${height}`);
             
             if (!response.data) {
-                console.warn(`[Votes] No data in response for height ${height}`);
+                logger.warn(`[Votes] No data in response for height ${height}`);
                 return [];
             }
 
             if (!response.data.btc_pks) {
-                console.warn(`[Votes] No btc_pks in response for height ${height}`);
+                logger.warn(`[Votes] No btc_pks in response for height ${height}`);
                 return [];
             }
 
             if (!Array.isArray(response.data.btc_pks)) {
-                console.warn(`[Votes] btc_pks is not an array for height ${height}`);
+                logger.warn(`[Votes] btc_pks is not an array for height ${height}`);
                 return [];
             }
 
-            console.debug(`[Votes] Found ${response.data.btc_pks.length} votes for height ${height}`);
+            logger.debug(`[Votes] Found ${response.data.btc_pks.length} votes for height ${height}`);
             
             // Duplicate check
             const uniquePks = new Set(response.data.btc_pks);
             if (uniquePks.size !== response.data.btc_pks.length) {
-                console.warn(`[Votes] Found ${response.data.btc_pks.length - uniquePks.size} duplicate votes for height ${height}`);
+                logger.warn(`[Votes] Found ${response.data.btc_pks.length - uniquePks.size} duplicate votes for height ${height}`);
             }
 
             const currentTime = new Date().toISOString();
             const votes = response.data.btc_pks.map((btcPk: string) => {
                 // Validate btcPk format
                 if (typeof btcPk !== 'string' || btcPk.length !== 64) {
-                    console.warn(`[Votes] Invalid btcPk format at height ${height}: ${btcPk}`);
+                    logger.warn(`[Votes] Invalid btcPk format at height ${height}: ${btcPk}`);
                     return null;
                 }
                 return {
@@ -200,13 +201,13 @@ export class BabylonClient {
                 };
             }).filter((vote: Vote | null): vote is Vote => vote !== null);
 
-            // console.debug(`[Votes] Processed ${votes.length} valid votes for height ${height}`);
+            // logger.debug(`[Votes] Processed ${votes.length} valid votes for height ${height}`);
             return votes;
         } catch (error) {
             if (error instanceof Error) {
-                console.error(`[Votes] Error fetching votes at height ${height}:`, error.message);
+                logger.error(`[Votes] Error fetching votes at height ${height}:`, error.message);
             } else {
-                console.error(`[Votes] Error fetching votes at height ${height}:`, error);
+                logger.error(`[Votes] Error fetching votes at height ${height}:`, error);
             }
             return [];
         }
@@ -215,7 +216,7 @@ export class BabylonClient {
     async getCurrentEpoch(): Promise<CurrentEpochResponse> {
         try {
             const response = await this.client.get('/babylon/epoching/v1/current_epoch');
-            console.debug('[Current Epoch Response]', response.data);
+            logger.debug('[Current Epoch Response]', response.data);
 
             const current_epoch = Number(response.data.current_epoch);
             const epoch_boundary = Number(response.data.epoch_boundary);
@@ -227,7 +228,7 @@ export class BabylonClient {
             this.currentEpochInfo = { current_epoch, epoch_boundary };
             return this.currentEpochInfo;
         } catch (error) {
-            console.error('Error fetching current epoch:', error);
+            logger.error('Error fetching current epoch:', error);
             throw error;
         }
     }
@@ -237,7 +238,7 @@ export class BabylonClient {
             const response = await this.client.get('/babylon/finality/v1/params');
             return response.data.params;
         } catch (error) {
-            console.error('Error fetching finality params:', error);
+            logger.error('Error fetching finality params:', error);
             throw error;
         }
     }
@@ -256,14 +257,14 @@ export class BabylonClient {
                 description: provider.description
             }));
         } catch (error) {
-            console.error(`Error getting active finality providers at height ${height}:`, error);
+            logger.error(`Error getting active finality providers at height ${height}:`, error);
             throw error;
         }
     }
 
     async getBlockResults(height: number): Promise<BlockResult | null> {
         try {
-            console.debug(`[Block Results] Fetching results for height ${height}`);
+            logger.debug(`[Block Results] Fetching results for height ${height}`);
             const rpcUrl = this.network === Network.MAINNET 
                 ? process.env.BABYLON_RPC_URL 
                 : process.env.BABYLON_TESTNET_RPC_URL;
@@ -275,7 +276,7 @@ export class BabylonClient {
             const response = await axios.get(`${rpcUrl}/block_results?height=${height}`);
             
             if (!response.data?.result) {
-                console.warn(`[Block Results] No data in response for height ${height}`);
+                logger.warn(`[Block Results] No data in response for height ${height}`);
                 return null;
             }
 
@@ -293,9 +294,9 @@ export class BabylonClient {
             return formattedResults;
         } catch (error) {
             if (error instanceof Error) {
-                console.error(`[Block Results] Error fetching block results at height ${height}:`, error.message);
+                logger.error(`[Block Results] Error fetching block results at height ${height}:`, error.message);
             } else {
-                console.error(`[Block Results] Error fetching block results at height ${height}:`, error);
+                logger.error(`[Block Results] Error fetching block results at height ${height}:`, error);
             }
             throw error;
         }
@@ -306,7 +307,7 @@ export class BabylonClient {
             const response = await this.client.get(`/babylon/${module}/v1/params`);
             return response.data.params;
         } catch (error) {
-            console.error(`Error fetching ${module} params:`, error);
+            logger.error(`Error fetching ${module} params:`, error);
             throw error;
         }
     }
@@ -317,7 +318,7 @@ export class BabylonClient {
             const response = await this.client.get('/babylon/incentive/params');
             return response.data.params;
         } catch (error) {
-            console.error('Error fetching incentive params:', error);
+            logger.error('Error fetching incentive params:', error);
             throw error;
         }
     }

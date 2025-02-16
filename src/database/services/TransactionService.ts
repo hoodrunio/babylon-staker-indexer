@@ -2,6 +2,7 @@ import { Transaction } from '../models/Transaction';
 import { FinalityProvider } from '../models/FinalityProvider';
 import { Staker } from '../models/Staker';
 import { StakeTransaction } from '../../types';
+import { logger } from '../../utils/logger';
 
 export class TransactionService {
   async saveTransaction(tx: StakeTransaction): Promise<void> {
@@ -9,7 +10,7 @@ export class TransactionService {
       // Check if transaction exists
       const existingTx = await Transaction.findOne({ txid: tx.txid });
       if (existingTx) {
-        console.log(`Transaction ${tx.txid} already exists, skipping...`);
+        logger.info(`Transaction ${tx.txid} already exists, skipping...`);
         return;
       }
 
@@ -32,11 +33,11 @@ export class TransactionService {
       // Update finality providers and stakers with phase information
       await this.updateFinalityProvidersAndStakers(fpTransactions, stakerTransactions);
 
-      console.log(`Transaction ${tx.txid} saved successfully`);
+      logger.info(`Transaction ${tx.txid} saved successfully`);
 
     } catch (error) {
-      console.error('Error saving transaction:', error);
-      console.error('Error details:', error instanceof Error ? error.stack : String(error));
+      logger.error('Error saving transaction:', error);
+      logger.error('Error details:', error instanceof Error ? error.stack : String(error));
       throw error;
     }
   }
@@ -52,7 +53,7 @@ export class TransactionService {
 
       const newTransactions = babylonTransactions.filter(tx => !existingTxIds.has(tx.txid));
       if (newTransactions.length === 0) {
-        console.log('All transactions already exist in database, skipping batch...');
+        logger.info('All transactions already exist in database, skipping batch...');
         return;
       }
 
@@ -88,10 +89,10 @@ export class TransactionService {
       await this.updateFinalityProvidersAndStakers(fpTransactions, stakerTransactions);
       
       const overflowCount = newTransactions.filter(tx => tx.isOverflow).length;
-      console.log(`Successfully saved ${newTransactions.length} new transactions (${overflowCount} overflow)`);
+      logger.info(`Successfully saved ${newTransactions.length} new transactions (${overflowCount} overflow)`);
 
     } catch (error) {
-      console.error('Error in batch save:', error);
+      logger.error('Error in batch save:', error);
       throw error;
     }
   }
@@ -320,7 +321,7 @@ export class TransactionService {
         }
       }).sort({ blockHeight: 1 });
     } catch (error) {
-      console.error('Error getting transactions by block range:', error);
+      logger.error('Error getting transactions by block range:', error);
       throw error;
     }
   }

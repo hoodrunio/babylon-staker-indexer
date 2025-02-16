@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { FinalityProviderService } from '../../services/finality/FinalityProviderService';
 import { FinalitySignatureService } from '../../services/finality/FinalitySignatureService';
-import { formatSatoshis } from '../../utils/util';
-import { DelegationResponse } from '../../types/finality/btcstaking';
+import { logger } from '../../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
@@ -58,7 +57,7 @@ router.get('/signatures/:fpBtcPkHex/stats', async (req, res) => {
             error: 'Either lastNBlocks or both startHeight and endHeight must be provided'
         });
     } catch (error) {
-        console.error('Error getting signature stats:', error);
+        logger.error('Error getting signature stats:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
@@ -72,17 +71,17 @@ router.get('/signatures/:fpBtcPkHex/stream', (req, res) => {
         const { fpBtcPkHex } = req.params;
         const clientId = uuidv4();
 
-        console.log(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
+        logger.info(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
 
         // SSE bağlantısını başlat
         finalitySignatureService.addSSEClient(clientId, res, fpBtcPkHex);
 
         // Client bağlantısı kapandığında cleanup yap
         req.on('close', () => {
-            console.log(`[SSE] Client connection closed: ${clientId}`);
+            logger.info(`[SSE] Client connection closed: ${clientId}`);
         });
     } catch (error) {
-        console.error('[SSE] Error setting up SSE connection:', error);
+        logger.error('[SSE] Error setting up SSE connection:', error);
         res.status(500).end();
     }
 });

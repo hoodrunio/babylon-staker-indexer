@@ -4,6 +4,7 @@ import { Buffer } from 'buffer';
 import { BabylonClient } from '../../clients/BabylonClient';
 import axios from 'axios';
 import { FinalityProviderService } from '../finality/FinalityProviderService';
+import { logger } from '../../utils/logger';
 
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
@@ -24,16 +25,16 @@ export class ValidatorInfoService {
         // Initialize clients for both networks
         try {
             this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-            console.log('[ValidatorInfo] Mainnet client initialized successfully');
+            logger.info('[ValidatorInfo] Mainnet client initialized successfully');
         } catch (error) {
-            console.warn('[ValidatorInfo] Mainnet is not configured, skipping');
+            logger.warn('[ValidatorInfo] Mainnet is not configured, skipping');
         }
 
         try {
             this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-            console.log('[ValidatorInfo] Testnet client initialized successfully');
+            logger.info('[ValidatorInfo] Testnet client initialized successfully');
         } catch (error) {
-            console.warn('[ValidatorInfo] Testnet is not configured, skipping');
+            logger.warn('[ValidatorInfo] Testnet is not configured, skipping');
         }
 
         if (this.babylonClients.size === 0) {
@@ -63,11 +64,11 @@ export class ValidatorInfoService {
             setInterval(() => {
                 // Store the update promise
                 this.updatePromise = this.retryUpdate().catch((error: Error) => {
-                    console.error('[ValidatorInfo] Periodic update failed:', error);
+                    logger.error('[ValidatorInfo] Periodic update failed:', error);
                 });
             }, this.updateInterval);
         } catch (error) {
-            console.error('[ValidatorInfo] Initial update failed:', error);
+            logger.error('[ValidatorInfo] Initial update failed:', error);
             throw error;
         }
     }
@@ -81,21 +82,21 @@ export class ValidatorInfoService {
                 await this.updateAllValidators();
                 success = true;
                 if (retryCount > 0) {
-                    console.log(`[ValidatorInfo] Successfully updated after ${retryCount + 1} attempts`);
+                    logger.info(`[ValidatorInfo] Successfully updated after ${retryCount + 1} attempts`);
                 }
             } catch (error) {
                 retryCount++;
-                console.error(`[ValidatorInfo] Update attempt ${retryCount}/${this.maxRetries} failed:`, error);
+                logger.error(`[ValidatorInfo] Update attempt ${retryCount}/${this.maxRetries} failed:`, error);
                 
                 if (retryCount < this.maxRetries) {
-                    console.log(`[ValidatorInfo] Retrying in ${this.retryDelay}ms...`);
+                    logger.info(`[ValidatorInfo] Retrying in ${this.retryDelay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, this.retryDelay));
                 }
             }
         }
 
         if (!success) {
-            console.error(`[ValidatorInfo] Failed to update validators after ${this.maxRetries} attempts`);
+            logger.error(`[ValidatorInfo] Failed to update validators after ${this.maxRetries} attempts`);
         }
     }
 
@@ -107,7 +108,7 @@ export class ValidatorInfoService {
             );
             await Promise.all(updatePromises);
         } catch (error) {
-            console.error('[ValidatorInfo] Error updating all validators:', error);
+            logger.error('[ValidatorInfo] Error updating all validators:', error);
         }
     }
 
@@ -115,17 +116,17 @@ export class ValidatorInfoService {
         try {
             const client = this.babylonClients.get(network);
             if (!client) {
-                console.warn(`[ValidatorInfo] No client configured for ${network}, skipping update`);
+                logger.warn(`[ValidatorInfo] No client configured for ${network}, skipping update`);
                 return;
             }
 
             const baseUrl = client.getBaseUrl();
-            console.log(`[ValidatorInfo] Fetching validators from ${network} using base URL: ${baseUrl}`);
+            logger.info(`[ValidatorInfo] Fetching validators from ${network} using base URL: ${baseUrl}`);
 
             // Fetch validators from Tendermint API
             const tmResponse = await axios.get(`${client.getRpcUrl()}/validators?page=1&per_page=500`);
             const tmValidators = tmResponse.data.result.validators;
-            console.log(`[ValidatorInfo] Found ${tmValidators.length} validators from Tendermint API`);
+            logger.info(`[ValidatorInfo] Found ${tmValidators.length} validators from Tendermint API`);
 
             // Create a map of tendermint validators by address
             const tmValidatorMap = new Map();
@@ -138,7 +139,7 @@ export class ValidatorInfoService {
             // Fetch all active validators from App API
             const cosmosResponse = await axios.get(`${baseUrl}/cosmos/staking/v1beta1/validators?pagination.limit=500`);
             const cosmosValidators = cosmosResponse.data.validators;
-            console.log(`[ValidatorInfo] Found ${cosmosValidators.length} validators from Cosmos API`);
+            logger.info(`[ValidatorInfo] Found ${cosmosValidators.length} validators from Cosmos API`);
 
             // Process each validator
             let updateCount = 0;
@@ -189,21 +190,21 @@ export class ValidatorInfoService {
 
                     updateCount++;
                 } catch (error: any) {
-                    console.error(`[ValidatorInfo] Error processing validator:`, {
+                    logger.error(`[ValidatorInfo] Error processing validator:`, {
                         moniker: validator.description?.moniker,
                         error: error.message || String(error)
                     });
                 }
             }
 
-            console.log(`[ValidatorInfo] Update summary for ${network}:`, {
+            logger.info(`[ValidatorInfo] Update summary for ${network}:`, {
                 total_validators: cosmosValidators.length,
                 updated_count: updateCount,
                 active_validators_with_power: activeValidatorsWithPower,
                 total_tendermint_validators: tmValidators.length
             });
         } catch (error) {
-            console.error(`[ValidatorInfo] Error fetching validators for ${network}:`, error);
+            logger.error(`[ValidatorInfo] Error fetching validators for ${network}:`, error);
             throw error;
         }
     }
@@ -225,7 +226,7 @@ export class ValidatorInfoService {
 
             return hexAddress;
         } catch (error) {
-            console.error('[ValidatorInfo] Error converting consensus pubkey to hex address:', error);
+            logger.error('[ValidatorInfo] Error converting consensus pubkey to hex address:', error);
             throw error;
         }
     }
@@ -245,7 +246,7 @@ export class ValidatorInfoService {
 
             return valconsAddress;
         } catch (error) {
-            console.error('[ValidatorInfo] Error converting to valcons address:', error);
+            logger.error('[ValidatorInfo] Error converting to valcons address:', error);
             throw error;
         }
     }
@@ -275,7 +276,7 @@ export class ValidatorInfoService {
                 { upsert: true, new: true }
             );
         } catch (error) {
-            console.error('[ValidatorInfo] Error updating validator info:', error);
+            logger.error('[ValidatorInfo] Error updating validator info:', error);
             throw error;
         }
     }
@@ -287,7 +288,7 @@ export class ValidatorInfoService {
                 network
             });
         } catch (error) {
-            console.error('[ValidatorInfo] Error getting validator by hex address:', error);
+            logger.error('[ValidatorInfo] Error getting validator by hex address:', error);
             throw error;
         }
     }
@@ -299,7 +300,7 @@ export class ValidatorInfoService {
                 network
             });
         } catch (error) {
-            console.error('[ValidatorInfo] Error getting validator by consensus address:', error);
+            logger.error('[ValidatorInfo] Error getting validator by consensus address:', error);
             throw error;
         }
     }
@@ -311,7 +312,7 @@ export class ValidatorInfoService {
                 network
             });
         } catch (error) {
-            console.error('[ValidatorInfo] Error getting validator by valoper address:', error);
+            logger.error('[ValidatorInfo] Error getting validator by valoper address:', error);
             throw error;
         }
     }
@@ -385,7 +386,7 @@ export class ValidatorInfoService {
                 }
             );
         } catch (error) {
-            console.error('[ValidatorInfo] Error matching validator with finality providers:', error);
+            logger.error('[ValidatorInfo] Error matching validator with finality providers:', error);
         }
     }
 
@@ -437,7 +438,7 @@ export class ValidatorInfoService {
                 total
             };
         } catch (error) {
-            console.error('[ValidatorInfo] Error getting all validators:', error);
+            logger.error('[ValidatorInfo] Error getting all validators:', error);
             throw error;
         }
     }

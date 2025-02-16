@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PointsProxyService } from '../../services/PointsProxyService';
 import { FinalityProviderService } from '../../database/services/FinalityProviderService';
+import { logger } from '../../utils/logger';
 
 const router = Router();
 const pointsProxyService = PointsProxyService.getInstance();
@@ -40,7 +41,7 @@ router.get('/finality-providers', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    console.error('Error fetching all finality provider points:', error);
+    logger.error('Error fetching all finality provider points:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -60,7 +61,7 @@ router.get('/finality-providers/:fpPkHex', async (req, res) => {
 
     res.json({ data: points });
   } catch (error) {
-    console.error('Error fetching finality provider points:', error);
+    logger.error('Error fetching finality provider points:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -103,7 +104,7 @@ router.post('/finality-providers/batch', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    console.error('Error fetching batch finality provider points:', error);
+    logger.error('Error fetching batch finality provider points:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

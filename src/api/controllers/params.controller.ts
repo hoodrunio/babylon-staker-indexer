@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import ParamsService from '../../services/params.service';
 import { Network } from '../../types/finality';
-
+import { logger } from '../../utils/logger';
 class ParamsController {
   static async getAllParams(req: Request, res: Response) {
     try {
@@ -23,7 +23,7 @@ class ParamsController {
       const params = await ParamsService.getAllParams(targetNetwork);
       res.json(params);
     } catch (error) {
-      console.error('Error in getAllParams:', error);
+      logger.error('Error in getAllParams:', error);
       if (error instanceof Error && error.message.includes('is not configured')) {
         res.status(404).json({ error: error.message });
       } else {

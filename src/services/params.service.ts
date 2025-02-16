@@ -1,6 +1,7 @@
 import { BabylonClient } from '../clients/BabylonClient';
 import { Network } from '../types/finality';
 import { CacheService } from './CacheService';
+import { logger } from '../utils/logger';
 
 class ParamsService {
   private static readonly CACHE_TTL = 7200; // 2 hours in seconds
@@ -72,7 +73,7 @@ class ParamsService {
 
       return params;
     } catch (error) {
-      console.error('Error fetching parameters:', error);
+      logger.error('Error fetching parameters:', error);
       throw error;
     }
   }

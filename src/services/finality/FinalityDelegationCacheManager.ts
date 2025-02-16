@@ -2,6 +2,7 @@ import { CacheService } from '../CacheService';
 import { DelegationResponse } from '../../types/finality/btcstaking';
 import { Network } from '../../types/finality';
 import { formatSatoshis } from '../../utils/util';
+import { logger } from '../../utils/logger';
 
 interface PaginatedDelegations {
     delegations: DelegationResponse[];
@@ -60,7 +61,7 @@ export class FinalityDelegationCacheManager {
             unbonding_amount_sat: 0
         });
 
-        console.log('Delegation Stats:', {
+        logger.info('Delegation Stats:', {
             total_delegations: delegations.length,
             active_delegations: delegations.filter(d => d.status === 'ACTIVE' && d.active).length,
             unbonding_delegations: delegations.filter(d => d.status === 'UNBONDED' || d.unbonding).length,
@@ -111,7 +112,7 @@ export class FinalityDelegationCacheManager {
             nextKey = data.next_key;
             isFirstFetch = false;
 
-            console.log(`Fetched ${data.delegations.length} delegations, total so far: ${allDelegations.length}`);
+            logger.info(`Fetched ${data.delegations.length} delegations, total so far: ${allDelegations.length}`);
         } while (nextKey);
 
         return {
@@ -157,7 +158,7 @@ export class FinalityDelegationCacheManager {
             
             // Cache yok veya son güncelleme üzerinden 30 dakika geçmişse, yeni veri çek
             if (!cached || (now - cached.last_updated > this.CACHE_TTL.DELEGATIONS_INITIAL * 1000)) {
-                console.log(`Cache miss or expired for ${cacheKey}, fetching all delegations...`);
+                logger.info(`Cache miss or expired for ${cacheKey}, fetching all delegations...`);
                 const { delegations, pagination_keys } = await this.fetchAllDelegations(fpBtcPkHex, network, fetchCallback);
                 
                 if (!delegations.length) {
@@ -171,7 +172,7 @@ export class FinalityDelegationCacheManager {
                     last_updated: now
                 };
                 
-                console.log(`Fetched ${delegations.length} total delegations with stats:`, cached.total_stats);
+                logger.info(`Fetched ${delegations.length} total delegations with stats:`, cached.total_stats);
                 
                 // Cache'i sonsuz TTL ile kaydet
                 await this.cache.set(cacheKey, cached, undefined);
@@ -205,7 +206,7 @@ export class FinalityDelegationCacheManager {
                 total_stats: cached.total_stats
             };
         } catch (error) {
-            console.error(`Error in getDelegations for ${cacheKey}:`, error);
+            logger.error(`Error in getDelegations for ${cacheKey}:`, error);
             return this.getEmptyResponse(page);
         }
     }
@@ -269,7 +270,7 @@ export class FinalityDelegationCacheManager {
                     // Cache'i sonsuz TTL ile güncelle
                     await this.cache.set(cacheKey, updatedCache, undefined);
                     
-                    console.log(`Background update completed for ${cacheKey}:`, {
+                    logger.info(`Background update completed for ${cacheKey}:`, {
                         new_unique_delegations: newUniqueDelegations.length,
                         total_delegations: updatedCache.delegations.length,
                         total_amount: updatedCache.total_stats.total_amount,
@@ -277,11 +278,11 @@ export class FinalityDelegationCacheManager {
                         unbonding_amount: updatedCache.total_stats.unbonding_amount
                     });
                 } else {
-                    console.log(`No new unique delegations found for ${cacheKey}`);
+                    logger.info(`No new unique delegations found for ${cacheKey}`);
                 }
             }
         } catch (error) {
-            console.error(`Error in background update for ${cacheKey}:`, error);
+            logger.error(`Error in background update for ${cacheKey}:`, error);
         }
     }
 
@@ -306,7 +307,7 @@ export class FinalityDelegationCacheManager {
 
                 await this.updateInBackground(fpBtcPkHex, network, fetchCallback, cached);
             } catch (error) {
-                console.error(`Error in update job for ${cacheKey}:`, error);
+                logger.error(`Error in update job for ${cacheKey}:`, error);
             }
         }, this.UPDATE_INTERVAL);
         

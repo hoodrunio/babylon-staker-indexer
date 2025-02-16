@@ -1,6 +1,7 @@
 import { Buffer } from 'buffer';
 import { bech32m, bech32 } from 'bech32';
 import { createHash } from 'crypto';
+import { logger } from './logger';
 
 /**
  * Prefix used to identify P2TR outputs
@@ -64,7 +65,7 @@ function extractInputAddress(script: Buffer): string | null {
         // Return null for other script types
         return null;
     } catch (error) {
-        console.error('Extract address error:', error);
+        logger.error('Extract address error:', error);
         return null;
     }
 }
@@ -128,7 +129,7 @@ function encodeBech32(hrp: string, data: Buffer, witnessVersion: number): string
             return bech32m.encode(hrp, [witnessVersion, ...words]);
         }
     } catch (error) {
-        console.error('Bech32 encoding error:', error);
+        logger.error('Bech32 encoding error:', error);
         throw new Error('Bech32 encoding failed: ' + (error as Error).message);
     }
 }
@@ -403,7 +404,7 @@ function extractSenderFromInput(buffer: Buffer, offset: number): { sender: strin
         offset += scriptLength;
         return { sender: null, newOffset: offset };
     } catch (error) {
-        console.warn('Error extracting sender from input:', error);
+        logger.warn('Error extracting sender from input:', error);
         return { sender: null, newOffset: offset };
     }
 }
@@ -423,13 +424,13 @@ export async function extractAddressesFromTransaction(
     }
 
     try {
-        // console.log('Parsing transaction hex:', txHex.substring(0, 100) + '...');
+        // logger.info('Parsing transaction hex:', txHex.substring(0, 100) + '...');
         const buffer = Buffer.from(txHex, 'hex');
         let offset = 4; // Skip version
 
         // Check for segwit
         const isSegwit = buffer[offset] === 0x00 && buffer[offset + 1] === 0x01;
-        // console.log('Is Segwit transaction:', isSegwit);
+        // logger.info('Is Segwit transaction:', isSegwit);
         if (isSegwit) {
             offset += 2;
         }
@@ -441,19 +442,19 @@ export async function extractAddressesFromTransaction(
 
         // Parse inputs
         const inputCount = readVarInt(buffer, offset);
-        // console.log('Number of inputs:', inputCount);
+        // logger.info('Number of inputs:', inputCount);
         offset += getVarIntSize(inputCount);
         
         if (inputCount > 0) {
             // İlk input'un previous output bilgilerini al
             const { txid, vout, newOffset } = extractPrevOutput(buffer, offset);
-            // console.log('Previous output:', { txid, vout });
+            // logger.info('Previous output:', { txid, vout });
             prevOutput = { txid, vout };
             offset = newOffset;
 
             // Input script'inden sender'ı çıkarmayı dene
             const { sender, newOffset: newOffsetAfterScript } = extractSenderFromInput(buffer, offset);
-            // console.log('Extracted sender from input:', sender);
+            // logger.info('Extracted sender from input:', sender);
             if (sender) {
                 senderAddress = sender;
             }
@@ -472,7 +473,7 @@ export async function extractAddressesFromTransaction(
 
         // Read outputs
         const outputCount = readVarInt(buffer, offset);
-        //console.log('Number of outputs:', outputCount);
+        //logger.info('Number of outputs:', outputCount);
         offset += getVarIntSize(outputCount);
 
         // Parse outputs
@@ -505,13 +506,13 @@ export async function extractAddressesFromTransaction(
             // İki P2TR output varsa ve input'tan sender bulunamadıysa:
             // İlk output stake amount için, ikinci output change address'i (sender) için
             senderAddress = p2trOutputs[1].address;
-            // console.log('Determined sender from P2TR change output:', senderAddress);
+            // logger.info('Determined sender from P2TR change output:', senderAddress);
         }
 
         // Eğer hala sender bulunamadıysa ve RPC URL varsa, önceki output'tan bulmayı dene
         if (!senderAddress && prevOutput && rpcUrl) {
             try {
-                // console.log('Fetching previous transaction:', prevOutput.txid);
+                // logger.info('Fetching previous transaction:', prevOutput.txid);
                 const response = await fetch(rpcUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -529,7 +530,7 @@ export async function extractAddressesFromTransaction(
                     senderAddress = address;
                 }
             } catch (error) {
-                console.warn('Failed to get previous transaction:', error);
+                logger.warn('Failed to get previous transaction:', error);
             }
         }
 
@@ -552,19 +553,19 @@ export async function testAddressExtraction() {
         }
     ];
 
-    console.log('Starting address extraction tests...\n');
+    logger.info('Starting address extraction tests...\n');
 
     for (const testCase of testCases) {
-        console.log(`Test Case: ${testCase.description}`);
-        console.log('Transaction Hex:', testCase.txHex);
+        logger.info(`Test Case: ${testCase.description}`);
+        logger.info('Transaction Hex:', testCase.txHex);
         
         const addresses = await extractAddressesFromTransaction(testCase.txHex, testCase.rpcUrl);
-        console.log('Sender Address:', addresses.sender);
-        console.log('-------------------\n');
+        logger.info('Sender Address:', addresses.sender);
+        logger.info('-------------------\n');
     }
 }
 
 // Run test function
 if (require.main === module) {
-    testAddressExtraction().catch(console.error);
+    testAddressExtraction().catch(logger.error);
 }

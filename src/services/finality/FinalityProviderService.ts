@@ -10,6 +10,7 @@ import {
     FinalityProviderWithMeta
 } from '../../types/finality/btcstaking';
 import { formatSatoshis, calculatePowerPercentage } from '../../utils/util';
+import { logger } from '../../utils/logger';
 
 interface CacheEntry<T> {
     data: T;
@@ -102,7 +103,7 @@ export class FinalityProviderService {
         try {
             await revalidationPromise;
         } catch (error) {
-            console.error(`Background revalidation failed for ${cacheKey}:`, error);
+            logger.error(`Background revalidation failed for ${cacheKey}:`, error);
         } finally {
             this.revalidationPromises.delete(cacheKey);
         }

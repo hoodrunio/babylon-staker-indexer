@@ -15,7 +15,7 @@ import pointsRouter from './points';
 import finalityRouter from './finality';
 import v1Router from './v1';
 import { FinalityProviderService } from '../../database/services/FinalityProviderService';
-
+import { logger } from '../../utils/logger';
 dotenv.config();
 const router = express.Router();
 const indexer = new BabylonIndexer();
@@ -207,7 +207,7 @@ router.get('/finality-providers/:address/grouped-stakers', paginationMiddleware,
       timestamp: Date.now()
     });
   } catch (error) {
-    console.error('Error fetching grouped stakers:', error);
+    logger.error('Error fetching grouped stakers:', error);
     res.status(500).json({ error: (error as Error).message });
   }
 });
@@ -334,7 +334,7 @@ router.get('/stakers/:address', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Staker lookup error:', error);
+    logger.error('Staker lookup error:', error);
     res.status(404).json({ 
       error: (error as Error).message,
       details: 'If you believe this is an error, please check the address format and time range parameters.'

@@ -2,6 +2,7 @@ import { BabylonClient } from '../../clients/BabylonClient';
 import { Network } from '../../types/finality';
 import { EpochInfo, EpochStats, SignatureStatsParams } from '../../types';
 import { FinalityProviderService } from './FinalityProviderService';
+import { logger } from '../../utils/logger';
 
 export class FinalityEpochService {
     private static instance: FinalityEpochService | null = null;
@@ -57,11 +58,11 @@ export class FinalityEpochService {
                 if (!this.currentEpochInfo || newEpochInfo.epochNumber > this.currentEpochInfo.epochNumber) {
                     this.currentEpochInfo = newEpochInfo;
                     await this.cleanupOldEpochs();
-                    console.debug(`[EpochService] Epoch updated to ${this.currentEpochInfo.epochNumber} at height ${currentHeight}, boundary: ${this.currentEpochInfo.boundary}`);
+                    logger.debug(`[EpochService] Epoch updated to ${this.currentEpochInfo.epochNumber} at height ${currentHeight}, boundary: ${this.currentEpochInfo.boundary}`);
                 }
             }
         } catch (error) {
-            console.error('Error checking and updating epoch:', error);
+            logger.error('Error checking and updating epoch:', error);
             throw error;
         }
     }
@@ -83,7 +84,7 @@ export class FinalityEpochService {
             }
         }
 
-        console.debug(`[EpochService] Cleaned up epochs older than ${oldestEpochToKeep}, current cache size: ${this.epochCache.size}`);
+        logger.debug(`[EpochService] Cleaned up epochs older than ${oldestEpochToKeep}, current cache size: ${this.epochCache.size}`);
     }
 
     public async calculateEpochForHeight(height: number): Promise<EpochInfo> {
@@ -184,11 +185,11 @@ export class FinalityEpochService {
                 timestamp: Date.now()
             };
 
-            console.debug(`[Stats] Updated epoch ${currentEpoch.epochNumber} stats with ${providerStats.length} providers`);
+            logger.debug(`[Stats] Updated epoch ${currentEpoch.epochNumber} stats with ${providerStats.length} providers`);
             
             return epochStats;
         } catch (error) {
-            console.error('Error updating current epoch stats:', error);
+            logger.error('Error updating current epoch stats:', error);
             throw error;
         } finally {
             this.statsUpdateLock.delete(lockKey);
@@ -242,7 +243,7 @@ export class FinalityEpochService {
                 timestamp: Date.now()
             };
         } catch (error) {
-            console.error(`Error getting current epoch stats for provider ${fpBtcPkHex}:`, error);
+            logger.error(`Error getting current epoch stats for provider ${fpBtcPkHex}:`, error);
             throw error;
         }
     }

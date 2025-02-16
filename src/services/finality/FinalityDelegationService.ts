@@ -10,6 +10,7 @@ import { formatSatoshis } from '../../utils/util';
 import { getTxHash } from '../../utils/generate-tx-hash';
 import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
 import { Document } from 'mongoose';
+import { logger } from '../../utils/logger';
 
 interface DelegationDocument extends Document {
     stakerAddress: string;
@@ -67,7 +68,7 @@ export class FinalityDelegationService {
 
         const totalSat = Number(del.total_sat);
         if (isNaN(totalSat)) {
-            console.warn(`Invalid total_sat value for delegation:`, del);
+            logger.warn(`Invalid total_sat value for delegation:`, del);
             return null;
         }
 
@@ -308,7 +309,7 @@ export class FinalityDelegationService {
                 }
             };
         } catch (error) {
-            console.error('Error fetching delegations from database:', error);
+            logger.error('Error fetching delegations from database:', error);
             throw error;
         }
     }

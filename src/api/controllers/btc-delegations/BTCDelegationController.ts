@@ -3,7 +3,7 @@ import { Network } from '../../../types/finality';
 import { NewBTCDelegation } from '../../../database/models/NewBTCDelegation';
 import { formatSatoshis } from '../../../utils/util';
 import { BTCDelegationStatus } from '../../../types/finality/btcstaking';
-
+import { logger } from '../../../utils/logger';
 interface DelegationQuery {
     stakerAddress: string;
     networkType: string;
@@ -21,13 +21,13 @@ export class BTCDelegationController {
 
             // Status kontrolü
             if (!Object.values(BTCDelegationStatus).includes(status as BTCDelegationStatus)) {
-                console.error(`Invalid status: ${status}`);
+                logger.error(`Invalid status: ${status}`);
                 return res.status(400).json({
                     error: `Invalid status. Must be one of: ${Object.values(BTCDelegationStatus).join(', ')}`
                 });
             }
 
-            console.log(`Fetching delegations with status: ${status}, network: ${network}, page: ${page}, limit: ${limit}`);
+            logger.info(`Fetching delegations with status: ${status}, network: ${network}, page: ${page}, limit: ${limit}`);
 
             // ANY durumu için özel kontrol
             const stateQuery = status === 'ANY' 
@@ -48,7 +48,7 @@ export class BTCDelegationController {
                 NewBTCDelegation.find(baseQuery).select('totalSat')
             ]);
 
-            console.log(`Found ${delegations.length} delegations out of ${total} total`);
+            logger.info(`Found ${delegations.length} delegations out of ${total} total`);
 
             // Calculate total amount from all delegations
             const totalAmountSat = allDelegations.reduce((sum, d) => sum + d.totalSat, 0);
@@ -93,10 +93,10 @@ export class BTCDelegationController {
                 }
             };
 
-            console.log(`Returning response with ${formattedDelegations.length} delegations`);
+            logger.info(`Returning response with ${formattedDelegations.length} delegations`);
             res.json(response);
         } catch (error) {
-            console.error('Error in getDelegationsByStatus:', error);
+            logger.error('Error in getDelegationsByStatus:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
@@ -138,7 +138,7 @@ export class BTCDelegationController {
 
             res.json(response);
         } catch (error) {
-            console.error('Error in getDelegationByTxHash:', error);
+            logger.error('Error in getDelegationByTxHash:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }
@@ -154,13 +154,13 @@ export class BTCDelegationController {
 
             // Status kontrolü
             if (status !== 'ANY' && !Object.values(BTCDelegationStatus).includes(status as BTCDelegationStatus)) {
-                console.error(`Invalid status: ${status}`);
+                logger.error(`Invalid status: ${status}`);
                 return res.status(400).json({
                     error: `Invalid status. Must be one of: ${Object.values(BTCDelegationStatus).join(', ')}, ANY`
                 });
             }
 
-            console.log(`Fetching delegations for staker: ${stakerAddress}, network: ${network}, page: ${page}, limit: ${limit}, status: ${status}`);
+            logger.info(`Fetching delegations for staker: ${stakerAddress}, network: ${network}, page: ${page}, limit: ${limit}, status: ${status}`);
 
             const baseQuery: DelegationQuery = {
                 stakerAddress,
@@ -181,7 +181,7 @@ export class BTCDelegationController {
                 NewBTCDelegation.find(baseQuery).select('totalSat')
             ]);
 
-            console.log(`Found ${delegations.length} delegations out of ${total} total for staker ${stakerAddress}`);
+            logger.info(`Found ${delegations.length} delegations out of ${total} total for staker ${stakerAddress}`);
 
             // Calculate total amount from all delegations
             const totalAmountSat = allDelegations.reduce((sum, d) => sum + d.totalSat, 0);
@@ -226,7 +226,7 @@ export class BTCDelegationController {
                 }
             });
         } catch (error) {
-            console.error('Error in getDelegationsByStakerAddress:', error);
+            logger.error('Error in getDelegationsByStakerAddress:', error);
             return res.status(500).json({ error: 'Internal server error' });
         }
     }

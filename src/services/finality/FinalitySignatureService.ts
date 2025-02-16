@@ -13,6 +13,7 @@ import { FinalitySSEManager } from './FinalitySSEManager';
 import { FinalityCacheManager } from './FinalityCacheManager';
 import { FinalityWebSocketManager } from './FinalityWebSocketManager';
 import { FinalityBlockProcessor } from './FinalityBlockProcessor';
+import { logger } from '../../utils/logger';
 
 export class FinalitySignatureService {
     private static instance: FinalitySignatureService | null = null;
@@ -65,7 +66,7 @@ export class FinalitySignatureService {
     }
 
     public async start(): Promise<void> {
-        console.log('[FinalityService] Starting signature monitoring service...');
+        logger.info('[FinalityService] Starting signature monitoring service...');
         
         // Start block processor
         await this.blockProcessor.start();
@@ -85,7 +86,7 @@ export class FinalitySignatureService {
     }
 
     public stop(): void {
-        console.log('[FinalityService] Stopping signature monitoring service...');
+        logger.info('[FinalityService] Stopping signature monitoring service...');
         this.blockProcessor.stop();
         this.wsManager.stop();
     }
@@ -131,7 +132,7 @@ export class FinalitySignatureService {
             }
 
             if (missingCount > 0) {
-                console.debug(`[Stats] ${missingCount} blocks have no signature data in the range ${fetchStartHeight}-${actualEndHeight}`);
+                logger.debug(`[Stats] ${missingCount} blocks have no signature data in the range ${fetchStartHeight}-${actualEndHeight}`);
                 
                 // Batch size for parallel processing
                 const BATCH_SIZE = 10;
@@ -266,7 +267,7 @@ export class FinalitySignatureService {
                 .length;
 
             if (missingBlocksCount > 0) {
-                console.debug(`[Stats] ${missingBlocksCount} blocks have no signature data in the range ${startHeight}-${endHeight}`);
+                logger.debug(`[Stats] ${missingBlocksCount} blocks have no signature data in the range ${startHeight}-${endHeight}`);
                 this.missingBlocksLogCache.set(rangeKey, Date.now());
 
                 // Clean up old cache entries
