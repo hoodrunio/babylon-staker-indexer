@@ -91,11 +91,22 @@ async function startServer() {
         process.exit(0);
     });
 
-    process.on('SIGINT', () => {
+    process.on('SIGINT', async () => {
         logger.info('SIGINT signal received. Closing HTTP server...');
-        websocketService.stop();
-        finalityService.stop();
-        process.exit(0);
+        try {
+            // Stop all services
+            websocketService.stop();
+            finalityService.stop();
+            
+            // Wait a bit for cleanup
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            logger.info('All services stopped. Exiting...');
+            process.exit(0);
+        } catch (error) {
+            logger.error('Error during shutdown:', error);
+            process.exit(1);
+        }
     });
 }
 
