@@ -53,7 +53,7 @@ export class NewBTCDelegationService {
         startHeight?: number
     ) {
         try {
-            logger.info('Updating delegation state:', stakingTxIdHex);
+            logger.info(`[Updating delegation state] ${stakingTxIdHex}`);
             
             const updateData: any = { state };
             if (endHeight !== undefined) updateData.endHeight = endHeight;
@@ -76,7 +76,7 @@ export class NewBTCDelegationService {
                 return null;
             }
 
-            logger.info('Delegation state updated successfully:', stakingTxIdHex);
+            logger.info(`[Delegation state updated successfully] ${stakingTxIdHex}`);
 
             return result;
         } catch (error) {

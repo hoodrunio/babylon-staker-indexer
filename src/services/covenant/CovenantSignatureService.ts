@@ -100,24 +100,32 @@ export class CovenantSignatureService {
     ): Promise<{
         totalSignatures: number;
         missedSignatures: number;
+        signedSignatures: number;
         signatureRate: number;
     }> {
         try {
             const allTxs = await CovenantSignature.find({ networkType });
             let totalSignatures = 0;
             let missedSignatures = 0;
+            let signedSignatures = 0;
 
             for (const tx of allTxs) {
                 const memberSignatures = tx.signatures.filter(s => s.covenantBtcPkHex === covenantBtcPkHex);
-                totalSignatures += memberSignatures.length;
-                missedSignatures += memberSignatures.filter(s => s.state === 'MISSED').length;
+                const signedCount = memberSignatures.filter(s => s.state === 'SIGNED').length;
+                const missedCount = memberSignatures.filter(s => s.state === 'MISSED').length;
+                
+                signedSignatures += signedCount;
+                missedSignatures += missedCount;
+                totalSignatures += signedCount + missedCount; // Pending durumları hariç tut
             }
 
-            const signatureRate = totalSignatures > 0 ? ((totalSignatures - missedSignatures) / totalSignatures) * 100 : 100;
+            // Eğer missed imza yoksa %100, varsa signed/(signed+missed)
+            const signatureRate = missedSignatures === 0 ? 100 : ((signedSignatures / totalSignatures) * 100);
 
             return {
                 totalSignatures,
                 missedSignatures,
+                signedSignatures,
                 signatureRate
             };
         } catch (error) {

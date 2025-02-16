@@ -239,7 +239,7 @@ export class BTCDelegationEventHandler {
             if (!result) {
                 logger.error('Failed to update delegation state:', parsedData);
             } else {
-                logger.info('Successfully updated delegation state:', stakingTxHash);
+                logger.info(`[Successfully updated delegation state ${stakingTxHash}`);
             }
         } catch (error) {
             logger.error('Error handling delegation state update:', error);
@@ -394,7 +394,7 @@ export class BTCDelegationEventHandler {
                 return;
             }
 
-            logger.info('Found delegation for inclusion proof:', stakingTxIdHex);
+            logger.info(`Found delegation for inclusion proof: ${stakingTxIdHex}`);
 
             const result = await this.delegationService.updateDelegationState(
                 stakingTxIdHex,
@@ -519,7 +519,7 @@ export class BTCDelegationEventHandler {
             if (!result) {
                 logger.error('Failed to update delegation state:', parsedData);
             } else {
-                logger.info('Successfully updated delegation state:', stakingTxHash);
+                logger.info(`Successfully updated delegation state ${stakingTxHash}`);
             }
         } catch (error) {
             logger.error('Error handling delegation expired:', error);

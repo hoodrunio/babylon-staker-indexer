@@ -10,7 +10,6 @@ import {
   corsMiddleware 
 } from '../middleware';
 import dotenv from 'dotenv';
-import { Router } from 'express';
 import pointsRouter from './points';
 import finalityRouter from './finality';
 import v1Router from './v1';

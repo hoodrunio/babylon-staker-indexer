@@ -216,10 +216,11 @@ export class BabylonClient {
     async getCurrentEpoch(): Promise<CurrentEpochResponse> {
         try {
             const response = await this.client.get('/babylon/epoching/v1/current_epoch');
-            logger.debug('[Current Epoch Response]', response.data);
+            const data = response.data;
+            logger.debug(`[Current Epoch Response] Current epoch: ${data.current_epoch}, Boundary: ${data.epoch_boundary}`);
 
-            const current_epoch = Number(response.data.current_epoch);
-            const epoch_boundary = Number(response.data.epoch_boundary);
+            const current_epoch = Number(data.current_epoch);
+            const epoch_boundary = Number(data.epoch_boundary);
 
             if (isNaN(current_epoch) || isNaN(epoch_boundary)) {
                 throw new Error('Invalid epoch data received from API');

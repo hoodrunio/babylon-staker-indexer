@@ -197,12 +197,7 @@ export class ValidatorInfoService {
                 }
             }
 
-            logger.info(`[ValidatorInfo] Update summary for ${network}:`, {
-                total_validators: cosmosValidators.length,
-                updated_count: updateCount,
-                active_validators_with_power: activeValidatorsWithPower,
-                total_tendermint_validators: tmValidators.length
-            });
+            logger.info(`[ValidatorInfo] Update summary for ${network}: total_validators: ${cosmosValidators.length}, updated_count: ${updateCount}, active_validators_with_power: ${activeValidatorsWithPower}, total_tendermint_validators: ${tmValidators.length}`);
         } catch (error) {
             logger.error(`[ValidatorInfo] Error fetching validators for ${network}:`, error);
             throw error;

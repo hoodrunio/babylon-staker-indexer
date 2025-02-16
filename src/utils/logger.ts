@@ -1,10 +1,15 @@
 import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 
-// Metadata temizleme fonksiyonu
+// Metadata temizleme ve formatlama fonksiyonu
 const cleanMetadata = (obj: any): any => {
     if (typeof obj !== 'object' || obj === null) {
         return obj;
+    }
+
+    // Subscription mesajlarını özel formatlama
+    if (obj.jsonrpc === '2.0' && obj.id && obj.result !== undefined) {
+        return `${obj.id}`;
     }
 
     // Eğer tüm keyler sayısal ve sıralı ise, string birleştirme
@@ -14,12 +19,30 @@ const cleanMetadata = (obj: any): any => {
         return keys.map(k => obj[k]).join('');
     }
 
+    // Boş objeleri temizle
+    if (Object.keys(obj).length === 0) {
+        return undefined;
+    }
+
     // Recursive olarak tüm objeyi temizle
     const cleaned: any = {};
     for (const [key, value] of Object.entries(obj)) {
-        cleaned[key] = cleanMetadata(value);
+        const cleanedValue = cleanMetadata(value);
+        if (cleanedValue !== undefined) {
+            cleaned[key] = cleanedValue;
+        }
     }
-    return cleaned;
+    return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+};
+
+// Mesaj formatlama fonksiyonu
+const formatMessage = (message: string, metadata: Record<string, any>): string => {
+    // Subscription mesajlarını özel formatlama
+    if (message.includes('subscription confirmed')) {
+        const subscriptionId = cleanMetadata(metadata);
+        return typeof subscriptionId === 'string' ? `Subscription confirmed: ${subscriptionId}` : message;
+    }
+    return message;
 };
 
 // Custom format oluşturma
@@ -31,12 +54,12 @@ const customFormat = winston.format.combine(
     winston.format.splat(),
     winston.format.printf(({ level, message, timestamp, stack, ...metadata }) => {
         // Ana mesaj formatı
-        let log = `${timestamp} ${level.toUpperCase().padEnd(7)}: ${message}`;
+        let log = `${timestamp} ${level.toUpperCase().padEnd(7)}: ${formatMessage(message as string, metadata)}`;
         
         // Metadata varsa temizle ve ekle
         const { service, environment, ...restMetadata } = metadata;
-        if (Object.keys(restMetadata).length > 0) {
-            const cleanedMetadata = cleanMetadata(restMetadata);
+        const cleanedMetadata = cleanMetadata(restMetadata);
+        if (cleanedMetadata && Object.keys(cleanedMetadata).length > 0) {
             log += `\n${JSON.stringify(cleanedMetadata, null, 2)}`;
         }
         
@@ -59,12 +82,12 @@ const consoleFormat = winston.format.combine(
     winston.format.colorize({ all: true }),
     winston.format.printf(({ level, message, timestamp, stack, ...metadata }) => {
         // Ana mesaj formatı
-        let log = `${timestamp} ${level.padEnd(7)}: ${message}`;
+        let log = `${timestamp} ${level.padEnd(7)}: ${formatMessage(message as string, metadata)}`;
         
         // Metadata varsa temizle ve ekle
         const { service, environment, ...restMetadata } = metadata;
-        if (Object.keys(restMetadata).length > 0) {
-            const cleanedMetadata = cleanMetadata(restMetadata);
+        const cleanedMetadata = cleanMetadata(restMetadata);
+        if (cleanedMetadata && Object.keys(cleanedMetadata).length > 0) {
             log += `\n${JSON.stringify(cleanedMetadata, null, 2)}`;
         }
         
