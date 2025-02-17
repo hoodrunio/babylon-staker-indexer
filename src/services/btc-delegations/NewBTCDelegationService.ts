@@ -270,7 +270,7 @@ export class NewBTCDelegationService {
 
             // logger.info('Event keys:', Object.keys(events));
 
-            // BTCDelegationCreated event'ini bul
+            // Find BTCDelegationCreated event
             const btcDelegationEvent = events.find((event: any) => 
                 event.type === 'babylon.btcstaking.v1.EventBTCDelegationCreated'
             );
@@ -286,7 +286,7 @@ export class NewBTCDelegationService {
                 return acc;
             }, {});
 
-            // Sender bilgisini message event'inden al
+            // Get sender information from message event
             const messageEvent = events.find((event: any) => 
                 event.type === 'message' && 
                 event.attributes.some((attr: any) => attr.key === 'sender')

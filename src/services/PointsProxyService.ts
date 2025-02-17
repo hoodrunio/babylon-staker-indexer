@@ -146,7 +146,7 @@ export class PointsProxyService {
         };
         await this.cacheService.set(cacheKey, data, this.cacheTTL);
       } else {
-        // Veri yoksa bunu da cache'le
+        // If there is no data, cache this too
         const noDataResponse: PointsResponse = {
           finality_provider_pk_hex: formattedPkHex,
           points: 0,
@@ -167,13 +167,13 @@ export class PointsProxyService {
     const formattedPkHex = this.formatPublicKey(fpPkHex);
     const cacheKey = this.cacheService.generateKey('fp_points', { fpPkHex: formattedPkHex });
     
-    // Cache'den oku
+    // Read from cache
     const cachedData = await this.cacheService.get<PointsResponse>(cacheKey);
     if (cachedData) {
       return cachedData;
     }
 
-    // Cache'de yoksa API'dan al
+    // If not in cache, get from API
     let retries = 0;
     while (retries < this.maxRetries) {
       try {

@@ -79,7 +79,7 @@ export class WebsocketHealthTracker {
                 currentState.lastProcessedHeight = height;
                 this.state.set(network, currentState);
 
-                // Cache'e kaydet
+                // Save to cache
                 await this.cacheService.set(
                     `${this.CACHE_KEY_PREFIX}${network}`,
                     height,
@@ -129,7 +129,7 @@ export class WebsocketHealthTracker {
                 state.lastProcessedHeight = currentHeight;
                 this.state.set(network, state);
 
-                // Cache'e kaydet
+                // Save to cache
                 await this.cacheService.set(
                     `${this.CACHE_KEY_PREFIX}${network}`,
                     currentHeight,

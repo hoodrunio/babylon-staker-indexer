@@ -258,15 +258,15 @@ function getRPC(): BitcoinRPC {
   try {
     logger.info('\n=== Staking & Unbonding Transaction Analysis ===');
     
-    // 1. Staking Transaction'ı analiz et
+    // 1. Analyze Staking Transaction
     logger.info('\n1. Staking Transaction Analysis:', stakingTxHash);
     const stakingTx = await rpc.call('getrawtransaction', [stakingTxHash, true]);
     
-    // OP_RETURN çıktısını bul ve parse et
+    // Find and parse OP_RETURN output
     const opReturnOutput = stakingTx.vout.find((out: any) => out.scriptPubKey.type === 'nulldata');
     const opReturnData = opReturnOutput ? parseOpReturn(opReturnOutput.scriptPubKey.hex) : null;
     
-    // Taproot çıktılarını bul
+    // Find Taproot outputs
     const taprootOutputs = stakingTx.vout.filter((out: any) => out.scriptPubKey.type === 'witness_v1_taproot');
     
     logger.info('\nStaking TX Details:');
@@ -274,7 +274,7 @@ function getRPC(): BitcoinRPC {
     logger.info('- Taproot outputs:', taprootOutputs.length);
     logger.info('- Has OP_RETURN:', !!opReturnOutput);
     
-    // Her bir output'u detaylı göster
+    // Show each output in detail
     stakingTx.vout.forEach((out: any, index: number) => {
       logger.info(`\nOutput #${index}:`);
       logger.info('- Type:', out.scriptPubKey.type);
@@ -284,7 +284,7 @@ function getRPC(): BitcoinRPC {
       }
     });
 
-    // 2. Unbonding Transaction'ı analiz et
+    // 2. Analyze Unbonding Transaction
     logger.info('\n2. Unbonding Transaction Analysis:', unbondingTxHash);
     const unbondingTx = await rpc.call('getrawtransaction', [unbondingTxHash, true]);
     
@@ -292,13 +292,13 @@ function getRPC(): BitcoinRPC {
     logger.info('- Input count:', unbondingTx.vin.length);
     logger.info('- Output count:', unbondingTx.vout.length);
     
-    // Input analizi
+    // Input analysis
     for (const [index, input] of unbondingTx.vin.entries()) {
       logger.info(`\nInput #${index}:`);
       logger.info('- Previous TX:', input.txid);
       logger.info('- Previous Output Index:', input.vout);
       
-      // Input'un referans verdiği transaction'ı kontrol et
+      // Check the transaction referenced by the input
       const prevTx = await rpc.call('getrawtransaction', [input.txid, true]);
       const referencedOutput = prevTx.vout[input.vout];
       
@@ -306,12 +306,12 @@ function getRPC(): BitcoinRPC {
       logger.info('- Type:', referencedOutput.scriptPubKey.type);
       logger.info('- Value:', referencedOutput.value, 'BTC');
       
-      // Eğer staking tx'e referans veriyorsa
+      // If it refers to the staking tx
       if (input.txid === stakingTxHash) {
         logger.info('\n🔍 STAKING CONNECTION FOUND!');
         logger.info(`This unbonding transaction spends output #${input.vout} of the staking transaction`);
         
-        // Babylon API ile doğrula
+        // Verify with Babylon API
         const babylonData = await validateWithBabylonAPI(stakingTxHash);
         if (babylonData) {
           logger.info('\nBabylon API Validation:');
@@ -324,7 +324,7 @@ function getRPC(): BitcoinRPC {
       }
     }
     
-    // Output analizi
+    // Output analysis
     unbondingTx.vout.forEach((out: any, index: number) => {
       logger.info(`\nOutput #${index}:`);
       logger.info('- Type:', out.scriptPubKey.type);
@@ -339,7 +339,7 @@ function getRPC(): BitcoinRPC {
   }
 }
 
-// Test transaction çiftlerini ekle
+// Add test transaction pairs
 const TEST_PAIRS = [
   {
     staking: '919188ba1625f49a4304780c5ab0e557cbbb75ffc7ad237cc5743724f7524e56',
@@ -347,16 +347,16 @@ const TEST_PAIRS = [
   }
 ]; */
 
-// Main fonksiyonunu güncelle
+// Update main function
 async function main() {
   logger.info('Starting Taproot transaction analysis...');
   
-  // Mevcut test transaction'ları analiz et
+  // Analyze existing test transactions
   for (const txid of TEST_TXIDS) {
     await analyzeTaprootTransaction(txid);
   }
   
-  // Staking-Unbonding çiftlerini analiz et
+  // Analyze Staking-Unbonding pairs
  /*  for (const pair of TEST_PAIRS) {
     await analyzeStakingUnbondingPair(pair.staking, pair.unbonding);
   } */

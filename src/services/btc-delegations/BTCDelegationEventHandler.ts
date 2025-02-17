@@ -160,7 +160,7 @@ export class BTCDelegationEventHandler {
             
             // Check websocket event structure
             if (txData.value?.TxResult) {
-                // Websocket event'i
+                // Websocket event
                 const txResult = txData.value.TxResult;
                 eventDataWithHashAndSender = {
                     ...txData,
@@ -171,7 +171,7 @@ export class BTCDelegationEventHandler {
                         ?.attributes.find((a: any) => a.key === 'sender')?.value
                 };
             } else if (txData.events) {
-                // MissedBlocksProcessor'dan gelen event
+                // Event from MissedBlocksProcessor
                 eventDataWithHashAndSender = {
                     ...txData,
                     hash: txData.hash,
