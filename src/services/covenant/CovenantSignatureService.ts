@@ -2,7 +2,7 @@ import { CovenantSignature, ICovenantSignatureDocument } from '../../database/mo
 import { logger } from '../../utils/logger';
 
 export class CovenantSignatureService {
-    // Yeni delegasyon oluşturulduğunda
+    // When a new delegation is created
     async createPendingSignatures(
         stakingTxIdHex: string,
         networkType: string,
@@ -35,7 +35,7 @@ export class CovenantSignatureService {
         }
     }
 
-    // İmza alındığında
+    // When a signature is received
     async recordSignature(
         stakingTxIdHex: string,
         covenantBtcPkHex: string,
@@ -63,7 +63,7 @@ export class CovenantSignatureService {
         }
     }
 
-    // Delegasyon durumu değiştiğinde
+    // When the delegation status changes
     async handleStateChange(
         stakingTxIdHex: string,
         newState: string,
@@ -93,7 +93,7 @@ export class CovenantSignatureService {
         }
     }
 
-    // İmza istatistiklerini getir
+    // Get signature statistics
     async getSignatureStats(
         networkType: string,
         covenantBtcPkHex: string
@@ -116,10 +116,10 @@ export class CovenantSignatureService {
                 
                 signedSignatures += signedCount;
                 missedSignatures += missedCount;
-                totalSignatures += signedCount + missedCount; // Pending durumları hariç tut
+                totalSignatures += signedCount + missedCount; // Exclude Pending states
             }
 
-            // Eğer missed imza yoksa %100, varsa signed/(signed+missed)
+            // If there are no missed signatures, it's 100%, otherwise signed/(signed+missed)
             const signatureRate = missedSignatures === 0 ? 100 : ((signedSignatures / totalSignatures) * 100);
 
             return {
@@ -133,4 +133,4 @@ export class CovenantSignatureService {
             throw error;
         }
     }
-} 
+}

@@ -5,7 +5,7 @@ import covenantMembers from '../../config/covenant-members.json';
 import { Network } from '../../types/finality';
 
 export class CovenantController {
-    // Tüm covenant üyelerini getir
+    // Get all covenant members
     public async getCovenantMembers(req: Request, res: Response) {
         try {
             const network = (req.query.network as string || 'testnet') === 'mainnet' ? Network.MAINNET : Network.TESTNET;
@@ -26,14 +26,14 @@ export class CovenantController {
         }
     }
 
-    // Belirli bir üyenin imza istatistiklerini getir
+    // Get signature statistics for a specific member
     public async getMemberStats(req: Request, res: Response) {
         try {
             const { publicKey } = req.params;
             const network = (req.query.network as string || 'testnet') === 'mainnet' ? Network.MAINNET : Network.TESTNET;
             const keyField = network === Network.MAINNET ? 'mainnetPublicKeys' : 'testnetPublicKeys';
 
-            // Üye bilgilerini bul
+            // Find member information
             const member = covenantMembers.find(m => m[keyField]?.includes(publicKey));
             if (!member) {
                 return res.status(404).json({
@@ -42,7 +42,7 @@ export class CovenantController {
                 });
             }
 
-            // İmza istatistiklerini hesapla
+            // Calculate signature statistics
             const allTxs = await CovenantSignature.find({ networkType: network });
             let totalSignatures = 0;
             let missedSignatures = 0;
@@ -56,9 +56,9 @@ export class CovenantController {
                 
                 signedSignatures += signedCount;
                 missedSignatures += missedCount;
-                totalSignatures += signedCount + missedCount; // Pending durumları hariç tut
+                totalSignatures += signedCount + missedCount; // Exclude pending states
 
-                // Son aktiviteleri topla
+                // Collect recent activities
                 memberSignatures.forEach(sig => {
                     if (sig.state !== 'PENDING' && recentTransactions.length < 5) {
                         recentTransactions.push({
@@ -70,17 +70,17 @@ export class CovenantController {
                 });
             }
 
-            // Son aktiviteleri tarihe göre sırala
+            // Sort recent activities by date
             recentTransactions.sort((a, b) => {
                 if (!a.signedAt) return 1;
                 if (!b.signedAt) return -1;
                 return new Date(b.signedAt).getTime() - new Date(a.signedAt).getTime();
             });
 
-            // Eğer missed imza yoksa %100, varsa signed/(signed+missed)
+            // If no missed signatures, 100%, otherwise signed/(signed+missed)
             const signatureRate = missedSignatures === 0 ? 100 : ((signedSignatures / totalSignatures) * 100);
 
-            // Son imza ve kaçırma tarihlerini bul
+            // Find last signature and miss dates
             const lastSignedTx = recentTransactions.find(tx => tx.state === 'SIGNED');
             const lastMissedTx = recentTransactions.find(tx => tx.state === 'MISSED');
 
@@ -115,7 +115,7 @@ export class CovenantController {
         }
     }
 
-    // Belirli bir transaction için imza durumlarını getir
+    // Get signature statuses for a specific transaction
     public async getTransactionSignatures(req: Request, res: Response) {
         try {
             const { txHash } = req.params;
@@ -150,7 +150,7 @@ export class CovenantController {
         }
     }
 
-    // Son N transaction'ın imza durumlarını getir
+    // Get signature statuses of the last N transactions
     public async getRecentTransactions(req: Request, res: Response) {
         try {
             const { limit = 10 } = req.query;
@@ -164,7 +164,7 @@ export class CovenantController {
             const formattedTxs = recentTxs.map(tx => {
                 const signedCount = tx.signedCount;
                 const missedCount = tx.missedCount;
-                const totalCount = signedCount + missedCount; // Pending hariç
+                const totalCount = signedCount + missedCount; // Exclude pending
                 const signatureRate = missedCount === 0 ? 100 : (totalCount > 0 ? ((signedCount / totalCount) * 100) : 0);
 
                 return {
@@ -187,7 +187,7 @@ export class CovenantController {
         }
     }
 
-    // Özet istatistikleri getir
+    // Get summary statistics
     public async getSummaryStats(req: Request, res: Response) {
         try {
             const network = (req.query.network as string || 'testnet') === 'mainnet' ? Network.MAINNET : Network.TESTNET;
@@ -202,17 +202,17 @@ export class CovenantController {
                 memberStats: new Map()
             };
 
-            // Her bir transaction için istatistikleri hesapla
+            // Calculate statistics for each transaction
             for (const tx of allTxs) {
                 const signedCount = tx.signedCount;
                 const missedCount = tx.missedCount;
                 stats.totalSigned += signedCount;
                 stats.totalMissed += missedCount;
-                stats.totalSignatures += signedCount + missedCount; // Pending hariç
+                stats.totalSignatures += signedCount + missedCount; // Exclude pending
 
-                // Üye bazlı istatistikleri hesapla
+                // Calculate member-based statistics
                 for (const sig of tx.signatures) {
-                    if (sig.state === 'PENDING') continue; // Pending durumları atla
+                    if (sig.state === 'PENDING') continue; // Skip pending states
 
                     const memberStats = stats.memberStats.get(sig.covenantBtcPkHex) || {
                         total: 0,
@@ -232,7 +232,7 @@ export class CovenantController {
                 }
             }
 
-            // Üye istatistiklerini formatla
+            // Format member statistics
             const formattedMemberStats = Array.from(stats.memberStats.entries()).map(([key, value]) => ({
                 publicKey: key,
                 totalSignatures: value.total,

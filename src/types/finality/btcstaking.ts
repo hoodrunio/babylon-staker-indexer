@@ -111,81 +111,81 @@ export interface QueryFinalityProviderDelegationsResponse {
 }
 
 export interface FinalityProviderPower {
-    /** Provider'ın BTC public key'i (hex formatında) */
+    /** Provider's BTC public key (in hex format) */
     fpBtcPkHex?: string;
     
-    /** Provider'ın voting power'ı (BTC cinsinden, formatlanmış) */
+    /** Provider's voting power (in BTC, formatted) */
     power: string;
     
-    /** Provider'ın voting power'ı (satoshi cinsinden, raw değer) */
+    /** Provider's voting power (in satoshi, raw value) */
     rawPower?: string;
     
-    /** Provider'ın voting power yüzdesi (0-100 arasında, 2 decimal) */
+    /** Provider's voting power percentage (between 0-100, 2 decimals) */
     powerPercentage: string;
     
-    /** Power'ın hesaplandığı Babylon yüksekliği */
+    /** Babylon height at which the power was calculated */
     height: number;
     
-    /** Tüm aktif provider'ların toplam power'ı (BTC cinsinden, formatlanmış) */
+    /** Total power of all active providers (in BTC, formatted) */
     totalNetworkPower: string;
     
-    /** Tüm aktif provider'ların toplam power'ı (satoshi cinsinden, raw değer) */
+    /** Total power of all active providers (in satoshi, raw value) */
     rawTotalNetworkPower?: string;
 }
 
 export interface DelegationResponse {
-    /** Delegator'ın adresi */
+    /** Delegator's address */
     staker_address: string;
 
-    /** Delegator'ın BTC adresi */
+    /** Delegator's BTC address */
     stakerBtcAddress?: string;
 
-    /** Delegasyonun durum açıklaması */
+    /** Delegation status description */
     status: string;
 
-    /** staker'ın BTC public key'i (hex formatında) */
+    /** Staker's BTC public key (in hex format) */
     btc_pk_hex: string;
     
-    /** Delegasyon miktarı (BTC cinsinden, formatlanmış) */
+    /** Delegation amount (in BTC, formatted) */
     amount: string;
     
-    /** Delegasyon miktarı (satoshi cinsinden) */
+    /** Delegation amount (in satoshi) */
     amount_sat: number;
     
-    /** Delegasyonun başlangıç bloğu */
+    /** Delegation start block */
     start_height: number;
     
-    /** Delegasyonun bitiş bloğu */
+    /** Delegation end block */
     end_height: number;
     
-    /** Delegasyonun süresi (blok sayısı) */
+    /** Delegation duration (in blocks) */
     duration: number;
     
-    /** Delegasyonun işlem hash'i */
+    /** Delegation transaction hash */
     transaction_id: string;
 
-    /** Delegasyonun işlem hash'inin hex formatı */
+    /** Delegation transaction hash in hex format */
     transaction_id_hex: string;
 
-    /** Delegasyonun aktif olup olmadığı */
+    /** Whether the delegation is active */
     active: boolean;
 
-    /** Unbonding süresi (blok sayısı) */
+    /** Unbonding duration (in blocks) */
     unbonding_time: number;
 
-    /** Unbonding işlem bilgileri */
+    /** Unbonding transaction information */
     unbonding?: {
-        /** Unbonding işlem hash'i */
+        /** Unbonding transaction hash */
         transaction_id: string;
-        /** Unbonding işlem hash'inin hex formatı */
+        /** Unbonding transaction hash in hex format */
         transaction_id_hex: string;
-        /** Unbonding işleminin harcandığı işlem hash'i */
+        /** Transaction hash where the unbonding transaction was spent */
         spend_transaction_id?: string;
-        /** Unbonding işleminin harcandığı işlem hash'inin hex formatı */
+        /** Hex format of the transaction hash where the unbonding transaction was spent */
         spend_transaction_id_hex?: string;
     };
 
-    /** Finality provider'ların BTC public key'leri (hex formatında) */
+    /** BTC public keys of finality providers (in hex format) */
     finality_provider_btc_pks_hex?: string[];
 
     /** Params version */

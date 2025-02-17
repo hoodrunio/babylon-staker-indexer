@@ -4,19 +4,19 @@ import { CovenantController } from '../../controllers/CovenantController';
 const router = Router();
 const controller = new CovenantController();
 
-// Tüm covenant üyelerini getir
+// Get all covenant members
 router.get('/members', controller.getCovenantMembers);
 
-// Belirli bir üyenin imza istatistiklerini getir
+// Get signature statistics for a specific member
 router.get('/members/:publicKey/stats', controller.getMemberStats);
 
-// Belirli bir transaction için imza durumlarını getir
+// Get signature status for a specific transaction
 router.get('/transactions/:txHash', controller.getTransactionSignatures);
 
-// Son N transaction'ın imza durumlarını getir
+// Get signature status for last N transactions
 router.get('/transactions', controller.getRecentTransactions);
 
-// Özet istatistikleri getir
+// Get summary statistics
 router.get('/stats', controller.getSummaryStats);
 
 export default router; 

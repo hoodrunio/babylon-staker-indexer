@@ -18,6 +18,7 @@ export class FinalityEpochService {
     private readonly statsUpdateLock: Set<string> = new Set();
     private readonly STATS_UPDATE_INTERVAL = 60000; // 1 minute
 
+
     private constructor() {
         this.babylonClient = BabylonClient.getInstance();
         this.finalityProviderService = FinalityProviderService.getInstance();
@@ -46,7 +47,7 @@ export class FinalityEpochService {
 
     public async checkAndUpdateEpoch(currentHeight: number): Promise<void> {
         try {
-            // Eğer cache yoksa veya mevcut yükseklik boundary'yi geçmişse
+            // If cache doesn't exist or current height has passed the boundary
             if (!this.currentEpochInfo || currentHeight > this.currentEpochInfo.boundary) {
                 const response = await this.babylonClient.getCurrentEpoch();
                 const newEpochInfo = {
@@ -54,7 +55,7 @@ export class FinalityEpochService {
                     boundary: Number(response.epoch_boundary)
                 };
 
-                // Eğer yeni bir epoch'a geçilmişse
+                // If we have moved to a new epoch
                 if (!this.currentEpochInfo || newEpochInfo.epochNumber > this.currentEpochInfo.epochNumber) {
                     this.currentEpochInfo = newEpochInfo;
                     await this.cleanupOldEpochs();

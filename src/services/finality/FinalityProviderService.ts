@@ -23,12 +23,12 @@ export class FinalityProviderService {
     private cache: CacheService;
     private revalidationPromises: Map<string, Promise<any>> = new Map();
     
-    // Cache TTL değerleri (saniye cinsinden)
+    // Cache TTL values (in seconds)
     private readonly CACHE_TTL = {
-        PROVIDERS_LIST: 300, // 5 dakika
-        PROVIDER_DETAILS: 300, // 5 dakika
-        POWER: 300, // 5 dakika
-        TOTAL_POWER: 300 // 5 dakika
+        PROVIDERS_LIST: 300, // 5 minutes
+        PROVIDER_DETAILS: 300, // 5 minutes
+        POWER: 300, // 5 minutes
+        TOTAL_POWER: 300 // 5 minutes
     };
 
     private constructor() {
@@ -131,10 +131,10 @@ export class FinalityProviderService {
             async () => {
                 const { nodeUrl } = this.getNetworkConfig(network);
                 
-                // 1. Önce mevcut yüksekliği al
+                // 1. First get the current height
                 const currentHeight = await this.babylonClient.getCurrentHeight();
                 
-                // 2. Aktif finality provider'ları al
+                // 2. Get active finality providers
                 const activeResponse = await fetch(`${nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
                 if (!activeResponse.ok) {
                     throw new Error(`HTTP error! status: ${activeResponse.status}`);
@@ -147,7 +147,7 @@ export class FinalityProviderService {
                         .map((fp: FinalityProviderWithMeta) => fp.btc_pk_hex)
                 );
                 
-                // 3. Tüm provider'ların detaylı bilgilerini al
+                // 3. Get detailed information for all providers
                 const allProviders: FinalityProvider[] = [];
                 let nextKey = '';
                 
@@ -164,7 +164,7 @@ export class FinalityProviderService {
                     
                     const data = await response.json() as QueryFinalityProvidersResponse;
                     
-                    // Sadece aktif olan provider'ları filtrele ve ekle
+                    // Filter and add only active providers
                     const activeProviders = data.finality_providers?.filter(provider => 
                         activePkSet.has(provider.btc_pk) && 
                         !provider.jailed

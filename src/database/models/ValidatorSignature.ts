@@ -1,7 +1,7 @@
 import mongoose, { Document, Model } from 'mongoose';
 import { Network } from '../../types/finality';
 
-// Her blok için imza detayları
+// Signature details for each block
 export interface BlockSignatureDetail {
     blockHeight: number;
     signed: boolean;
@@ -144,7 +144,7 @@ validatorSignatureSchema.methods.addBlock = async function(this: IValidatorSigna
         this.consecutiveSigned = 0;
     }
 
-    // İmza oranını güncelle
+    // Update signature ratio
     const totalBlocks = this.recentBlocks.length;
     const signedBlocks = this.recentBlocks.filter(b => b.signed).length;
     this.signatureRate = totalBlocks > 0 ? (signedBlocks / totalBlocks) * 100 : 0;

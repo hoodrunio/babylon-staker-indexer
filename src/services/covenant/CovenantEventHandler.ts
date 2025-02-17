@@ -29,7 +29,7 @@ export class CovenantEventHandler {
         try {
             const { height, events } = txData;
 
-            // EventBTCDelegationCreated olayını yakala
+            // Capture EventBTCDelegationCreated event
             const delegationCreatedEvent = events.find(event => 
                 event.type === 'babylon.btcstaking.v1.EventBTCDelegationCreated'
             );
@@ -49,7 +49,7 @@ export class CovenantEventHandler {
                 }
             }
 
-            // EventCovenantSignatureReceived olayını yakala
+            // Capture EventCovenantSignatureReceived event
             const signatureReceivedEvent = events.find(event =>
                 event.type === 'babylon.btcstaking.v1.EventCovenantSignatureReceived'
             );
@@ -64,14 +64,14 @@ export class CovenantEventHandler {
                         stakingTxHash,
                         covenantBtcPkHex,
                         signatureHex,
-                        'STAKING', // veya 'UNBONDING', context'e göre belirlenecek
+                        'STAKING', // or 'UNBONDING', to be determined according to the context
                         network,
                         height
                     );
                 }
             }
 
-            // EventBTCDelegationStateUpdate olayını yakala
+            // Capture EventBTCDelegationStateUpdate event
             const stateUpdateEvent = events.find(event =>
                 event.type === 'babylon.btcstaking.v1.EventBTCDelegationStateUpdate'
             );
@@ -107,10 +107,10 @@ export class CovenantEventHandler {
 
     private getCovenantMembers(network: Network): string[] {
         try {
-            // Network'e göre public key listesini seç
+            // Select public key list according to network
             const keyField = network === Network.MAINNET ? 'mainnetPublicKeys' : 'testnetPublicKeys';
             
-            // Tüm üyelerin public key'lerini topla
+            // Collect public keys of all members
             const allKeys = covenantMembers.reduce((keys: string[], member) => {
                 return keys.concat(member[keyField] || []);
             }, []);
@@ -125,4 +125,4 @@ export class CovenantEventHandler {
             return [];
         }
     }
-} 
+}

@@ -272,7 +272,7 @@ router.get('/stakers/:address', async (req, res) => {
       durationSeconds: parseInt(to as string) - parseInt(from as string)
     } : undefined;
 
-    // TimeRange değerlerinin geçerli olduğunu kontrol et
+    // Check if TimeRange values are valid
     if (timeRange) {
       if (isNaN(timeRange.firstTimestamp) || isNaN(timeRange.lastTimestamp)) {
         throw new Error('Invalid time range parameters. Please provide valid timestamps.');

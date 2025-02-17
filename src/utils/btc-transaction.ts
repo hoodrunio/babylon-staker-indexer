@@ -10,19 +10,19 @@ import { logger } from './logger';
 const P2TR_PREFIX = Buffer.from([0x51, 0x20]);
 
 /**
- * P2WPKH output'unu tanımlamak için kullanılan prefix
+ * Prefix used to identify P2WPKH output
  * OP_0 (0x00) followed by 0x14 (20-byte push)
  */
 const P2WPKH_PREFIX = Buffer.from([0x00, 0x14]);
 
 /**
- * P2WSH output'unu tanımlamak için kullanılan prefix
+ * Prefix used to identify P2WSH output
  * OP_0 (0x00) followed by 0x20 (32-byte push)
  */
 const P2WSH_PREFIX = Buffer.from([0x00, 0x20]);
 
 /**
- * P2PKH output'unu tanımlamak için kullanılan prefix
+ * Prefix used to identify P2PKH output
  * OP_DUP (0x76) + OP_HASH160 (0xa9) + 0x14 (20-byte push)
  */
 const P2PKH_PREFIX = Buffer.from([0x76, 0xa9, 0x14]);
@@ -39,9 +39,9 @@ interface RPCResponse {
 }
 
 /**
- * RIPEMD160(SHA256(data)) hesaplar
- * @param data - Hash'lenecek veri
- * @returns Hash sonucu
+ * Calculates RIPEMD160(SHA256(data))
+ * @param data - Data to be hashed
+ * @returns Hash result
  */
 function hash160(data: Buffer): Buffer {
     const sha256 = createHash('sha256').update(data).digest();
@@ -80,27 +80,27 @@ function extractOutputAddress(script: Buffer): string | null {
         // Check for P2TR (Taproot) addresses
         if (isTaprootOutput(script)) {
             const pubKey = script.slice(2); // Skip first 2 bytes (OP_1 and 0x20)
-            return encodeBech32('tb', pubKey, 1); // witness_v1 için
+            return encodeBech32('tb', pubKey, 1); // for witness_v1
         }
 
-        // P2WPKH adresleri için kontrol
+        // P2WPKH addresses
         if (isP2WPKHOutput(script)) {
             const pubKeyHash = script.slice(2);
-            return encodeBech32('tb', pubKeyHash, 0); // witness_v0 için
+            return encodeBech32('tb', pubKeyHash, 0); // for witness_v0
         }
 
-        // P2WSH adresleri için kontrol
+        // P2WSH addresses
         if (isP2WSHOutput(script)) {
             const scriptHash = script.slice(2);
-            return encodeBech32('tb', scriptHash, 0); // witness_v0 için
+            return encodeBech32('tb', scriptHash, 0); // for witness_v0
         }
 
-        // P2PKH adresleri için kontrol
+        // P2PKH addresses
         if (isP2PKHOutput(script)) {
             const pubKeyHash = extractPubKeyHashFromP2PKH(script);
             if (pubKeyHash) {
-                // Base58Check encoding kullan
-                // Not: Base58Check encoding'i implement etmemiz gerekiyor
+                // Use Base58Check encoding
+                // Note: We need to implement Base58Check encoding
                 // return encodeBase58Check(pubKeyHash);
             }
         }
@@ -115,14 +115,14 @@ function extractOutputAddress(script: Buffer): string | null {
 /**
  * Encodes address in Bech32/Bech32m format
  * @param hrp - Human readable part ('tb' or 'bc')
- * @param data - Public key veya public key hash buffer'ı
+ * @param data - Public key or public key hash buffer
  * @param witnessVersion - Witness version (0 for P2WPKH, 1 for P2TR)
  * @returns Bech32/Bech32m encoded address
  */
 function encodeBech32(hrp: string, data: Buffer, witnessVersion: number): string {
     try {
         const words = bech32m.toWords(Array.from(data));
-        // P2WPKH (v0) için bech32, P2TR (v1) için bech32m kullan
+        // Use bech32 for P2WPKH (v0), bech32m for P2TR (v1)
         if (witnessVersion === 0) {
             return bech32.encode(hrp, [witnessVersion, ...words]);
         } else {
@@ -171,7 +171,7 @@ function isTaprootOutput(script: Buffer): boolean {
 } */
 
 /**
- * OP_RETURN output mu kontrol eder
+ * Checks if it is an OP_RETURN output
  * @param script - Output script
  * @returns boolean
  */
@@ -233,7 +233,7 @@ export function extractAmountFromBTCTransaction(txHex: string): number {
             const script = buffer.slice(offset, offset + scriptLength);
             offset += scriptLength;
 
-            // OP_RETURN output'larını atla ve sadece P2TR output'ları topla
+            // Skip OP_RETURN outputs and only collect P2TR outputs
             if (!isOpReturnOutput(script) && isTaprootOutput(script)) {
                 p2trOutputs.push({ index: i, value, script });
             }
@@ -243,8 +243,8 @@ export function extractAmountFromBTCTransaction(txHex: string): number {
             throw new Error('No P2TR outputs found');
         }
 
-        // Birden fazla P2TR output varsa, ilk P2TR output staking amount'tır
-        // Tek P2TR output varsa, o staking amount'tır
+        // If there are multiple P2TR outputs, first P2TR output is staking amount
+        // If there is only one P2TR output, it is staking amount
         return p2trOutputs[0].value;
 
     } catch (error) {
@@ -282,20 +282,20 @@ function extractPubKeyXCoordFromScript(script: Buffer): Buffer | null {
 }
 
 /**
- * P2WPKH script'inden public key hash'i çıkarır
- * @param script - P2WPKH script buffer'ı
- * @returns Public key hash buffer'ı veya null
+ * Extracts public key hash from P2WPKH script
+ * @param script - P2WPKH script buffer
+ * @returns Public key hash buffer or null
  */
 function extractPubKeyHashFromScript(script: Buffer): Buffer | null {
-    // P2WPKH script formatı: OP_0 (0x00) + 0x14 (20-byte push) + 20-byte pubkey hash
+    // P2WPKH script format: OP_0 (0x00) + 0x14 (20-byte push) + 20-byte pubkey hash
     if (script.length === 22 && script[0] === 0x00 && script[1] === 0x14) {
-        return script.slice(2); // Son 20 byte pubkey hash
+        return script.slice(2); // Last 20 bytes are pubkey hash
     }
     return null;
 }
 
 /**
- * P2WPKH script mi kontrol eder
+ * Checks if it is a P2WPKH script
  * @param script - Output script
  * @returns boolean
  */
@@ -306,7 +306,7 @@ function isP2WPKHOutput(script: Buffer): boolean {
 }
 
 /**
- * P2WSH script mi kontrol eder
+ * Checks if it is a P2WSH script
  * @param script - Output script
  * @returns boolean
  */
@@ -317,7 +317,7 @@ function isP2WSHOutput(script: Buffer): boolean {
 }
 
 /**
- * P2PKH script mi kontrol eder
+ * Checks if it is a P2PKH script
  * @param script - Output script
  * @returns boolean
  */
@@ -331,9 +331,9 @@ function isP2PKHOutput(script: Buffer): boolean {
 }
 
 /**
- * P2PKH script'inden public key hash'i çıkarır
- * @param script - P2PKH script buffer'ı
- * @returns Public key hash buffer'ı veya null
+ * Extracts public key hash from P2PKH script
+ * @param script - P2PKH script buffer
+ * @returns Public key hash buffer or null
  */
 function extractPubKeyHashFromP2PKH(script: Buffer): Buffer | null {
     if (isP2PKHOutput(script)) {
@@ -343,10 +343,10 @@ function extractPubKeyHashFromP2PKH(script: Buffer): Buffer | null {
 }
 
 /**
- * Input'un previous output bilgilerini çıkarır
+ * Extracts previous output information of the input
  * @param buffer - Transaction buffer
  * @param offset - Buffer offset
- * @returns Previous output bilgileri ve yeni offset
+ * @returns Previous output information and new offset
  */
 function extractPrevOutput(buffer: Buffer, offset: number): { txid: string, vout: number, newOffset: number } {
     // Previous transaction hash (32 bytes, little-endian)
@@ -361,14 +361,14 @@ function extractPrevOutput(buffer: Buffer, offset: number): { txid: string, vout
 }
 
 /**
- * Input script'inden sender adresini çıkarır
+ * Extracts sender address from input script
  * @param buffer - Transaction buffer
  * @param offset - Buffer offset
- * @returns Sender adresi ve yeni offset
+ * @returns Sender address and new offset
  */
 function extractSenderFromInput(buffer: Buffer, offset: number): { sender: string | null, newOffset: number } {
     try {
-        // Script length'i oku
+        // Read script length
         const scriptLength = readVarInt(buffer, offset);
         offset += getVarIntSize(scriptLength);
 
@@ -376,23 +376,23 @@ function extractSenderFromInput(buffer: Buffer, offset: number): { sender: strin
             return { sender: null, newOffset: offset };
         }
 
-        // Witness script için input boş olabilir
+        // Input can be empty for witness script
         if (scriptLength > 0) {
             const script = buffer.slice(offset, offset + scriptLength);
             
-            // P2WPKH input için witness data'yı kontrol et
+            // Check witness data for P2WPKH input
             if (script.length === 0) {
-                // Witness data sonraki bölümde
+                // Witness data is in the next section
                 offset += scriptLength;
                 return { sender: null, newOffset: offset };
             }
 
-            // P2PKH input script formatı: <signature> <pubkey>
-            if (script.length > 33) { // En az 33 byte (compressed pubkey)
-                const pubKeyStart = script.length - 33; // Son 33 byte
+            // P2PKH input script format: <signature> <pubkey>
+            if (script.length > 33) { // At least 33 bytes (compressed pubkey)
+                const pubKeyStart = script.length - 33; // Last 33 bytes
                 const pubKey = script.slice(pubKeyStart);
                 
-                // Public key'den P2WPKH adresi oluştur
+                // Create P2WPKH address from public key
                 const pubKeyHash = hash160(pubKey);
                 return {
                     sender: encodeBech32('tb', pubKeyHash, 0),
@@ -410,10 +410,10 @@ function extractSenderFromInput(buffer: Buffer, offset: number): { sender: strin
 }
 
 /**
- * Transaction hex'inden input ve output adresleri çıkarır
+ * Extracts input and output addresses from transaction hex
  * @param txHex - Raw transaction hex string
  * @param rpcUrl - Bitcoin RPC URL (optional)
- * @returns Input ve output adresleri
+ * @returns Input and output addresses
  */
 export async function extractAddressesFromTransaction(
     txHex: string,
@@ -446,13 +446,13 @@ export async function extractAddressesFromTransaction(
         offset += getVarIntSize(inputCount);
         
         if (inputCount > 0) {
-            // İlk input'un previous output bilgilerini al
+            // Get previous output information of the first input
             const { txid, vout, newOffset } = extractPrevOutput(buffer, offset);
             // logger.info('Previous output:', { txid, vout });
             prevOutput = { txid, vout };
             offset = newOffset;
 
-            // Input script'inden sender'ı çıkarmayı dene
+            // Try to extract sender from input script
             const { sender, newOffset: newOffsetAfterScript } = extractSenderFromInput(buffer, offset);
             // logger.info('Extracted sender from input:', sender);
             if (sender) {
@@ -486,7 +486,7 @@ export async function extractAddressesFromTransaction(
             if (scriptLength > 0) {
                 const script = buffer.slice(offset, offset + scriptLength);
                 
-                // OP_RETURN output'larını atla
+                // Skip OP_RETURN outputs
                 if (!isOpReturnOutput(script)) {
                     const address = extractOutputAddress(script);
                     if (address) {
@@ -501,15 +501,15 @@ export async function extractAddressesFromTransaction(
             offset += scriptLength;
         }
 
-        // P2TR output'larına göre sender'ı belirle
+        // Determine sender based on P2TR outputs
         if (!senderAddress && p2trOutputs.length >= 2) {
-            // İki P2TR output varsa ve input'tan sender bulunamadıysa:
-            // İlk output stake amount için, ikinci output change address'i (sender) için
+            // If there are two P2TR outputs and sender could not be found from input:
+            // First output is for stake amount, second output is for change address (sender)
             senderAddress = p2trOutputs[1].address;
             // logger.info('Determined sender from P2TR change output:', senderAddress);
         }
 
-        // Eğer hala sender bulunamadıysa ve RPC URL varsa, önceki output'tan bulmayı dene
+        // If sender is still not found and RPC URL is available, try to find it from previous output
         if (!senderAddress && prevOutput && rpcUrl) {
             try {
                 // logger.info('Fetching previous transaction:', prevOutput.txid);

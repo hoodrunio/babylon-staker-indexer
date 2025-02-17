@@ -281,7 +281,7 @@ export class BabylonClient {
                 return null;
             }
 
-            // RPC response'unu MissedBlocksProcessor'ın beklediği formata dönüştür
+            // Convert RPC response to the format expected by MissedBlocksProcessor
             const formattedResults: BlockResult = {
                 height: height,
                 txs_results: (response.data.result.txs_results || []).map((txResult: any) => ({

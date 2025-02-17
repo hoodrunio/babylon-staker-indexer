@@ -19,7 +19,7 @@ export class BTCDelegationController {
             const limit = parseInt(req.query.limit as string) || 10;
             const skip = (page - 1) * limit;
 
-            // Status kontrolü
+            // Status check
             if (!Object.values(BTCDelegationStatus).includes(status as BTCDelegationStatus)) {
                 logger.error(`Invalid status: ${status}`);
                 return res.status(400).json({
@@ -29,7 +29,7 @@ export class BTCDelegationController {
 
             logger.info(`Fetching delegations with status: ${status}, network: ${network}, page: ${page}, limit: ${limit}`);
 
-            // ANY durumu için özel kontrol
+            // Special check for ANY status
             const stateQuery = status === 'ANY' 
                 ? {} 
                 : { state: status };
@@ -152,7 +152,7 @@ export class BTCDelegationController {
             const skip = (page - 1) * limit;
             const status = (req.query.status as string || 'ANY').toUpperCase();
 
-            // Status kontrolü
+            // Status check
             if (status !== 'ANY' && !Object.values(BTCDelegationStatus).includes(status as BTCDelegationStatus)) {
                 logger.error(`Invalid status: ${status}`);
                 return res.status(400).json({
@@ -167,7 +167,7 @@ export class BTCDelegationController {
                 networkType: network.toLowerCase()
             };
 
-            // ANY durumu için özel kontrol
+            // Special check for ANY status
             if (status !== 'ANY') {
                 baseQuery.state = status as BTCDelegationStatus;
             }

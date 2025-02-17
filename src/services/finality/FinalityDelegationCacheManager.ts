@@ -24,11 +24,11 @@ export class FinalityDelegationCacheManager {
     private updateJobs: Map<string, NodeJS.Timeout> = new Map();
     
     private readonly CACHE_TTL = {
-        DELEGATIONS_INITIAL: 1800,  // 30 dakika
-        DELEGATIONS_UPDATES: 100,   // 10 dakika
+        DELEGATIONS_INITIAL: 1800,  // 30 minutes
+        DELEGATIONS_UPDATES: 100,   // 10 minutes
     };
 
-    private readonly UPDATE_INTERVAL = 10 * 60 * 1000; // 10 dakika
+    private readonly UPDATE_INTERVAL = 10 * 60 * 1000; // 10 minutes
     private readonly INITIAL_FETCH_LIMIT = 500;
 
     private constructor() {
@@ -156,7 +156,7 @@ export class FinalityDelegationCacheManager {
             let cached = await this.cache.get<PaginatedDelegations>(cacheKey);
             const now = Date.now();
             
-            // Cache yok veya son güncelleme üzerinden 30 dakika geçmişse, yeni veri çek
+            // If cache doesn't exist or it's been more than 30 minutes since last update, fetch new data
             if (!cached || (now - cached.last_updated > this.CACHE_TTL.DELEGATIONS_INITIAL * 1000)) {
                 logger.info(`Cache miss or expired for ${cacheKey}, fetching all delegations...`);
                 const { delegations, pagination_keys } = await this.fetchAllDelegations(fpBtcPkHex, network, fetchCallback);
@@ -174,11 +174,11 @@ export class FinalityDelegationCacheManager {
                 
                 logger.info(`Fetched ${delegations.length} total delegations with stats:`, cached.total_stats);
                 
-                // Cache'i sonsuz TTL ile kaydet
+                // Cache with infinite TTL
                 await this.cache.set(cacheKey, cached, undefined);
                 this.startUpdateJob(fpBtcPkHex, network, fetchCallback);
             } else if (now - cached.last_updated > this.CACHE_TTL.DELEGATIONS_UPDATES * 1000) {
-                // 5 dakikadan fazla zaman geçmişse arka planda güncelle
+                // If more than 5 minutes have passed, update in background
                 this.updateInBackground(fpBtcPkHex, network, fetchCallback, cached);
             }
 
@@ -250,7 +250,7 @@ export class FinalityDelegationCacheManager {
             const newData = await fetchCallback(fpBtcPkHex, network, lastKey, 100);
             
             if (newData.delegations.length > 0) {
-                // Transaction ID'ye göre unique delegasyonları belirle
+                // Determine unique delegations by Transaction ID
                 const existingTxIds = new Set(currentCache.delegations.map(d => d.transaction_id));
                 const newUniqueDelegations = newData.delegations.filter(d => !existingTxIds.has(d.transaction_id));
 
@@ -267,7 +267,7 @@ export class FinalityDelegationCacheManager {
                         updatedCache.pagination_keys.push(newData.next_key);
                     }
 
-                    // Cache'i sonsuz TTL ile güncelle
+                    // Update cache with infinite TTL
                     await this.cache.set(cacheKey, updatedCache, undefined);
                     
                     logger.info(`Background update completed for ${cacheKey}:`, {

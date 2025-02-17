@@ -24,8 +24,8 @@ interface BlockData {
 export class ValidatorSignatureService {
     private static instance: ValidatorSignatureService | null = null;
     private validatorInfoService: ValidatorInfoService;
-    private readonly RECENT_BLOCKS_LIMIT = 100; // Son 100 blok detayı
-    private readonly SIGNATURE_PERFORMANCE_WINDOW = 10000; // Son 10k blok için performans
+    private readonly RECENT_BLOCKS_LIMIT = 100; // Last 100 block details
+    private readonly SIGNATURE_PERFORMANCE_WINDOW = 10000; // Performance for last 10k blocks
 
     private constructor() {
         this.validatorInfoService = ValidatorInfoService.getInstance();
@@ -53,19 +53,19 @@ export class ValidatorSignatureService {
             const timestamp = new Date(blockData.block.header.time);
             const round = blockData.block.last_commit.round;
 
-            // Aktif validatörleri ve imzalarını al
+            // Get active validators and their signatures
             const blockSignatures = new Map(
                 blockData.block.last_commit.signatures
                     .filter(sig => sig.validator_address)
                     .map(sig => [sig.validator_address, sig])
             );
 
-            // Tüm validatörleri getir (aktif ve inaktif)
+            // Get all validators (active and inactive)
             const allValidators = await ValidatorSignature.find({
                 network: network.toLowerCase()
             }).select('validatorAddress').lean();
 
-            // Mevcut blokta aktif olan validatörleri işaretle
+            // Mark validators active in current block
             const allValidatorAddresses = new Set([
                 ...allValidators.map(v => v.validatorAddress),
                 ...blockSignatures.keys()
@@ -83,7 +83,7 @@ export class ValidatorSignatureService {
                 ])
             );
 
-            // İlk olarak, mevcut olmayan validatorları oluştur
+            // First, create non-existing validators
             const createOps = Array.from(blockSignatures.keys()).map(validatorAddress => {
                 const validatorInfo = validatorInfoMap.get(validatorAddress);
                 const update: any = {
@@ -113,7 +113,7 @@ export class ValidatorSignatureService {
                 await ValidatorSignature.bulkWrite(createOps as any[], { ordered: false });
             }
 
-            // Tüm validatörleri güncelle (aktif ve inaktif)
+            // Update all validators (active and inactive)
             const updateOps = Array.from(allValidatorAddresses).map(validatorAddress => {
                 const signature = blockSignatures.get(validatorAddress);
                 const isSigned = Boolean(signature?.signature);
@@ -158,14 +158,14 @@ export class ValidatorSignatureService {
                 await ValidatorSignature.bulkWrite(updateOps as any[], { ordered: false });
             }
 
-            // İmza oranlarını güncelle
+            // Update signature rates
             const validators = await ValidatorSignature.find({
                 network: network.toLowerCase(),
                 validatorAddress: { $in: Array.from(allValidatorAddresses) }
             });
 
             const rateUpdateOps = validators.map(validator => {
-                // Son 100 blok için ardışık imza/kaçırma sayılarını hesapla
+                // Calculate consecutive signatures/misses for last 100 blocks
                 const recentBlocks = validator.recentBlocks || [];
                 const consecutiveSigned = recentBlocks.length > 0 && recentBlocks[recentBlocks.length - 1].signed
                     ? (validator.consecutiveSigned || 0) + 1
@@ -174,13 +174,13 @@ export class ValidatorSignatureService {
                     ? (validator.consecutiveMissed || 0) + 1
                     : 0;
 
-                // Performans penceresindeki blok sayısını kontrol et
+                // Check block count in performance window
                 const totalBlocksInWindow = Math.min(
                     validator.totalBlocksInWindow || 0,
                     this.SIGNATURE_PERFORMANCE_WINDOW
                 );
 
-                // Genel imza oranını hesapla
+                // Calculate overall signature rate
                 let signatureRate = 0;
                 if (totalBlocksInWindow < 100 && recentBlocks.length > 0) {
                     const recentSignedBlocks = recentBlocks.filter(b => b.signed).length;
@@ -191,7 +191,7 @@ export class ValidatorSignatureService {
                         : 0;
                 }
 
-                // totalSignedBlocks sayısını da kontrol et ve gerekirse düzelt
+                // Check totalSignedBlocks count and fix if necessary
                 const adjustedTotalSignedBlocks = Math.min(
                     validator.totalSignedBlocks || 0,
                     totalBlocksInWindow

@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
 interface PointsResponse {
   finality_provider_pk_hex: string;
   points: number;
-  exists: boolean; // Veri var/yok durumunu takip etmek için
+  exists: boolean; // To track data existence status
 }
 
 interface PointsResult {
@@ -21,12 +21,12 @@ export class PointsProxyService {
   private readonly baseUrl = process.env.POINTS_PROXY_URL;
   private readonly cacheService: CacheService;
   private readonly finalityProviderService: FinalityProviderService;
-  private readonly cacheTTL = 21600; // 6 saat cache
-  private readonly noDataCacheTTL = 43200; // 12 saat cache (veri olmayan durumlar için)
-  private readonly requestDelay = 2000; // 2 saniye bekleme
-  private readonly updateInterval = 3600000; // 1 saat
+  private readonly cacheTTL = 21600; // 6 hours cache
+  private readonly noDataCacheTTL = 43200; // 12 hours cache (for cases with no data)
+  private readonly requestDelay = 2000; // 2 seconds wait between requests
+  private readonly updateInterval = 3600000; // 1 hour
   private readonly maxRetries = 3;
-  private readonly batchSize = 200; // Paralel istek sayısı
+  private readonly batchSize = 200; // Number of parallel requests
   private isUpdating = false;
 
   private constructor() {
@@ -47,10 +47,10 @@ export class PointsProxyService {
   }
 
   private async startPeriodicUpdate() {
-    // İlk çalıştırmada cache'i doldur
+    // Fill the cache on first run
     await this.updateAllPointsCache().catch(logger.error);
 
-    // Periyodik güncelleme başlat
+    // Start periodic updates
     setInterval(async () => {
       await this.updateAllPointsCache();
     }, this.updateInterval);
@@ -109,7 +109,7 @@ export class PointsProxyService {
       const fps = await this.finalityProviderService.getAllFPs(0, Math.max(totalCount, 1));
       const fpAddresses = fps.map(fp => fp.address);
 
-      // Batch işleme
+      // Batch processing
       for (let i = 0; i < fpAddresses.length; i += this.batchSize) {
         const batch = fpAddresses.slice(i, i + this.batchSize);
         await this.processBatch(batch);
@@ -229,7 +229,7 @@ export class PointsProxyService {
   }
 
   async getFinalityProvidersPoints(fpPkHexList: string[]): Promise<PointsResult[]> {
-    // Önce tüm cache'leri kontrol et
+    // First check all caches
     const results = await Promise.all(fpPkHexList.map(async fpPkHex => {
       const formattedPkHex = this.formatPublicKey(fpPkHex);
       const cacheKey = this.cacheService.generateKey('fp_points', { fpPkHex: formattedPkHex });
@@ -247,7 +247,7 @@ export class PointsProxyService {
       return null;
     }));
 
-    // Cache'de olmayan FP'ler için API'ya istek at
+    // Make API request for FPs not in cache
     const missingFPs = fpPkHexList.filter((_, index) => !results[index]);
     const batchResults: PointsResult[] = [];
 
@@ -266,7 +266,7 @@ export class PointsProxyService {
       })));
     }
 
-    // Sonuçları birleştir
+    // Combine results
     return results.map((result, index) => {
       if (result) return result;
       return batchResults.find(r => r.fpPkHex === fpPkHexList[index]) || {

@@ -1,30 +1,30 @@
 import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 
-// Metadata temizleme ve formatlama fonksiyonu
+// Metadata cleaning and formatting function
 const cleanMetadata = (obj: any): any => {
     if (typeof obj !== 'object' || obj === null) {
         return obj;
     }
 
-    // Subscription mesajlarını özel formatlama
+    // Special formatting for subscription messages
     if (obj.jsonrpc === '2.0' && obj.id && obj.result !== undefined) {
         return `${obj.id}`;
     }
 
-    // Eğer tüm keyler sayısal ve sıralı ise, string birleştirme
+    // If all keys are numeric and sequential, join as string
     const keys = Object.keys(obj);
     const isSequential = keys.every((key, index) => Number(key) === index);
     if (isSequential && keys.length > 0 && typeof obj[0] === 'string') {
         return keys.map(k => obj[k]).join('');
     }
 
-    // Boş objeleri temizle
+    // Clean empty objects
     if (Object.keys(obj).length === 0) {
         return undefined;
     }
 
-    // Recursive olarak tüm objeyi temizle
+    // Clean entire object recursively
     const cleaned: any = {};
     for (const [key, value] of Object.entries(obj)) {
         const cleanedValue = cleanMetadata(value);
@@ -35,9 +35,9 @@ const cleanMetadata = (obj: any): any => {
     return Object.keys(cleaned).length > 0 ? cleaned : undefined;
 };
 
-// Mesaj formatlama fonksiyonu
+// Message formatting function
 const formatMessage = (message: string, metadata: Record<string, any>): string => {
-    // Subscription mesajlarını özel formatlama
+    // Special formatting for subscription messages
     if (message.includes('subscription confirmed')) {
         const subscriptionId = cleanMetadata(metadata);
         return typeof subscriptionId === 'string' ? `Subscription confirmed: ${subscriptionId}` : message;
@@ -45,7 +45,7 @@ const formatMessage = (message: string, metadata: Record<string, any>): string =
     return message;
 };
 
-// Custom format oluşturma
+// Create custom format
 const customFormat = winston.format.combine(
     winston.format.timestamp({
         format: 'YYYY-MM-DD HH:mm:ss.SSS'
@@ -53,17 +53,17 @@ const customFormat = winston.format.combine(
     winston.format.errors({ stack: true }),
     winston.format.splat(),
     winston.format.printf(({ level, message, timestamp, stack, ...metadata }) => {
-        // Ana mesaj formatı
+        // Main message format
         let log = `${timestamp} ${level.toUpperCase().padEnd(7)}: ${formatMessage(message as string, metadata)}`;
         
-        // Metadata varsa temizle ve ekle
+        // Metadata exists, clean and add
         const { service, environment, ...restMetadata } = metadata;
         const cleanedMetadata = cleanMetadata(restMetadata);
         if (cleanedMetadata && Object.keys(cleanedMetadata).length > 0) {
             log += `\n${JSON.stringify(cleanedMetadata, null, 2)}`;
         }
         
-        // Stack trace varsa ekle
+        // Stack trace exists, add
         if (stack) {
             log += `\n${stack}`;
         }
@@ -72,7 +72,7 @@ const customFormat = winston.format.combine(
     })
 );
 
-// Development için renkli console formatı
+// Colored console format for development
 const consoleFormat = winston.format.combine(
     winston.format.timestamp({
         format: 'YYYY-MM-DD HH:mm:ss.SSS'
@@ -81,17 +81,17 @@ const consoleFormat = winston.format.combine(
     winston.format.splat(),
     winston.format.colorize({ all: true }),
     winston.format.printf(({ level, message, timestamp, stack, ...metadata }) => {
-        // Ana mesaj formatı
+        // Main message format
         let log = `${timestamp} ${level.padEnd(7)}: ${formatMessage(message as string, metadata)}`;
         
-        // Metadata varsa temizle ve ekle
+        // Metadata exists, clean and add
         const { service, environment, ...restMetadata } = metadata;
         const cleanedMetadata = cleanMetadata(restMetadata);
         if (cleanedMetadata && Object.keys(cleanedMetadata).length > 0) {
             log += `\n${JSON.stringify(cleanedMetadata, null, 2)}`;
         }
         
-        // Stack trace varsa ekle
+        // Stack trace exists, add
         if (stack) {
             log += `\n${stack}`;
         }
@@ -100,7 +100,7 @@ const consoleFormat = winston.format.combine(
     })
 );
 
-// Custom levels ve renkler tanımlama
+// Define custom levels and colors
 const levels = {
     error: 0,
     warn: 1,
@@ -111,7 +111,7 @@ const levels = {
     trace: 6
 };
 
-// Custom renkler
+// Custom colors
 const colors = {
     error: 'red',
     warn: 'yellow',
@@ -122,10 +122,10 @@ const colors = {
     trace: 'gray'
 };
 
-// Winston renk şemasını ayarla
+// Set Winston color scheme
 winston.addColors(colors);
 
-// Logger oluşturma
+// Create logger
 const logger = winston.createLogger({
     level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
     levels,
@@ -155,7 +155,7 @@ const logger = winston.createLogger({
             format: customFormat
         }),
 
-        // Production ortamında stdout/stderr'e yazma
+        // Write to stdout/stderr in production
         new winston.transports.Console({
             format: process.env.NODE_ENV === 'production' ? customFormat : consoleFormat,
             handleExceptions: true,
@@ -164,7 +164,7 @@ const logger = winston.createLogger({
     ]
 });
 
-// Development ortamında console transport ekleme
+// Add console transport in development
 if (process.env.NODE_ENV !== 'production') {
     logger.add(new winston.transports.Console({
         format: consoleFormat,
@@ -173,7 +173,7 @@ if (process.env.NODE_ENV !== 'production') {
     }));
 }
 
-// Uncaught exception ve unhandled rejection handler'ları
+// Uncaught exception and unhandled rejection handlers
 logger.exceptions.handle(
     new DailyRotateFile({
         filename: 'logs/exceptions-%DATE%.log',

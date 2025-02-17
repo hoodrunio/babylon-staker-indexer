@@ -1,6 +1,6 @@
 import mongoose, { Document, Model } from 'mongoose';
 
-// Her bir covenant üyesinin imza bilgisi
+// Signature information for each covenant member
 export interface ICovenantMemberSignature {
     covenantBtcPkHex: string;
     signatureHex: string;
@@ -8,7 +8,7 @@ export interface ICovenantMemberSignature {
     signedAt?: Date;
 }
 
-// Her bir tx için imza koleksiyonu
+// Signature collection for each transaction
 export interface ICovenantSignature {
     stakingTxIdHex: string;
     txType: 'STAKING' | 'UNBONDING';

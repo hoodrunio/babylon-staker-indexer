@@ -88,7 +88,7 @@ export class FinalityDelegationService {
             unbonding_time: del.unbonding_time
         };
 
-        // Unbonding bilgilerini ekle
+        // Add unbonding information
         if (del.undelegation_response) {
             response.unbonding = {
                 transaction_id: del.undelegation_response.unbonding_tx_hex,
@@ -160,7 +160,8 @@ export class FinalityDelegationService {
 
     private getSortOptions(options?: DelegationQueryOptions): { [key: string]: 1 | -1 } {
         if (!options?.sortBy) {
-            return { createdAt: -1 }; // Default sort
+            // Default sort
+            return { createdAt: -1 }; 
         }
 
         const sortOrder = options.sortOrder === 'asc' ? 1 : -1;
@@ -208,25 +209,25 @@ export class FinalityDelegationService {
             const baseQuery = this.buildQuery(fpBtcPkHex, network, options);
             const sort = this.getSortOptions(options);
 
-            // Tek bir aggregation pipeline ile tüm verileri al
+            // Get all data with a single aggregation pipeline
             const [result] = await NewBTCDelegation.aggregate([
-                // İlk stage: Base query'i uygula
+                // First stage: Apply base query
                 { $match: baseQuery },
 
-                // İkinci stage: Facet ile hem pagination hem de stats bilgilerini al
+                // Second stage: Get both pagination and stats info with Facet
                 {
                     $facet: {
-                        // Pagination için gerekli veriler
+                        // Data required for pagination
                         paginatedResults: [
                             { $sort: sort },
                             { $skip: skip },
                             { $limit: limit }
                         ],
-                        // Toplam kayıt sayısı
+                        // Total record count
                         totalCount: [
                             { $count: 'count' }
                         ],
-                        // İstatistikler
+                        // Statistics
                         stats: [
                             {
                                 $group: {

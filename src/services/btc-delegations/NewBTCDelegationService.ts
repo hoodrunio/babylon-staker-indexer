@@ -261,7 +261,7 @@ export class NewBTCDelegationService {
         try {
             logger.info('Received event data:', JSON.stringify(eventData).substring(0, 100));
             
-            // Event verisi events içinde geliyor
+            // Event data comes in events
             const events = eventData.events;
             if (!events) {
                 logger.warn('No events found in event data');
@@ -280,7 +280,7 @@ export class NewBTCDelegationService {
                 return null;
             }
 
-            // Event attribute'larını map'e dönüştür
+            // Convert event attributes to map
             const attributes = btcDelegationEvent.attributes.reduce((acc: any, attr: any) => {
                 acc[attr.key] = attr.value;
                 return acc;

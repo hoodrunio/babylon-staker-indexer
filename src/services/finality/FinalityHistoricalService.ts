@@ -17,9 +17,9 @@ interface AggregatedStats {
 export class FinalityHistoricalService {
     private static instance: FinalityHistoricalService | null = null;
     private cache: CacheService;
-    private readonly SIGNATURE_TTL = 86400; // 24 saat
+    private readonly SIGNATURE_TTL = 86400; // 24 hours
     private readonly AGGREGATED_TTL = 86400; // 1 day
-    private readonly BATCH_SIZE = 1000; // Her batch için blok sayısı
+    private readonly BATCH_SIZE = 1000; // Number of blocks per batch
     private readonly BLOCK_SIGNATURE_PREFIX = 'signature:block:';
     private readonly SIGNER_SIGNATURE_PREFIX = 'signature:signer:';
 
@@ -70,7 +70,7 @@ export class FinalityHistoricalService {
         };
         await this.cache.set(key, data, this.SIGNATURE_TTL);
 
-        // Eğer bu height bir batch'in son bloğu ise, aggregation yap
+        // If this height is the last block of a batch, do aggregation
         if (height % this.BATCH_SIZE === 0) {
             await this.aggregateStats(fpBtcPkHex, height - this.BATCH_SIZE + 1, height);
         }
@@ -80,7 +80,7 @@ export class FinalityHistoricalService {
         let signedCount = 0;
         let missedCount = 0;
 
-        // Batch içindeki tüm blokları kontrol et
+        // Check all blocks in the batch
         for (let height = startHeight; height <= endHeight; height++) {
             const key = this.getSignatureKey(fpBtcPkHex, height);
             const data = await this.cache.get<BlockSignatureStatus>(key);
@@ -112,11 +112,11 @@ export class FinalityHistoricalService {
         let missedBlocks = 0;
         let unknownBlocks = 0;
 
-        // Önce aggregated stats'leri kontrol et
+        // First check aggregated stats
         const batchStart = Math.ceil(startHeight / this.BATCH_SIZE) * this.BATCH_SIZE;
         const batchEnd = Math.floor(endHeight / this.BATCH_SIZE) * this.BATCH_SIZE;
 
-        // Batch'lerden önceki blokları kontrol et
+        // Check blocks before batches
         for (let height = startHeight; height < batchStart; height++) {
             const key = this.getSignatureKey(fpBtcPkHex, height);
             const data = await this.cache.get<BlockSignatureStatus>(key);
@@ -128,7 +128,7 @@ export class FinalityHistoricalService {
             }
         }
 
-        // Batch'leri kontrol et
+        // Check batches
         for (let height = batchStart; height <= batchEnd; height += this.BATCH_SIZE) {
             const key = this.getAggregatedKey(fpBtcPkHex, height, height + this.BATCH_SIZE - 1);
             const stats = await this.cache.get<AggregatedStats>(key);
@@ -136,7 +136,7 @@ export class FinalityHistoricalService {
                 signedBlocks += stats.signedCount;
                 missedBlocks += stats.missedCount;
             } else {
-                // Eğer aggregated stats yoksa, tek tek kontrol et
+                // If no aggregated stats exist, check individually
                 for (let h = height; h < height + this.BATCH_SIZE; h++) {
                     const sigKey = this.getSignatureKey(fpBtcPkHex, h);
                     const data = await this.cache.get<BlockSignatureStatus>(sigKey);
@@ -150,7 +150,7 @@ export class FinalityHistoricalService {
             }
         }
 
-        // Batch'lerden sonraki blokları kontrol et
+        // Check blocks after batches
         for (let height = batchEnd + 1; height <= endHeight; height++) {
             const key = this.getSignatureKey(fpBtcPkHex, height);
             const data = await this.cache.get<BlockSignatureStatus>(key);

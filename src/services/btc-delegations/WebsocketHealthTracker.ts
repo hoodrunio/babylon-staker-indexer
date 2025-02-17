@@ -18,10 +18,10 @@ export class WebsocketHealthTracker {
         this.missedBlocksProcessor = MissedBlocksProcessor.getInstance();
         this.cacheService = CacheService.getInstance();
         
-        // Her network için bir mutex oluştur
+        // Create a mutex for each network
         Object.values(Network).forEach(network => {
             this.mutex.set(network, new Mutex());
-            // Cache'den son blok yüksekliğini al
+            // Get last block height from cache
             this.loadLastProcessedHeight(network);
         });
     }
@@ -54,26 +54,26 @@ export class WebsocketHealthTracker {
             return;
         }
 
-        // Mutex ile kilitle
+        // Lock with mutex
         const release = await mutex.acquire();
         try {
             const currentState = this.getOrCreateState(network);
             
-            // Sadece gerçek gap'leri işle (1'den fazla blok atlanmışsa)
+            // Only process real gaps (if more than 1 block is skipped)
             if (height > currentState.lastProcessedHeight + 1) {
                 logger.debug(`[${network}] Gap detected: ${currentState.lastProcessedHeight} -> ${height}`);
                 
-                // Eksik blokları işle
+                // Process missing blocks
                 const client = BabylonClient.getInstance(network);
                 await this.missedBlocksProcessor.processMissedBlocks(
                     network,
                     currentState.lastProcessedHeight + 1,
-                    height - 1, // Son blok hariç
+                    height - 1, // Except last block
                     client
                 );
             }
 
-            // Yeni yüksekliği güncelle
+            // Update new height
             if (height > currentState.lastProcessedHeight) {
                 logger.debug(`[${network}] Updating block height from ${currentState.lastProcessedHeight} to ${height}`);
                 currentState.lastProcessedHeight = height;
@@ -87,7 +87,7 @@ export class WebsocketHealthTracker {
                 );
             }
         } finally {
-            // Her durumda mutex'i serbest bırak
+            // Always release mutex
             release();
         }
     }
@@ -108,14 +108,14 @@ export class WebsocketHealthTracker {
             return;
         }
 
-        // Mutex ile kilitle
+        // Lock with mutex
         const release = await mutex.acquire();
         try {
             const state = this.getOrCreateState(network);
             const currentHeight = await babylonClient.getCurrentHeight();
             const lastProcessedHeight = state.lastProcessedHeight;
 
-            // Eksik blok varsa işle
+            // Process if there are missing blocks
             if (currentHeight > lastProcessedHeight) {
                 logger.debug(`[${network}] Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
                 
@@ -137,7 +137,7 @@ export class WebsocketHealthTracker {
                 );
             }
 
-            // Bağlantı durumunu güncelle
+            // Update connection status
             state.isConnected = true;
             state.disconnectedAt = undefined;
             this.state.set(network, state);
@@ -146,7 +146,7 @@ export class WebsocketHealthTracker {
             logger.error(`[${network}] Error processing missed blocks:`, error);
             throw error;
         } finally {
-            // Her durumda mutex'i serbest bırak
+            // Always release mutex
             release();
         }
     }

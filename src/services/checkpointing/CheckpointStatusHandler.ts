@@ -11,10 +11,10 @@ export class CheckpointStatusHandler {
     private constructor() {
         this.checkpointStatusFetcher = CheckpointStatusFetcher.getInstance();
 
-        // ENABLE_FULL_SYNC true ise geçmiş checkpoint'leri senkronize et
+        // If CHECKPOINT_SYNC is true, synchronize historical checkpoints
         if (process.env.CHECKPOINT_SYNC === 'true') {
             logger.info('[CheckpointStatus] Full sync enabled, starting historical checkpoint sync');
-            // Asenkron işlemi başlat ama bekleme
+            // Start asynchronous process but don't wait
             this.initializeHistoricalSync().catch(error => {
                 logger.error('[CheckpointStatus] Error in historical sync initialization:', error);
             });
@@ -94,7 +94,7 @@ export class CheckpointStatusHandler {
                 return;
             }
 
-            // Block hash kontrolü ve dönüşümü
+            // Block hash check and transformation
             const rawBlockHash = checkpoint.ckpt?.block_hash;
             if (!rawBlockHash) {
                 logger.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
@@ -119,7 +119,7 @@ export class CheckpointStatusHandler {
                 block_time: now
             };
 
-            // For accumulating event, create a new checkpoint record if it doesn't exist
+            // Create new checkpoint if not found
             const newCheckpoint = {
                 epoch_num: epochNum,
                 network,
@@ -170,7 +170,7 @@ export class CheckpointStatusHandler {
                 return;
             }
 
-            // Block hash kontrolü ve dönüşümü
+            // Block hash check and transformation
             const rawBlockHash = checkpoint.ckpt?.block_hash;
             if (!rawBlockHash) {
                 logger.warn(`[CheckpointStatus] No block hash found for epoch ${epochNum}`);
@@ -183,7 +183,7 @@ export class CheckpointStatusHandler {
             const blockHeight = parseInt(blockData?.result?.data?.value?.block?.header?.height || '0');
             const now = new Date();
 
-            // Mevcut checkpoint'i kontrol et
+            // Check if existing checkpoint exists
             const existingCheckpoint = await BLSCheckpoint.findOne({ 
                 epoch_num: epochNum,
                 network 
@@ -201,7 +201,7 @@ export class CheckpointStatusHandler {
                 block_time: now
             };
 
-            // Eğer checkpoint bulunamazsa yeni oluştur
+            // If checkpoint is not found, create new one
             if (!existingCheckpoint) {
                 logger.info(`[CheckpointStatus] Creating new checkpoint for epoch ${epochNum}`);
                 await BLSCheckpoint.create({
@@ -272,7 +272,7 @@ export class CheckpointStatusHandler {
     private async initializeHistoricalSync() {
         try {
             logger.info('[CheckpointStatus] Starting historical sync initialization');
-            // Her network için senkronizasyonu başlat
+            // Start synchronization for each network
             const networks = [Network.MAINNET, Network.TESTNET];
             
             for (const network of networks) {

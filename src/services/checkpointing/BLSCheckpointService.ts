@@ -17,7 +17,7 @@ export class BLSCheckpointService {
         this.checkpointFetcher = BLSCheckpointFetcher.getInstance();
         this.checkpointHandler = BLSCheckpointHandler.getInstance();
 
-        // ENABLE_FULL_SYNC true ise geçmiş checkpointleri senkronize et
+        // If CHECKPOINT_SYNC is true, synchronize historical checkpoints
         if (process.env.CHECKPOINT_SYNC === 'true') {
             logger.info('[BLSCheckpoint] Full sync enabled, starting historical checkpoint sync');
             this.initializeHistoricalSync();
@@ -87,7 +87,7 @@ export class BLSCheckpointService {
 
     private async initializeHistoricalSync() {
         try {
-            // Her network için senkronizasyonu başlat
+            // Start synchronization for each network
             const networks = [Network.MAINNET, Network.TESTNET];
             
             for (const network of networks) {

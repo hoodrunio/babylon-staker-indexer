@@ -35,7 +35,7 @@ export class WebsocketService {
         this.validatorSignatureService = ValidatorSignatureService.getInstance();
         this.validatorHistoricalSync = ValidatorHistoricalSyncService.getInstance();
         
-        // Mainnet konfigürasyonu varsa ekle
+        // Add mainnet configuration if exists
         try {
             if (process.env.BABYLON_NODE_URL && process.env.BABYLON_RPC_URL) {
                 this.babylonClient.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
@@ -47,7 +47,7 @@ export class WebsocketService {
             logger.warn('[WebSocket] Failed to initialize Mainnet client:', error);
         }
 
-        // Testnet konfigürasyonu varsa ekle
+        // Add testnet configuration if exists
         try {
             if (process.env.BABYLON_TESTNET_NODE_URL && process.env.BABYLON_TESTNET_RPC_URL) {
                 this.babylonClient.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
@@ -59,7 +59,7 @@ export class WebsocketService {
             logger.warn('[WebSocket] Failed to initialize Testnet client:', error);
         }
 
-        // En az bir network konfigüre edilmiş olmalı
+        // At least one network must be configured
         if (this.babylonClient.size === 0) {
             throw new Error('[WebSocket] No network configurations found. Please configure at least one network (MAINNET or TESTNET)');
         }
@@ -73,7 +73,7 @@ export class WebsocketService {
     }
 
     public startListening() {
-        // Sadece konfigüre edilmiş networkler için bağlantı kur
+        // Establish connection only for configured networks
         if (this.babylonClient.has(Network.MAINNET)) {
             this.connectMainnet();
         }
@@ -179,7 +179,7 @@ export class WebsocketService {
                     return;
                 }
 
-                // Process all message types
+                // Process only for configured clients
                 const processPromises: Promise<void>[] = [];
 
                 // Handle BLS checkpoint events
@@ -259,7 +259,7 @@ export class WebsocketService {
             logger.info(`[${network}] Attempting to reconnect (attempt ${attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
             
             try {
-                // Sadece konfigüre edilmiş client'lar için işlem yap
+                // Process only for configured clients
                 const client = this.babylonClient.get(network);
                 if (client) {
                     await this.healthTracker.handleReconnection(network, client);
@@ -276,7 +276,7 @@ export class WebsocketService {
                 }, this.RECONNECT_INTERVAL);
             } catch (error) {
                 logger.error(`[${network}] Error handling reconnection:`, error);
-                // Hata durumunda da reconnect dene
+                // Retry even if there's an error
                 this.handleReconnect(network);
             }
         } else {

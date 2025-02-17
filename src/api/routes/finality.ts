@@ -14,7 +14,7 @@ router.get('/signatures/:fpBtcPkHex/stats', async (req, res) => {
         const { fpBtcPkHex } = req.params;
         const { startHeight, endHeight, lastNBlocks } = req.query;
 
-        // Query parametrelerini kontrol et ve dönüştür
+        // Check and convert query parameters
         if (lastNBlocks) {
             const lastN = parseInt(lastNBlocks as string, 10);
             if (isNaN(lastN) || lastN <= 0) {
@@ -73,10 +73,10 @@ router.get('/signatures/:fpBtcPkHex/stream', (req, res) => {
 
         logger.info(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
 
-        // SSE bağlantısını başlat
+        // Start SSE connection
         finalitySignatureService.addSSEClient(clientId, res, fpBtcPkHex);
 
-        // Client bağlantısı kapandığında cleanup yap
+        // Clean up when client connection closes
         req.on('close', () => {
             logger.info(`[SSE] Client connection closed: ${clientId}`);
         });

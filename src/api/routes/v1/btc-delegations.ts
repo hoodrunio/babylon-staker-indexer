@@ -4,16 +4,16 @@ import { networkSelector } from '../../middleware/network-selector';
 
 const router = Router();
 
-// Yeni route (query parameter ile)
+// New route (with query parameter)
 router.get('/', networkSelector, BTCDelegationController.getDelegationsByStatus);
 
-// Eski route yapısını da destekle (geriye dönük uyumluluk için)
+// Support old route structure (for backward compatibility)
 router.get('/status', networkSelector, BTCDelegationController.getDelegationsByStatus);
 
-// Staker address'e göre delegasyonları getir
+// Get delegations by staker address
 router.get('/staker/:stakerAddress', networkSelector, BTCDelegationController.getDelegationsByStakerAddress);
 
-// Tek bir delegasyonu getir
+// get delegation by tx hash
 router.get('/tx/:txHash', networkSelector, BTCDelegationController.getDelegationByTxHash);
 
 export default router; 

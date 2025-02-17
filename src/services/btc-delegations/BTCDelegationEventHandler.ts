@@ -59,18 +59,18 @@ export class BTCDelegationEventHandler {
                 );
             }
 
-            // Her bir event'i ayrı ayrı işle
+            // Process each event separately
             for (const event of txData.events) {
                 let eventType = null;
 
-                // Message action kontrolü
+                // Message action check
                 if (event.type === 'message') {
                     const actionAttr = event.attributes.find((a: any) => a.key === 'action');
                     if (actionAttr?.value === '/babylon.btcstaking.v1.MsgCreateBTCDelegation') {
                         eventType = 'MsgCreateBTCDelegation';
                     }
                 }
-                // Diğer event tipleri kontrolü
+                // Check other event types
                 else {
                     switch (event.type) {
                         case 'babylon.btcstaking.v1.EventBTCDelegationStateUpdate':
@@ -158,7 +158,7 @@ export class BTCDelegationEventHandler {
             
             let eventDataWithHashAndSender;
             
-            // Websocket event yapısı kontrolü
+            // Check websocket event structure
             if (txData.value?.TxResult) {
                 // Websocket event'i
                 const txResult = txData.value.TxResult;
@@ -166,7 +166,7 @@ export class BTCDelegationEventHandler {
                     ...txData,
                     events: txResult.result.events,
                     height: parseInt(txResult.height),
-                    hash: txResult.tx_hash || txResult.tx, // tx_hash veya tx'den birini kullan
+                    hash: txResult.tx_hash || txResult.tx, // use either tx_hash or tx
                     sender: txResult.result.events.find((e: any) => e.type === 'message')
                         ?.attributes.find((a: any) => a.key === 'sender')?.value
                 };
@@ -267,7 +267,7 @@ export class BTCDelegationEventHandler {
                 allEvents: txData.events.map((e: any) => e.type)
             }); */
 
-            // Aynı transaction içinde quorum event'i var mı kontrol et
+            // Check if there is a quorum event in the same transaction
             const hasQuorumEvent = txData.events.some((e: any) => 
                 e.type === 'babylon.btcstaking.v1.EventCovenantQuorumReached'
             );
@@ -282,7 +282,7 @@ export class BTCDelegationEventHandler {
 
     private async handleCovenantQuorum(txData: any, network: Network) {
         try {
-            // Önce tüm event'leri logla
+            // First log all events
             /* logger.info('Processing transaction events:', {
                 allEvents: txData.events.map((e: any) => e.type),
                 network
@@ -318,7 +318,7 @@ export class BTCDelegationEventHandler {
                 return;
             }
 
-            // Önce delegasyonun mevcut durumunu kontrol et
+            // First check current status of delegation
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
             
             if (!delegation) {
@@ -326,7 +326,7 @@ export class BTCDelegationEventHandler {
                 return;
             }
 
-            // Sadece PENDING durumundaysa güncelle
+            // Update only if in PENDING status
             if (delegation.status === 'PENDING') {
                 const result = await this.delegationService.updateDelegationState(
                     stakingTxHash, 
@@ -387,7 +387,7 @@ export class BTCDelegationEventHandler {
                 return;
             }
 
-            // Önce delegasyonun var olduğunu kontrol et
+            // First check if delegation exists
             const delegation = await this.delegationService.getDelegationByTxId(stakingTxIdHex, network);
             if (!delegation) {
                 logger.error('No delegation found for staking tx id hex:', stakingTxIdHex);

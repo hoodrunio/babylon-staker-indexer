@@ -18,7 +18,7 @@ router.get('/signatures/:fpBtcPkHex/stats', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
         const network = req.network || Network.MAINNET;
-        const DEFAULT_BLOCKS = 100; // Son 100 blok için istatistikler
+        const DEFAULT_BLOCKS = 100; // Statistics for last 100 blocks
 
         const currentHeight = await finalitySignatureService.getCurrentHeight();
         const startHeight = Math.max(1, currentHeight - DEFAULT_BLOCKS);
@@ -46,9 +46,9 @@ router.get('/signatures/:fpBtcPkHex/performance', async (req, res) => {
         const { fpBtcPkHex } = req.params;
         const network = req.network || Network.MAINNET;
         const currentHeight = await finalitySignatureService.getCurrentHeight();
-        const lookbackBlocks = 5000; // Son 5000 blok
+        const lookbackBlocks = 5000; // Last 5000 blocks
 
-        // Son 5000 bloğun istatistiklerini al
+        // Get statistics for the last 5000 blocks
         const startHeight = Math.max(1, currentHeight - lookbackBlocks + 1);
         const stats = await finalitySignatureService.getSignatureStats({ 
             fpBtcPkHex, 
@@ -57,12 +57,12 @@ router.get('/signatures/:fpBtcPkHex/performance', async (req, res) => {
             network
         });
 
-        // Performans metriklerini hesapla
-        const totalBlocks = currentHeight - startHeight + 1; // Gerçek toplam blok sayısı
-        const signableBlocks = stats.signedBlocks + stats.missedBlocks; // İmzalanabilir bloklar
+        // Calculate performance metrics
+        const totalBlocks = currentHeight - startHeight + 1; // Actual total block count
+        const signableBlocks = stats.signedBlocks + stats.missedBlocks; // Signable blocks
         const successRate = signableBlocks > 0 ? (stats.signedBlocks / signableBlocks) * 100 : 0;
 
-        // Bilinmeyen blokları hesapla
+        // Calculate unknown blocks
         const unknownBlocks = totalBlocks - signableBlocks;
 
         return res.json({
@@ -108,14 +108,14 @@ router.get('/signatures/:fpBtcPkHex/stream', async (req, res) => {
 
         logger.info(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);
 
-        // SSE bağlantısını başlat
+        // Start SSE connection
         await finalitySignatureService.addSSEClient(
             clientId, 
             res, 
             fpBtcPkHex
         );
 
-        // Client bağlantısı kapandığında cleanup yap
+        // Clean up when client connection is closed
         req.on('close', () => {
             logger.info(`[SSE] Client connection closed: ${clientId}`);
         });
@@ -321,4 +321,4 @@ router.get('/epoch/current/stats/:fpBtcPkHex', async (req, res) => {
     }
 });
 
-export default router; 
+export default router;

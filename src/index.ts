@@ -13,7 +13,7 @@ dotenv.config();
 
 async function startServer() {
     logger.info('Starting services...');
-    
+
     // Initialize and start the FinalitySignatureService
     const finalityService = FinalitySignatureService.getInstance();
     await finalityService.start();
@@ -25,12 +25,12 @@ async function startServer() {
     const app = express();
     app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
     const port = process.env.PORT || 3000;
-    
+
     // Initialize and start the WebSocket service
     const websocketService = WebsocketService.getInstance();
     websocketService.startListening();
 
-    // CORS ayarları
+    // CORS settings
     app.use(cors({
         origin: '*',
         methods: ['GET', 'POST', 'OPTIONS'],
@@ -42,7 +42,7 @@ async function startServer() {
     // Middleware
     app.use(express.json());
 
-    // SSE endpoint'leri için özel CORS middleware
+    // Special CORS middleware for SSE endpoints
     app.use('/api/finality/signatures/:fpBtcPkHex/stream', (req, res, next) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -56,18 +56,18 @@ async function startServer() {
 
     // Basic route for testing
     app.get('/', (req, res) => {
-      res.json({ message: 'Babylon Indexer API' });
+        res.json({ message: 'Babylon Indexer API' });
     });
 
     // Error handling
     app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      logger.error(err.stack);
-      res.status(500).json({ error: 'Something broke!' });
+        logger.error(err.stack);
+        res.status(500).json({ error: 'Something broke!' });
     });
 
     // Start server
     app.listen(port, () => {
-      logger.info(`Server running at http://localhost:${port}`);
+        logger.info(`Server running at http://localhost:${port}`);
     });
 
     // Initialize indexer
@@ -75,41 +75,41 @@ async function startServer() {
 
     // Start indexing if INDEXER_ENABLED is true
     if (process.env.INDEXER_ENABLED === 'true') {
-      const startHeight = parseInt(process.env.START_HEIGHT || '0');
-      const endHeight = parseInt(process.env.END_HEIGHT || '0');
-      
-      if (startHeight && endHeight) {
-        indexer.scanBlocks(startHeight, endHeight).catch(logger.error);
-      }
-    } 
+        const startHeight = parseInt(process.env.START_HEIGHT || '0');
+        const endHeight = parseInt(process.env.END_HEIGHT || '0');
 
-    // Graceful shutdown
+        if (startHeight && endHeight) {
+            indexer.scanBlocks(startHeight, endHeight).catch(logger.error);
+        }
+    }
+
+    // Special shutdown process for PM2
     const shutdown = async (signal: string) => {
         logger.info(`${signal} signal received. Starting graceful shutdown...`);
         try {
             // Stop all services
             websocketService.stop();
             finalityService.stop();
-            
+
             // Wait a bit for cleanup
             await new Promise(resolve => setTimeout(resolve, 1000));
-            
+
             logger.info('All services stopped. Waiting for final cleanup...');
-            
-            // PM2 için özel shutdown süreci
+
+            // Allow PM2 to use its own logging mechanism
             if (process.env.PM2_USAGE) {
-                // PM2'nin kendi log mekanizmasını kullanmasına izin ver
+                // Allow PM2 to use its own logging mechanism
                 process.send?.('shutdown');
-                // Biraz daha bekle
+                // Wait a little longer
                 await new Promise(resolve => setTimeout(resolve, 1500));
             } else {
-                // PM2 dışında çalışıyorsa Winston logger'ı kapat
+                // Close Winston logger if running outside PM2
                 await new Promise<void>((resolve) => {
                     logger.on('finish', resolve);
                     logger.end();
                 });
             }
-            
+
             process.exit(0);
         } catch (error) {
             console.error('Error during shutdown:', error);
@@ -117,7 +117,7 @@ async function startServer() {
         }
     };
 
-    // PM2 shutdown mesajını dinle
+    // Listen for PM2 shutdown message
     process.on('message', (msg) => {
         if (msg === 'shutdown') {
             shutdown('PM2');
@@ -128,4 +128,4 @@ async function startServer() {
     process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-startServer().catch(logger.error); 
+startServer().catch(logger.error);

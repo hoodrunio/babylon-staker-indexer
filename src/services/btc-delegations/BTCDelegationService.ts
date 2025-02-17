@@ -509,7 +509,7 @@ export class BTCDelegationService {
             return;
         }
 
-        // Küçük batch'ler için doğrudan işlem yap
+        // Process directly for small batches
         if (chainDelegations.length <= 5) {
             const results = await Promise.allSettled(
                 chainDelegations.map(async (chainDel) => {
@@ -544,7 +544,7 @@ export class BTCDelegationService {
                 })
             );
 
-            // Sadece değişiklikleri logla
+            // Log only changes
             const stats = results.reduce((acc, result) => {
                 if (result.status === 'fulfilled') {
                     acc[result.value.type] = (acc[result.value.type] || 0) + 1;
@@ -559,7 +559,7 @@ export class BTCDelegationService {
             return;
         }
 
-        // Büyük batch'ler için normal sync işlemini kullan
+        // Use normal sync process for large batches
         await this.syncDelegations(network);
     }
 
@@ -571,7 +571,7 @@ export class BTCDelegationService {
                 return null;
             }
 
-            // Tekli delegasyon için reconcile kullan
+            // Use reconcile for single delegation
             await this.reconcileDelegations([chainDel], network);
             return chainDel;
         } catch (error) {

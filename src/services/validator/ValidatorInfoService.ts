@@ -414,14 +414,14 @@ export class ValidatorInfoService {
                 active: !showInactive
             };
 
-            // Limit kontrolü
+            // Limit control
             const validLimit = Math.min(Math.max(1, limit), 100);
             const skip = (Math.max(1, page) - 1) * validLimit;
 
-            // Toplam kayıt sayısını al
+            // Get total record count
             const total = await ValidatorInfo.countDocuments(query);
 
-            // Validatörleri getir
+            // Get validators
             const validators = await ValidatorInfo.find(query)
                 .sort({ voting_power: -1, moniker: 1 })
                 .skip(skip)
