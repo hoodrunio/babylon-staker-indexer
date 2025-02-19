@@ -5,6 +5,7 @@ import { BabylonClient } from '../../clients/BabylonClient';
 import axios from 'axios';
 import { FinalityProviderService } from '../finality/FinalityProviderService';
 import { logger } from '../../utils/logger';
+import { bech32 } from 'bech32';
 
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
@@ -149,6 +150,7 @@ export class ValidatorInfoService {
                     // Get consensus key and convert to hex address and valcons address
                     const consensusHexAddress = this.getConsensusHexAddress(validator.consensus_pubkey.key);
                     const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key, network);
+                    const accountAddress = this.getAccountAddressFromValoper(validator.operator_address);
 
                     // Check if this validator exists in tendermint validators
                     let tmValidator = tmValidatorMap.get(consensusHexAddress);
@@ -175,6 +177,7 @@ export class ValidatorInfoService {
                             valcons_address: valconsAddress,
                             consensus_pubkey: validator.consensus_pubkey.key,
                             valoper_address: validator.operator_address,
+                            account_address: accountAddress,
                             moniker: validator.description.moniker,
                             website: validator.description.website,
                             details: validator.description.details,
@@ -235,7 +238,6 @@ export class ValidatorInfoService {
             const addressBytes = Buffer.from(hexAddress, 'hex');
             
             // Bech32 encode
-            const { bech32 } = require('bech32');
             const words = bech32.toWords(Buffer.from(addressBytes));
             const valconsAddress = bech32.encode(prefix, words);
 
@@ -308,6 +310,18 @@ export class ValidatorInfoService {
             });
         } catch (error) {
             logger.error('[ValidatorInfo] Error getting validator by valoper address:', error);
+            throw error;
+        }
+    }
+
+    public async getValidatorByAccountAddress(accountAddress: string, network: Network): Promise<any> {
+        try {
+            return await ValidatorInfo.findOne({
+                account_address: accountAddress,
+                network
+            });
+        } catch (error) {
+            logger.error('[ValidatorInfo] Error getting validator by account address:', error);
             throw error;
         }
     }
@@ -434,6 +448,18 @@ export class ValidatorInfoService {
             };
         } catch (error) {
             logger.error('[ValidatorInfo] Error getting all validators:', error);
+            throw error;
+        }
+    }
+
+    private getAccountAddressFromValoper(valoperAddress: string): string {
+        try {
+            // Decode the valoper address
+            const decoded = bech32.decode(valoperAddress);
+            // Re-encode with 'bbn' prefix
+            return bech32.encode('bbn', decoded.words);
+        } catch (error) {
+            logger.error('[ValidatorInfo] Error converting valoper to account address:', error);
             throw error;
         }
     }

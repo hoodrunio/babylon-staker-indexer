@@ -350,4 +350,128 @@ export class BabylonClient {
         const data = await response.json() as { result: any };
         return data.result;
     }
+
+    async getProposals(): Promise<any[]> {
+        try {
+            logger.debug('[Governance] Fetching all proposals');
+            let allProposals: any[] = [];
+            let nextKey: string | null = null;
+
+            do {
+                const params = new URLSearchParams();
+                if (nextKey) {
+                    params.append('pagination.key', nextKey);
+                }
+
+                const response = await this.client.get(`/cosmos/gov/v1/proposals?${params.toString()}`);
+                
+                if (!response.data || !response.data.proposals) {
+                    logger.warn('[Governance] No proposals found in response');
+                    break;
+                }
+
+                allProposals = allProposals.concat(response.data.proposals);
+                nextKey = response.data.pagination?.next_key || null;
+            } while (nextKey);
+
+            return allProposals;
+        } catch (error) {
+            logger.error('[Governance] Error fetching proposals:', error);
+            return [];
+        }
+    }
+
+    async getProposalVotes(proposalId: number): Promise<any[]> {
+        try {
+            logger.debug(`[Governance] Fetching votes for proposal ${proposalId}`);
+            let allVotes: any[] = [];
+            let nextKey: string | null = null;
+
+            do {
+                const params = new URLSearchParams();
+                if (nextKey) {
+                    params.append('pagination.key', nextKey);
+                }
+
+                const response = await this.client.get(`/cosmos/gov/v1/proposals/${proposalId}/votes?${params.toString()}`);
+                
+                if (!response.data || !response.data.votes) {
+                    logger.warn(`[Governance] No votes found for proposal ${proposalId}`);
+                    break;
+                }
+
+                allVotes = allVotes.concat(response.data.votes);
+                nextKey = response.data.pagination?.next_key || null;
+            } while (nextKey);
+
+            return allVotes;
+        } catch (error) {
+            logger.error(`[Governance] Error fetching votes for proposal ${proposalId}:`, error);
+            return [];
+        }
+    }
+
+    async getProposalTally(proposalId: number): Promise<any> {
+        try {
+            logger.debug(`[Governance] Fetching tally for proposal ${proposalId}`);
+            const response = await this.client.get(`/cosmos/gov/v1/proposals/${proposalId}/tally`);
+            
+            if (!response.data || !response.data.tally) {
+                logger.warn(`[Governance] No tally found for proposal ${proposalId}`);
+                return null;
+            }
+
+            return response.data.tally;
+        } catch (error) {
+            logger.error(`[Governance] Error fetching tally for proposal ${proposalId}:`, error);
+            return null;
+        }
+    }
+
+    async getProposalDetails(proposalId: number): Promise<any> {
+        try {
+            logger.debug(`[Governance] Fetching details for proposal ${proposalId}`);
+            const response = await this.client.get(`/cosmos/gov/v1/proposals/${proposalId}`);
+            
+            if (!response.data || !response.data.proposal) {
+                logger.warn(`[Governance] No data found for proposal ${proposalId}`);
+                return null;
+            }
+
+            return response.data.proposal;
+        } catch (error) {
+            logger.error(`[Governance] Error fetching proposal ${proposalId}:`, error);
+            return null;
+        }
+    }
+
+    async searchTxs(query: string, page: number = 1, limit: number = 100): Promise<any> {
+        try {
+            logger.info(`[Governance] Searching transactions with query: ${query}, page: ${page}, limit: ${limit}`);
+            const params = new URLSearchParams({
+                'query': query,
+                'pagination.limit': limit.toString(),
+                'page': page.toString(),
+                'order_by': 'ORDER_BY_DESC'
+            });
+
+            const url = `/cosmos/tx/v1beta1/txs?${params.toString()}`;
+
+            const response = await this.client.get(url);
+            
+            if (!response.data) {
+                logger.warn('[Governance] No transactions found in response');
+                return null;
+            }
+
+            if (response.data.txs) {
+                logger.info(`[Governance] Found ${response.data.txs.length} transactions`);
+            }
+
+            return response.data;
+        } catch (error) {
+            logger.error('[Governance] Error searching transactions:', error);
+            return null;
+        }
+    }
 } 

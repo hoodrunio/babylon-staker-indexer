@@ -6,7 +6,8 @@ import paramsRouter from './params';
 import blsCheckpointRouter from './bls-checkpoint';
 import validatorSignatureRouter from './validator-signature';
 import validatorInfoRouter from './validator-info';
-import covenantRouter from './covenant.routes';
+import covenantRouter from './covenant';
+import governanceRoutes from './governance';
 
 const v1Router = Router();
 
@@ -21,5 +22,6 @@ v1Router.use('/validator-signatures', validatorSignatureRouter);
 v1Router.use('/validator-info', validatorInfoRouter);
 v1Router.use('/covenant', covenantRouter);
 v1Router.use('/', paramsRouter);
+v1Router.use('/governance', governanceRoutes);
 
 export default v1Router;

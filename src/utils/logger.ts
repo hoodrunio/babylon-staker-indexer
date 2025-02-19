@@ -155,7 +155,7 @@ const logger = winston.createLogger({
             format: customFormat
         }),
 
-        // Write to stdout/stderr in production
+        // Write to stdout/stderr with appropriate format based on environment
         new winston.transports.Console({
             format: process.env.NODE_ENV === 'production' ? customFormat : consoleFormat,
             handleExceptions: true,
@@ -163,15 +163,6 @@ const logger = winston.createLogger({
         })
     ]
 });
-
-// Add console transport in development
-if (process.env.NODE_ENV !== 'production') {
-    logger.add(new winston.transports.Console({
-        format: consoleFormat,
-        handleExceptions: true,
-        handleRejections: true
-    }));
-}
 
 // Uncaught exception and unhandled rejection handlers
 logger.exceptions.handle(

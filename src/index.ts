@@ -7,6 +7,8 @@ import { WebsocketService } from './services/WebsocketService';
 import { BTCDelegationService } from './services/btc-delegations/BTCDelegationService';
 import cors from 'cors';
 import { logger } from './utils/logger';
+import { GovernanceIndexerService } from './services/governance/GovernanceIndexerService';
+import { BabylonClient } from './clients/BabylonClient';
 
 // Load environment variables
 dotenv.config();
@@ -82,6 +84,13 @@ async function startServer() {
             indexer.scanBlocks(startHeight, endHeight).catch(logger.error);
         }
     }
+
+    // Initialize Babylon client
+    const babylonClient = BabylonClient.getInstance();
+
+    // Initialize governance indexer
+    const governanceIndexer = new GovernanceIndexerService(babylonClient);
+    governanceIndexer.start();
 
     // Special shutdown process for PM2
     const shutdown = async (signal: string) => {

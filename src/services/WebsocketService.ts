@@ -8,6 +8,7 @@ import { CheckpointStatusHandler } from './checkpointing/CheckpointStatusHandler
 import { ValidatorSignatureService } from './validator/ValidatorSignatureService';
 import { ValidatorHistoricalSyncService } from './validator/ValidatorHistoricalSyncService';
 import { CovenantEventHandler } from './covenant/CovenantEventHandler';
+import { GovernanceEventHandler } from './governance/GovernanceEventHandler';
 import { logger } from '../utils/logger';
 
 export class WebsocketService {
@@ -16,6 +17,7 @@ export class WebsocketService {
     private testnetWs: WebSocket | null = null;
     private eventHandler: BTCDelegationEventHandler;
     private covenantEventHandler: CovenantEventHandler;
+    private governanceEventHandler: GovernanceEventHandler;
     private healthTracker: WebsocketHealthTracker;
     private blsCheckpointService: BLSCheckpointService;
     private validatorSignatureService: ValidatorSignatureService;
@@ -29,6 +31,7 @@ export class WebsocketService {
     private constructor() {
         this.eventHandler = BTCDelegationEventHandler.getInstance();
         this.covenantEventHandler = CovenantEventHandler.getInstance();
+        this.governanceEventHandler = GovernanceEventHandler.getInstance();
         this.healthTracker = WebsocketHealthTracker.getInstance();
         this.blsCheckpointService = BLSCheckpointService.getInstance();
         this.checkpointStatusHandler = CheckpointStatusHandler.getInstance();
@@ -154,6 +157,14 @@ export class WebsocketService {
                     params: {
                         query: "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed.checkpoint CONTAINS 'epoch_num'"
                     }
+                },
+                {
+                    jsonrpc: '2.0',
+                    method: 'subscribe',
+                    id: 'governance',
+                    params: {
+                        query: "tm.event='Tx' AND message.module='gov'"
+                    }
                 }
             ];
 
@@ -226,6 +237,23 @@ export class WebsocketService {
                     processPromises.push(
                         this.validatorSignatureService.handleNewBlock(blockData, network)
                     );
+                }
+
+                // Handle governance events
+                if (message.id === 'governance') {
+                    const height = parseInt(message.result.events['tx.height']?.[0]);
+                    const txData = {
+                        height,
+                        hash: message.result.events['tx.hash']?.[0],
+                        events: messageValue.TxResult.result.events
+                    };
+
+                    // Validate required fields
+                    if (txData.height && txData.hash && txData.events) {
+                        processPromises.push(this.governanceEventHandler.handleEvent(txData, network));
+                    } else {
+                        logger.info(`${network} governance transaction missing required fields:`, txData);
+                    }
                 }
 
                 // Wait for all processes to complete

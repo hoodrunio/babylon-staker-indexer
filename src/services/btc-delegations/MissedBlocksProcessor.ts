@@ -1,7 +1,7 @@
 import { Network } from '../../types/finality';
 import { RateLimiter } from '../../utils/RateLimiter';
 import { BTCDelegationEventHandler } from './BTCDelegationEventHandler';
-import { BabylonClient, BlockResult } from '../../clients/BabylonClient';
+import { BabylonClient } from '../../clients/BabylonClient';
 import { logger } from '../../utils/logger';
 
 interface BTCStakingEvent {

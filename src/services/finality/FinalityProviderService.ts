@@ -131,23 +131,23 @@ export class FinalityProviderService {
             async () => {
                 const { nodeUrl } = this.getNetworkConfig(network);
                 
-                // 1. First get the current height
+                // 1. Önce son blok yüksekliğini al
                 const currentHeight = await this.babylonClient.getCurrentHeight();
                 
-                // 2. Get active finality providers
+                // 2. Son bloktaki aktif FP'leri al
                 const activeResponse = await fetch(`${nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
                 if (!activeResponse.ok) {
                     throw new Error(`HTTP error! status: ${activeResponse.status}`);
                 }
                 
                 const activeData = await activeResponse.json() as ActiveProviderResponse;
+                
+                // Aktif FP'lerin public key'lerini set'e al
                 const activePkSet = new Set(
-                    activeData.finality_providers
-                        .filter((fp: FinalityProviderWithMeta) => !fp.jailed && Number(fp.voting_power) > 0)
-                        .map((fp: FinalityProviderWithMeta) => fp.btc_pk_hex)
+                    activeData.finality_providers.map((fp: FinalityProviderWithMeta) => fp.btc_pk_hex)
                 );
                 
-                // 3. Get detailed information for all providers
+                // 3. Tüm FP'lerin detaylı bilgilerini al
                 const allProviders: FinalityProvider[] = [];
                 let nextKey = '';
                 
@@ -164,10 +164,9 @@ export class FinalityProviderService {
                     
                     const data = await response.json() as QueryFinalityProvidersResponse;
                     
-                    // Filter and add only active providers
+                    // Sadece aktif FP'lerin detaylarını filtrele
                     const activeProviders = data.finality_providers?.filter(provider => 
-                        activePkSet.has(provider.btc_pk) && 
-                        !provider.jailed
+                        activePkSet.has(provider.btc_pk)
                     ) || [];
                     
                     allProviders.push(...activeProviders);
@@ -220,20 +219,27 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProvider(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProvider> {
+    public async getFinalityProvider(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProvider & { isActive: boolean }> {
         const cacheKey = `fp:details:${fpBtcPkHex}:${network}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.PROVIDER_DETAILS,
             async () => {
-                const { nodeUrl } = this.getNetworkConfig(network);
-                const response = await fetch(`${nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/finality_provider`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                const [providerResponse, activeProviders] = await Promise.all([
+                    fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/finality_provider`),
+                    this.getActiveFinalityProviders(network)
+                ]);
+
+                if (!providerResponse.ok) {
+                    throw new Error(`HTTP error! status: ${providerResponse.status}`);
                 }
-                const data = await response.json() as QueryFinalityProviderResponse;
+
+                const data = await providerResponse.json() as QueryFinalityProviderResponse;
                 
-                return data.finality_provider;
+                return {
+                    ...data.finality_provider,
+                    isActive: activeProviders.some(p => p.btc_pk === fpBtcPkHex)
+                };
             }
         );
     }

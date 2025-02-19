@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { CovenantController } from '../../controllers/CovenantController';
+import { CovenantController } from '../../controllers/covenant.controller';
 
 const router = Router();
 const controller = new CovenantController();

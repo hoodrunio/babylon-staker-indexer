@@ -24,6 +24,12 @@ const validatorInfoSchema = new mongoose.Schema({
         index: true,
         match: /^bbnvaloper1[a-zA-Z0-9]{38}$/
     },
+    account_address: {
+        type: String,
+        required: true,
+        index: true,
+        match: /^bbn1[a-zA-Z0-9]{38}$/
+    },
     moniker: {
         type: String,
         required: true,
