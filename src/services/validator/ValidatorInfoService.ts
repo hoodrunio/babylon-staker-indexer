@@ -6,7 +6,7 @@ import axios from 'axios';
 import { FinalityProviderService } from '../finality/FinalityProviderService';
 import { logger } from '../../utils/logger';
 import { bech32 } from 'bech32';
-
+import { getKeybaseLogo } from '../../utils/keybase';
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
     private readonly babylonClients: Map<Network, BabylonClient>;
@@ -179,6 +179,8 @@ export class ValidatorInfoService {
                             valoper_address: validator.operator_address,
                             account_address: accountAddress,
                             moniker: validator.description.moniker,
+                            identity: validator.description.identity,
+                            logo_url: await getKeybaseLogo(validator.description.identity),
                             website: validator.description.website,
                             details: validator.description.details,
                             active: validator.status === 'BOND_STATUS_BONDED',
@@ -252,6 +254,7 @@ export class ValidatorInfoService {
         try {
             const consensusHexAddress = this.getConsensusHexAddress(validatorData.consensus_pubkey);
             const valconsAddress = this.getValconsAddress(validatorData.consensus_pubkey, network);
+            const logoUrl = await getKeybaseLogo(validatorData.description.identity);
 
             await ValidatorInfo.findOneAndUpdate(
                 {
@@ -264,6 +267,8 @@ export class ValidatorInfoService {
                     consensus_pubkey: validatorData.consensus_pubkey,
                     valoper_address: validatorData.operator_address,
                     moniker: validatorData.description.moniker,
+                    identity: validatorData.description.identity,
+                    logo_url: logoUrl,
                     website: validatorData.description.website,
                     details: validatorData.description.details,
                     active: validatorData.status === 'BOND_STATUS_BONDED',

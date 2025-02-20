@@ -7,7 +7,7 @@ import { logger } from '../../../utils/logger';
 
 export const getAllProposals = async (req: Request, res: Response) => {
     try {
-        const network = (req.query.network as Network) || Network.TESTNET;
+        const network = req.network || Network.TESTNET;
         const status = req.query.status as string;
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 100;
@@ -42,7 +42,7 @@ export const getAllProposals = async (req: Request, res: Response) => {
 
 export const getProposalById = async (req: Request, res: Response) => {
     try {
-        const network = (req.query.network as Network) || Network.TESTNET;
+        const network = req.network || Network.TESTNET;
         const proposal = await Proposal.findOne({
             network,
             proposal_id: parseInt(req.params.id)
@@ -61,7 +61,7 @@ export const getProposalById = async (req: Request, res: Response) => {
 
 export const getProposalVotes = async (req: Request, res: Response) => {
     try {
-        const network = (req.query.network as Network) || Network.TESTNET;
+        const network = req.network || Network.TESTNET;
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 100;
         const option = req.query.option as string;
@@ -107,15 +107,21 @@ export const getProposalVotes = async (req: Request, res: Response) => {
             });
         }
 
+        // Fetch all validators for the network (both active and inactive)
         const validators = await ValidatorInfo.find({ 
             network,
-            active: true,
             account_address: { $exists: true, $ne: '' }
+        }).select('account_address moniker logo_url valoper_address');
+                
+        // Create a map of validator details by account address
+        const validatorMap = new Map();
+        validators.forEach(v => {
+            validatorMap.set(v.account_address, {
+                moniker: v.moniker || 'Unknown Validator',
+                logo_url: v.logo_url || '',
+                valoper_address: v.valoper_address
+            });
         });
-        
-        const validatorAddresses = new Set(validators.map(v => v.account_address));
-        
-        logger.debug(`[Governance] Found ${validators.length} active validator addresses for network ${network}`);
 
         interface VoteData {
             option: string;
@@ -134,10 +140,20 @@ export const getProposalVotes = async (req: Request, res: Response) => {
             tx_hash?: string;
             height?: number;
             is_validator: boolean;
+            validator_info?: {
+                moniker: string;
+                logo_url: string;
+                valoper_address: string;
+            };
         }
 
         let votesArray = Array.from(proposalVotes.votes.entries()).map(([voter, vote]) => {
             const voteData = vote as VoteData;
+            const validatorInfo = validatorMap.get(voter);
+            
+            // Update is_validator based on validatorInfo presence
+            const isValidator = !!validatorInfo;
+
             return {
                 voter,
                 option: voteData.option,
@@ -145,7 +161,8 @@ export const getProposalVotes = async (req: Request, res: Response) => {
                 vote_time: voteData.vote_time,
                 tx_hash: voteData.tx_hash,
                 height: voteData.height,
-                is_validator: voteData.is_validator
+                is_validator: isValidator,
+                ...(validatorInfo && { validator_info: validatorInfo })
             } as VoteWithVoter;
         });
 
@@ -154,9 +171,9 @@ export const getProposalVotes = async (req: Request, res: Response) => {
         }
 
         if (voterType === 'validator') {
-            votesArray = votesArray.filter(vote => vote.is_validator);
+            votesArray = votesArray.filter(vote => vote.validator_info);
         } else if (voterType === 'user') {
-            votesArray = votesArray.filter(vote => !vote.is_validator);
+            votesArray = votesArray.filter(vote => !vote.validator_info);
         }
 
         votesArray.sort((a, b) => {
@@ -180,7 +197,7 @@ export const getProposalVotes = async (req: Request, res: Response) => {
         }
 
         const stats = votesArray.reduce((acc, vote) => {
-            const group = vote.is_validator ? 'validator' : 'user';
+            const group = vote.validator_info ? 'validator' : 'user';
             acc[group].count++;
             const votePower = BigInt(vote.voting_power.split('.')[0]);
             acc[group].voting_power = (BigInt(acc[group].voting_power) + votePower).toString();
@@ -231,7 +248,7 @@ export const getProposalVotes = async (req: Request, res: Response) => {
 
 export const getProposalStats = async (req: Request, res: Response) => {
     try {
-        const network = (req.query.network as Network) || Network.TESTNET;
+        const network = req.network || Network.TESTNET;
         const proposalId = parseInt(req.params.id);
 
         const [proposal, proposalVotes] = await Promise.all([

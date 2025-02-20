@@ -11,19 +11,25 @@ declare global {
 }
 
 export const networkSelector = (req: Request, res: Response, next: NextFunction) => {
-    // Check both query parameter and header for network
-    const network = (
-        (req.query.network as Network) || 
-        (req.headers['x-network'] as Network) || 
+    // Get network from query or header
+    const networkInput = (
+        (req.query.network as string) || 
+        (req.headers['x-network'] as string) || 
         Network.TESTNET
-    ).toLowerCase() as Network;
+    ).toLowerCase();
     
-    if (network && !Object.values(Network).includes(network as Network)) {
+    // Map the lowercase input to the correct Network enum value
+    let network: Network;
+    if (networkInput === 'mainnet') {
+        network = Network.MAINNET;
+    } else if (networkInput === 'testnet') {
+        network = Network.TESTNET;
+    } else {
         return res.status(400).json({
             error: 'Invalid network specified. Must be either mainnet or testnet'
         });
     }
     
-    req.network = network as Network;
+    req.network = network;
     next();
 }; 

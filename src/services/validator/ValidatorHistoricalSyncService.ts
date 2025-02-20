@@ -8,7 +8,7 @@ export class ValidatorHistoricalSyncService {
     private static instance: ValidatorHistoricalSyncService | null = null;
     private validatorSignatureService: ValidatorSignatureService;
     private syncInProgress: Map<Network, boolean> = new Map();
-    private readonly MAX_HISTORICAL_BLOCKS = 10;
+    private readonly MAX_HISTORICAL_BLOCKS = 10000;
     private readonly BATCH_SIZE = 100;
 
     private constructor() {

@@ -35,6 +35,15 @@ const validatorInfoSchema = new mongoose.Schema({
         required: true,
         trim: true
     },
+    identity: {
+        type: String,
+        trim: true,
+        index: true
+    },
+    logo_url: {
+        type: String,
+        trim: true
+    },
     website: {
         type: String,
         trim: true

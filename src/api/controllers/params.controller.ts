@@ -2,16 +2,17 @@ import { Request, Response } from 'express';
 import ParamsService from '../../services/params.service';
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
+
 class ParamsController {
   static async getAllParams(req: Request, res: Response) {
     try {
-      const network = req.query.network?.toString().toLowerCase();
+      const networkInput = req.query.network?.toString().toLowerCase();
       let targetNetwork: Network | undefined;
 
-      if (network) {
-        if (network === 'mainnet') {
+      if (networkInput) {
+        if (networkInput === 'mainnet') {
           targetNetwork = Network.MAINNET;
-        } else if (network === 'testnet') {
+        } else if (networkInput === 'testnet') {
           targetNetwork = Network.TESTNET;
         } else {
           return res.status(400).json({ 
