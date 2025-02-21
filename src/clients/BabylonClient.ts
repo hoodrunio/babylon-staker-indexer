@@ -474,4 +474,21 @@ export class BabylonClient {
             return null;
         }
     }
+
+    async getGovernanceParams(): Promise<any> {
+        try {
+            logger.debug('[Governance] Fetching governance parameters');
+            const response = await this.client.get('/cosmos/gov/v1/params/tallying');
+            
+            if (!response.data) {
+                logger.warn('[Governance] No governance parameters found in response');
+                return null;
+            }
+
+            return response.data;
+        } catch (error) {
+            logger.error('[Governance] Error fetching governance parameters:', error);
+            return null;
+        }
+    }
 } 

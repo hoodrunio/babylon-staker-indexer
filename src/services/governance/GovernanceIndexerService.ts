@@ -4,6 +4,8 @@ import { ProposalVotes } from '../../database/models/ProposalVotes';
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { ValidatorInfoService } from '../../services/validator/ValidatorInfoService';
+import { ProposalMessageParser } from '../../utils/proposal-message-parser';
+import { GovernanceParams } from '../../database/models/GovernanceParams';
 
 export class GovernanceIndexerService {
     private babylonClient: BabylonClient;
@@ -41,6 +43,11 @@ export class GovernanceIndexerService {
             logger.info('[Governance] Starting initial sync for all networks');
             for (const network of this.networks) {
                 try {
+                    // First update governance parameters
+                    await this.updateGovernanceParams(network, this.babylonClient);
+                    logger.info(`[Governance] Updated governance parameters for network ${network}`);
+
+                    // Then sync proposals
                     await this.indexProposals(network);
                     logger.info(`[Governance] Completed initial sync for network ${network}`);
                 } catch (error) {
@@ -75,6 +82,18 @@ export class GovernanceIndexerService {
     private async updateProposalAndVotes(proposal: any, network: Network) {
         const client = BabylonClient.getInstance(network);
         
+        // Always update governance parameters
+        await this.updateGovernanceParams(network, client);
+
+        // Process messages using the ProposalMessageParser
+        const messages = proposal.messages?.map((msg: any) => ProposalMessageParser.parseMessage(msg)) || [];
+
+        // Get existing proposal to check if status has changed
+        const existingProposal = await Proposal.findOne({
+            network,
+            proposal_id: proposal.id
+        });
+
         // Update or create proposal
         await Proposal.findOneAndUpdate(
             {
@@ -87,6 +106,7 @@ export class GovernanceIndexerService {
                 proposer: proposal.proposer,
                 status: proposal.status,
                 proposal_type: proposal.messages?.map((msg: any) => msg['@type']) || [],
+                messages,
                 voting_start_time: new Date(proposal.voting_start_time),
                 voting_end_time: new Date(proposal.voting_end_time),
                 deposit_end_time: new Date(proposal.deposit_end_time),
@@ -97,7 +117,10 @@ export class GovernanceIndexerService {
                     abstain: proposal.final_tally_result?.abstain_count || "0",
                     no: proposal.final_tally_result?.no_count || "0",
                     no_with_veto: proposal.final_tally_result?.no_with_veto_count || "0"
-                }
+                },
+                metadata: proposal.metadata || '',
+                expedited: proposal.expedited || false,
+                failed_reason: proposal.failed_reason || ''
             },
             { upsert: true, new: true }
         );
@@ -203,6 +226,25 @@ export class GovernanceIndexerService {
             proposal_id: parseInt(proposalId.toString())
         });
 
+        // Get validator info service instance
+        const validatorInfoService = ValidatorInfoService.getInstance();
+
+        // Calculate total voting power from all active validators
+        let totalVotingPower = "0";
+        try {
+            const allValidators = await validatorInfoService.getAllValidators(network, false);
+            totalVotingPower = allValidators.validators.reduce((acc, validator) => {
+                if (validator.active && validator.voting_power) {
+                    const currentPower = BigInt(validator.voting_power);
+                    return (BigInt(acc) + currentPower).toString();
+                }
+                return acc;
+            }, "0");
+            logger.info(`[Governance] Total voting power from all active validators: ${totalVotingPower}`);
+        } catch (error) {
+            logger.error(`[Governance] Error calculating total voting power: ${error}`);
+        }
+
         if (!proposalVotes) {
             proposalVotes = new ProposalVotes({
                 network,
@@ -214,9 +256,12 @@ export class GovernanceIndexerService {
                     no: "0",
                     no_with_veto: "0"
                 },
-                total_voting_power: "0",
+                total_voting_power: totalVotingPower,
                 vote_count: 0
             });
+        } else {
+            // Update total voting power for existing proposal votes
+            proposalVotes.total_voting_power = totalVotingPower;
         }
 
         // Ensure votes map exists
@@ -235,9 +280,6 @@ export class GovernanceIndexerService {
         const processedVoters = new Set<string>();
         const updatedVotes = new Set<string>();
 
-        // Get validator info service instance
-        const validatorInfoService = ValidatorInfoService.getInstance();
-
         // Update votes
         for (const vote of votes) {
             if (!vote.options || vote.options.length === 0) {
@@ -255,19 +297,15 @@ export class GovernanceIndexerService {
 
             // Check if the voter is a validator
             let votingPower = voteOption.weight || "1.000000000000000000";
-            let isValidator = false;
+            let validatorInfo = null;
             try {
-                const validator = await validatorInfoService.getValidatorByAccountAddress(vote.voter, network);
-                if (validator && validator.active) {
-                    isValidator = true;
-                    if (validator.voting_power) {
-                        votingPower = validator.voting_power;
-                    }
-                } else {
-                    logger.debug(`[Governance] Using default weight ${votingPower} for non-validator voter ${vote.voter}`);
+                validatorInfo = await validatorInfoService.getValidatorByAccountAddress(vote.voter, network);
+                if (validatorInfo && validatorInfo.active && validatorInfo.voting_power) {
+                    votingPower = validatorInfo.voting_power;
+                    logger.debug(`[Governance] Using validator voting power ${votingPower} for voter ${vote.voter}`);
                 }
             } catch (error) {
-                logger.warn(`[Governance] Error checking validator status for voter ${vote.voter}, using default weight:`, error);
+                logger.warn(`[Governance] Error checking validator status for voter ${vote.voter}:`, error);
             }
             
             proposalVotes.votes.set(vote.voter, {
@@ -275,7 +313,7 @@ export class GovernanceIndexerService {
                 voting_power: votingPower,
                 vote_time: vote.vote_time,
                 tx_hash: vote.tx_hash,
-                is_validator: isValidator
+                is_validator: validatorInfo?.active || false
             });
 
             if (!processedVoters.has(vote.voter)) {
@@ -297,9 +335,44 @@ export class GovernanceIndexerService {
             await proposalVotes.save();
             logger.info(`[Governance] Successfully updated votes for proposal ${proposalId}`);
             logger.info(`[Governance] Final vote counts: Yes=${proposalVotes.vote_counts.yes}, No=${proposalVotes.vote_counts.no}, Abstain=${proposalVotes.vote_counts.abstain}, NoWithVeto=${proposalVotes.vote_counts.no_with_veto}`);
+            logger.info(`[Governance] Total voting power: ${proposalVotes.total_voting_power}`);
         } catch (error) {
             logger.error(`[Governance] Error updating vote counts for proposal ${proposalId}:`, error);
             throw error;
+        }
+    }
+
+    private async updateGovernanceParams(network: Network, client: BabylonClient) {
+        try {
+            const params = await client.getGovernanceParams();
+            
+            if (!params) {
+                logger.warn(`[Governance] No governance parameters found for network ${network}`);
+                return;
+            }
+
+            await GovernanceParams.findOneAndUpdate(
+                { network },
+                {
+                    quorum: params.params?.quorum || params.tally_params?.quorum,
+                    threshold: params.params?.threshold || params.tally_params?.threshold,
+                    veto_threshold: params.params?.veto_threshold || params.tally_params?.veto_threshold,
+                    expedited_threshold: params.params?.expedited_threshold,
+                    min_deposit: params.params?.min_deposit,
+                    expedited_min_deposit: params.params?.expedited_min_deposit,
+                    voting_period: params.params?.voting_period,
+                    expedited_voting_period: params.params?.expedited_voting_period,
+                    burn_vote_quorum: params.params?.burn_vote_quorum,
+                    burn_proposal_deposit_prevote: params.params?.burn_proposal_deposit_prevote,
+                    burn_vote_veto: params.params?.burn_vote_veto,
+                    last_updated: new Date()
+                },
+                { upsert: true, new: true }
+            );
+
+            logger.info(`[Governance] Updated governance parameters for network ${network}`);
+        } catch (error) {
+            logger.error(`[Governance] Error updating governance parameters for network ${network}:`, error);
         }
     }
 } 

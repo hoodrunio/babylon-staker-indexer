@@ -3,7 +3,8 @@ import {
     getAllProposals, 
     getProposalById, 
     getProposalVotes, 
-    getProposalStats 
+    getProposalStats,
+    getGovernanceParams
 } from '../../controllers/governance/governance.controller';
 import { networkSelector } from '../../middleware/network-selector';
 
@@ -20,5 +21,8 @@ router.get('/proposals/:id/votes', networkSelector, getProposalVotes);
 
 // Get voting statistics for a proposal
 router.get('/proposals/:id/stats', networkSelector, getProposalStats);
+
+// Get governance parameters
+router.get('/params', networkSelector, getGovernanceParams);
 
 export default router; 

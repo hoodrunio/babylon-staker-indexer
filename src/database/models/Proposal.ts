@@ -31,6 +31,19 @@ const proposalSchema = new mongoose.Schema({
         required: true,
         default: []
     },
+    messages: {
+        type: [{
+            type: {
+                type: String,
+                required: true
+            },
+            content: {
+                type: mongoose.Schema.Types.Mixed,
+                required: true
+            }
+        }],
+        default: []
+    },
     voting_start_time: {
         type: Date,
         required: true,
@@ -60,6 +73,18 @@ const proposalSchema = new mongoose.Schema({
         abstain: String,
         no: String,
         no_with_veto: String
+    },
+    metadata: {
+        type: String,
+        default: ''
+    },
+    expedited: {
+        type: Boolean,
+        default: false
+    },
+    failed_reason: {
+        type: String,
+        default: ''
     }
 }, {
     timestamps: true

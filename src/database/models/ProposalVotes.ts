@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { Document } from 'mongoose';
 import { Network } from '../../types/finality';
 
 interface VoteInfo {
@@ -15,6 +15,37 @@ interface VoteCounts {
     no: string;
     abstain: string;
     no_with_veto: string;
+}
+
+interface VoteStats {
+    total_voting_power: string;
+    vote_counts: VoteCounts;
+    thresholds: {
+        quorum: string;
+        threshold: string;
+        veto_threshold: string;
+        expedited_threshold: string;
+    };
+    stats: {
+        participation: string;
+        yes_ratio: string;
+        veto_ratio: string;
+        quorum_reached: boolean;
+        threshold_reached: boolean;
+        veto_threshold_reached: boolean;
+    };
+}
+
+interface IProposalVotes extends Document {
+    proposal_id: number;
+    network: Network;
+    votes: Map<string, VoteInfo>;
+    vote_counts: VoteCounts;
+    total_voting_power: string;
+    vote_count: number;
+    updateVoteCounts(): void;
+    getVotePercentages(): { [key: string]: string } | null;
+    getVoteStats(): Promise<VoteStats | null>;
 }
 
 const proposalVotesSchema = new mongoose.Schema({
@@ -113,20 +144,82 @@ proposalVotesSchema.methods.updateVoteCounts = function() {
         no_with_veto: "0"
     };
     
-    let totalPower = BigInt(0);
+    let validatorVotingPower = BigInt(0);
     
     for (const vote of votes.values()) {
         const optionKey = vote.option.toLowerCase() as keyof VoteCounts;
-        // Increment vote count
-        voteCounts[optionKey] = (BigInt(voteCounts[optionKey]) + BigInt(1)).toString();
-        // Calculate total power for reference
         const votePower = BigInt(vote.voting_power.split('.')[0]);
-        totalPower += votePower;
+        
+        // Add to vote counts based on voting power
+        voteCounts[optionKey] = (BigInt(voteCounts[optionKey]) + votePower).toString();
+        
+        // Track validator voting power separately
+        if (vote.is_validator) {
+            validatorVotingPower += votePower;
+        }
     }
     
     this.vote_counts = voteCounts;
-    this.total_voting_power = totalPower.toString();
     this.vote_count = votes.size;
 };
 
-export const ProposalVotes = mongoose.model('ProposalVotes', proposalVotesSchema); 
+// Helper method to get vote percentages
+proposalVotesSchema.methods.getVotePercentages = function() {
+    const totalPower = BigInt(this.total_voting_power);
+    if (totalPower === BigInt(0)) return null;
+
+    const voteCounts = this.vote_counts;
+    return {
+        yes: ((BigInt(voteCounts.yes) * BigInt(100)) / totalPower).toString(),
+        no: ((BigInt(voteCounts.no) * BigInt(100)) / totalPower).toString(),
+        abstain: ((BigInt(voteCounts.abstain) * BigInt(100)) / totalPower).toString(),
+        no_with_veto: ((BigInt(voteCounts.no_with_veto) * BigInt(100)) / totalPower).toString(),
+    };
+};
+
+// Helper method to get vote percentages with thresholds
+proposalVotesSchema.methods.getVoteStats = async function() {
+    const totalPower = BigInt(this.total_voting_power);
+    if (totalPower === BigInt(0)) return null;
+
+    // Get governance params
+    const params = await mongoose.model('GovernanceParams').findOne({ network: this.network });
+    if (!params) {
+        throw new Error('Governance parameters not found');
+    }
+
+    const voteCounts = this.vote_counts;
+    const totalVoted = BigInt(voteCounts.yes) + BigInt(voteCounts.no) + BigInt(voteCounts.abstain) + BigInt(voteCounts.no_with_veto);
+    
+    // Calculate participation (quorum)
+    const participation = totalVoted * BigInt(1000000) / totalPower;
+    const quorumReached = participation >= BigInt(parseFloat(params.quorum) * 1000000);
+
+    // Calculate yes ratio (excluding abstain)
+    const totalNonAbstain = BigInt(voteCounts.yes) + BigInt(voteCounts.no) + BigInt(voteCounts.no_with_veto);
+    const yesRatio = totalNonAbstain > 0 ? (BigInt(voteCounts.yes) * BigInt(1000000) / totalNonAbstain) : BigInt(0);
+    
+    // Calculate veto ratio
+    const vetoRatio = totalVoted > 0 ? (BigInt(voteCounts.no_with_veto) * BigInt(1000000) / totalVoted) : BigInt(0);
+
+    return {
+        total_voting_power: this.total_voting_power,
+        vote_counts: this.vote_counts,
+        thresholds: {
+            quorum: params.quorum,
+            threshold: params.threshold,
+            veto_threshold: params.veto_threshold,
+            expedited_threshold: params.expedited_threshold
+        },
+        stats: {
+            participation: (participation / BigInt(10000)).toString() + "%",
+            yes_ratio: (yesRatio / BigInt(10000)).toString() + "%",
+            veto_ratio: (vetoRatio / BigInt(10000)).toString() + "%",
+            quorum_reached: quorumReached,
+            threshold_reached: yesRatio >= BigInt(parseFloat(params.threshold) * 1000000),
+            veto_threshold_reached: vetoRatio >= BigInt(parseFloat(params.veto_threshold) * 1000000)
+        }
+    };
+};
+
+export const ProposalVotes = mongoose.model<IProposalVotes>('ProposalVotes', proposalVotesSchema); 

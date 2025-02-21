@@ -115,8 +115,6 @@ export class GovernanceEventHandler {
                     if (validator.voting_power) {
                         votingPower = validator.voting_power;
                     }
-                } else {
-                    logger.debug(`[Governance] Using default weight ${voteWeight} for non-validator voter ${voter}`);
                 }
             } catch (error) {
                 logger.warn(`[Governance] Error checking validator status for voter ${voter}, using default weight:`, error);
