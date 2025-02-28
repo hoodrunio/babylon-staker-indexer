@@ -25,3 +25,5 @@ examples/tx.json
 git-modules/*
 src/generated/*
 examples/*
+telescope-config.json
+test.json
