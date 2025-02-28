@@ -23,3 +23,5 @@ yarn.lock
 examples/tx.json
 .telescope.json
 git-modules/*
+src/generated/*
+examples/*
