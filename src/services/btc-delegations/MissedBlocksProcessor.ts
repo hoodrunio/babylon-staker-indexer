@@ -141,7 +141,7 @@ export class MissedBlocksProcessor {
             if (btcStakingEvents.length === 0) return false;
 
             // Log the events for debugging
-            logger.info('Processing BTC staking events:', JSON.stringify(btcStakingEvents, null, 2));
+            // logger.debug('Processing BTC staking events:', JSON.stringify(btcStakingEvents, null, 2));
 
             for (const event of btcStakingEvents) {
                 await this.eventHandler.handleEvent(event, network);

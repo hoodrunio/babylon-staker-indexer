@@ -2,10 +2,23 @@ import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 
 // Metadata cleaning and formatting function
-const cleanMetadata = (obj: any): any => {
+const cleanMetadata = (obj: any, visited = new Set(), depth = 0): any => {
+    // Prevent infinite recursion
+    if (depth > 100) {
+        return '[Object depth limit exceeded]';
+    }
+    
     if (typeof obj !== 'object' || obj === null) {
         return obj;
     }
+    
+    // Detect circular references
+    if (visited.has(obj)) {
+        return '[Circular Reference]';
+    }
+    
+    // Add current object to visited set
+    visited.add(obj);
 
     // Special formatting for subscription messages
     if (obj.jsonrpc === '2.0' && obj.id && obj.result !== undefined) {
@@ -27,7 +40,7 @@ const cleanMetadata = (obj: any): any => {
     // Clean entire object recursively
     const cleaned: any = {};
     for (const [key, value] of Object.entries(obj)) {
-        const cleanedValue = cleanMetadata(value);
+        const cleanedValue = cleanMetadata(value, new Set(visited), depth + 1);
         if (cleanedValue !== undefined) {
             cleaned[key] = cleanedValue;
         }

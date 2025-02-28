@@ -5,6 +5,7 @@ import { BabylonIndexer } from './services/BabylonIndexer';
 import { FinalitySignatureService } from './services/finality/FinalitySignatureService';
 import { WebsocketService } from './services/WebsocketService';
 import { BTCDelegationService } from './services/btc-delegations/BTCDelegationService';
+import { BBNIndexerManager } from './services/BBNIndexerManager';
 import cors from 'cors';
 import { logger } from './utils/logger';
 import { GovernanceIndexerService } from './services/governance/GovernanceIndexerService';
@@ -23,6 +24,13 @@ async function startServer() {
     // Initialize BTCDelegationService (this will start initial sync)
     logger.info('Initializing BTCDelegationService...');
     BTCDelegationService.getInstance();
+
+    // Initialize BBN Indexers
+    logger.info('Initializing BBN Indexers...');
+    const bbnIndexerManager = BBNIndexerManager.getInstance();
+    bbnIndexerManager.start().catch(err => {
+        logger.error('Failed to start BBN Indexer Manager:', err);
+    });
 
     const app = express();
     app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
@@ -99,6 +107,7 @@ async function startServer() {
             // Stop all services
             websocketService.stop();
             finalityService.stop();
+            bbnIndexerManager.stop();
 
             // Wait a bit for cleanup
             await new Promise(resolve => setTimeout(resolve, 1000));

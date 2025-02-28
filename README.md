@@ -8,7 +8,7 @@ A specialized indexer for tracking and analyzing Bitcoin transactions related to
 - Multi-phase staking support (Phase 1, 2, and 3)
 - Comprehensive transaction validation based on protocol parameters (In development)
 - REST API for querying staking data and analytics
-- Support for tracking finality providers and stakers
+- Support for tracking finality providers, validators and stakers
 - Configurable indexing parameters via environment variables
 
 ## Prerequisites
@@ -17,6 +17,7 @@ A specialized indexer for tracking and analyzing Bitcoin transactions related to
 - TypeScript
 - MongoDB
 - Bitcoin Node RPC access
+- Babylon Chain (PoS) RPC/LCD access
 
 ## Installation
 
@@ -40,7 +41,7 @@ Edit the `.env` file with your configuration:
 - `BTC_RPC_URL`: Your Bitcoin node RPC URL
 - `MONGODB_URI`: MongoDB connection string
 - `PORT`: API server port (default: 3000)
-- Other phase-specific configuration options
+- Other cap-specific configuration options
 
 ## Usage
 

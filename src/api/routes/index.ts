@@ -13,6 +13,7 @@ import dotenv from 'dotenv';
 import pointsRouter from './points';
 import finalityRouter from './finality';
 import v1Router from './v1';
+import bbnRouter from './bbn.routes';
 import { FinalityProviderService } from '../../database/services/FinalityProviderService';
 import { logger } from '../../utils/logger';
 dotenv.config();
@@ -30,6 +31,9 @@ router.use('/finality', finalityRouter);
 
 // v1 API routes
 router.use('/v1', v1Router);
+
+// BBN API routes
+router.use('/bbn', bbnRouter);
 
 // Swagger documentation route
 router.use('/api-docs', corsMiddleware, swaggerUi.serve);

@@ -17,3 +17,9 @@ PROJECT_SCOPE.md
 CHANGELOG.md
 .cursorrules
 logs.log
+proto/*
+babylon-proto
+yarn.lock
+examples/tx.json
+.telescope.json
+git-modules/*

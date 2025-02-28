@@ -64,13 +64,13 @@ export class WebsocketHealthTracker {
                 logger.debug(`[${network}] Gap detected: ${currentState.lastProcessedHeight} -> ${height}`);
                 
                 // Process missing blocks
-                const client = BabylonClient.getInstance(network);
+                /* const client = BabylonClient.getInstance(network);
                 await this.missedBlocksProcessor.processMissedBlocks(
                     network,
                     currentState.lastProcessedHeight + 1,
                     height - 1, // Except last block
                     client
-                );
+                ); */
             }
 
             // Update new height
@@ -119,12 +119,12 @@ export class WebsocketHealthTracker {
             if (currentHeight > lastProcessedHeight) {
                 logger.debug(`[${network}] Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
                 
-                await this.missedBlocksProcessor.processMissedBlocks(
+                /* await this.missedBlocksProcessor.processMissedBlocks(
                     network,
                     lastProcessedHeight + 1,
                     currentHeight,
                     babylonClient
-                );
+                ); */
 
                 state.lastProcessedHeight = currentHeight;
                 this.state.set(network, state);

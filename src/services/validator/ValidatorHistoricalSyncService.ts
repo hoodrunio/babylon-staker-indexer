@@ -10,6 +10,7 @@ export class ValidatorHistoricalSyncService {
     private syncInProgress: Map<Network, boolean> = new Map();
     private readonly MAX_HISTORICAL_BLOCKS = 10000;
     private readonly BATCH_SIZE = 100;
+    private readonly isProd = process.env.NODE_ENV === 'production';
 
     private constructor() {
         this.validatorSignatureService = ValidatorSignatureService.getInstance();
@@ -42,7 +43,7 @@ export class ValidatorHistoricalSyncService {
             // Calculate sync range
             let startHeight = Math.max(
                 lastProcessedBlock + 1,
-                currentHeight - this.MAX_HISTORICAL_BLOCKS
+                this.isProd === true ? currentHeight - this.MAX_HISTORICAL_BLOCKS : currentHeight - 100
             );
 
             logger.info(`[HistoricalSync] Starting sync from block ${startHeight} to ${currentHeight} on ${network}`);

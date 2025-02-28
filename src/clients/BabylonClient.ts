@@ -341,10 +341,12 @@ export class BabylonClient {
     }
 
     public async getTxSearch(height: number): Promise<any> {
-        const url = new URL(`${this.baseUrl}/tx_search`);
-        url.searchParams.append('query', `tx.height=${height}`);
+        const url = new URL(`${this.baseRpcUrl}/tx_search`);
+        url.searchParams.append('query', `"tx.height=${height}"`);
         url.searchParams.append('page', '1');
         url.searchParams.append('per_page', '500');
+
+        logger.debug(`[BabylonClient] Fetching transactions from: ${url.toString()}`);
 
         const response = await this.fetchWithTimeout(url.toString());
         const data = await response.json() as { result: any };
@@ -488,6 +490,212 @@ export class BabylonClient {
             return response.data;
         } catch (error) {
             logger.error('[Governance] Error fetching governance parameters:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get the latest block information
+     * 
+     * @returns The latest block information
+     */
+    public async getLatestBlock(): Promise<{
+        header: {
+            height: number;
+            time: string;
+        };
+        data: any;
+    }> {
+        try {
+            logger.debug(`[BabylonClient] Getting latest block for ${this.network}`);
+            
+            const response = await this.client.get('/cosmos/base/tendermint/v1beta1/blocks/latest');
+            
+            if (!response || !response.data || !response.data.block) {
+                throw new Error('Invalid response from Babylon node');
+            }
+            
+            return {
+                header: {
+                    height: parseInt(response.data.block.header.height),
+                    time: response.data.block.header.time
+                },
+                data: response.data.block.data
+            };
+        } catch (error) {
+            logger.error(`[BabylonClient] Error getting latest block for ${this.network}:`, error);
+            throw error;
+        }
+    }
+    
+    /**
+     * Get transactions that contain delegate operations within a block range
+     * 
+     * @param startHeight - The starting block height
+     * @param endHeight - The ending block height
+     * @returns Array of delegate transactions
+     */
+    public async getDelegateTransactions(startHeight: number, endHeight: number): Promise<any[]> {
+        try {
+            logger.debug(`[BabylonClient] Getting delegate transactions from block ${startHeight} to ${endHeight} for ${this.network}`);
+            
+            // Search transactions with delegate message type
+            const query = `message.action='delegate' AND tx.height>=${startHeight} AND tx.height<=${endHeight}`;
+            
+            const response = await this.client.get('/cosmos/tx/v1beta1/txs', {
+                params: {
+                    events: query,
+                    pagination: {
+                        limit: 100,
+                        count_total: true
+                    }
+                }
+            });
+            
+            if (!response || !response.data) {
+                throw new Error('Invalid response from Babylon node');
+            }
+            
+            // Process and normalize the transactions
+            const transactions = response.data.txs || [];
+            
+            return transactions.map((tx: any) => {
+                // Extract the delegate message from the transaction
+                const delegateMsg = tx.body.messages.find((msg: any) => 
+                    msg['@type'] === '/cosmos.staking.v1beta1.MsgDelegate'
+                );
+                
+                if (!delegateMsg) {
+                    return null;
+                }
+                
+                return {
+                    hash: tx.txhash,
+                    height: parseInt(tx.height),
+                    timestamp: new Date(tx.timestamp).getTime(),
+                    sender: delegateMsg.delegator_address,
+                    message: {
+                        validatorAddress: delegateMsg.validator_address,
+                        amount: parseFloat(delegateMsg.amount.amount) / 1000000, // Convert from uBBN to BBN
+                        denom: delegateMsg.amount.denom
+                    }
+                };
+            }).filter(Boolean); // Remove any null entries
+        } catch (error) {
+            logger.error(`[BabylonClient] Error getting delegate transactions for ${this.network}:`, error);
+            throw error;
+        }
+    }
+    
+    /**
+     * Get transactions that contain unbonding operations within a block range
+     * 
+     * @param startHeight - The starting block height
+     * @param endHeight - The ending block height
+     * @returns Array of unbonding transactions
+     */
+    public async getUnbondingTransactions(startHeight: number, endHeight: number): Promise<any[]> {
+        try {
+            logger.debug(`[BabylonClient] Getting unbonding transactions from block ${startHeight} to ${endHeight} for ${this.network}`);
+            
+            // Search transactions with undelegate message type
+            const query = `message.action='begin_unbonding' AND tx.height>=${startHeight} AND tx.height<=${endHeight}`;
+            
+            const response = await this.client.get('/cosmos/tx/v1beta1/txs', {
+                params: {
+                    events: query,
+                    pagination: {
+                        limit: 100,
+                        count_total: true
+                    }
+                }
+            });
+            
+            if (!response || !response.data) {
+                throw new Error('Invalid response from Babylon node');
+            }
+            
+            // Process and normalize the transactions
+            const transactions = response.data.txs || [];
+            
+            return transactions.map((tx: any) => {
+                // Extract the undelegate message from the transaction
+                const undelegateMsg = tx.body.messages.find((msg: any) => 
+                    msg['@type'] === '/cosmos.staking.v1beta1.MsgUndelegate'
+                );
+                
+                if (!undelegateMsg) {
+                    return null;
+                }
+                
+                return {
+                    hash: tx.txhash,
+                    height: parseInt(tx.height),
+                    timestamp: new Date(tx.timestamp).getTime(),
+                    sender: undelegateMsg.delegator_address,
+                    message: {
+                        validatorAddress: undelegateMsg.validator_address,
+                        amount: parseFloat(undelegateMsg.amount.amount) / 1000000, // Convert from uBBN to BBN
+                        denom: undelegateMsg.amount.denom
+                    }
+                };
+            }).filter(Boolean); // Remove any null entries
+        } catch (error) {
+            logger.error(`[BabylonClient] Error getting unbonding transactions for ${this.network}:`, error);
+            throw error;
+        }
+    }
+    
+    /**
+     * Get the unbonding period for a specific validator
+     * 
+     * @param validatorAddress - The validator address
+     * @returns The unbonding period in seconds
+     */
+    public async getUnbondingPeriod(validatorAddress?: string): Promise<number> {
+        try {
+            logger.debug(`[BabylonClient] Getting unbonding period for ${this.network}`);
+            
+            // Get staking parameters which include the unbonding time
+            const response = await this.client.get('/cosmos/staking/v1beta1/params');
+            
+            if (!response || !response.data || !response.data.params) {
+                throw new Error('Invalid response from Babylon node');
+            }
+            
+            // Unbonding time is returned in nanoseconds, convert to seconds
+            const unbondingTimeStr = response.data.params.unbonding_time;
+            const unbondingTimeInSeconds = parseInt(unbondingTimeStr.replace('s', ''));
+            
+            return unbondingTimeInSeconds;
+        } catch (error) {
+            logger.error(`[BabylonClient] Error getting unbonding period for ${this.network}:`, error);
+            
+            // Return default unbonding period (21 days in seconds) if we can't get it from the node
+            return 21 * 24 * 60 * 60;
+        }
+    }
+    
+    /**
+     * Get a specific transaction by hash
+     * 
+     * @param txHash - The transaction hash
+     * @returns The transaction data or null if not found
+     */
+    public async getTransaction(txHash: string): Promise<any | null> {
+        try {
+            logger.debug(`[BabylonClient] Getting transaction ${txHash} for ${this.network}`);
+            
+            const response = await this.client.get(`/cosmos/tx/v1beta1/txs/${txHash}`);
+            
+            if (!response || !response.data || !response.data.tx) {
+                return null;
+            }
+            
+            // Tam API yanıtını döndür
+            return response.data;
+        } catch (error) {
+            logger.error(`[BabylonClient] Error getting transaction ${txHash} for ${this.network}:`, error);
             return null;
         }
     }
