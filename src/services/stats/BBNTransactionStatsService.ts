@@ -1,26 +1,26 @@
 import { Network } from '../../types/finality';
 import { BBNTransaction, BBNAccount, BBNTransactionStats } from '../../database/models';
-import { StatPeriodType, BBNTransactionType } from '../../types/bbn';
+import { StatPeriodType } from '../../types/bbn';
 import { logger } from '../../utils/logger';
 import { CacheService } from '../CacheService';
 import moment from 'moment';
 
 export class BBNTransactionStatsService {
-    private static instance: BBNTransactionStatsService | null = null;
+    private static instances: Map<Network, BBNTransactionStatsService> = new Map();
     private cacheService: CacheService;
     private readonly network: Network;
     private isCalculating: boolean = false;
     
-    private constructor(network: Network = Network.MAINNET) {
+    private constructor(network: Network = Network.TESTNET) {
         this.network = network;
         this.cacheService = CacheService.getInstance();
     }
 
-    public static getInstance(network: Network = Network.MAINNET): BBNTransactionStatsService {
-        if (!BBNTransactionStatsService.instance) {
-            BBNTransactionStatsService.instance = new BBNTransactionStatsService(network);
+    public static getInstance(network: Network = Network.TESTNET): BBNTransactionStatsService {
+        if (!this.instances.has(network)) {
+            this.instances.set(network, new BBNTransactionStatsService(network));
         }
-        return BBNTransactionStatsService.instance;
+        return this.instances.get(network)!;
     }
 
     /**

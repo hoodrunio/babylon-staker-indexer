@@ -6,21 +6,21 @@ import { logger } from '../../utils/logger';
 import moment from 'moment';
 
 export class BBNStakeStatsService {
-    private static instance: BBNStakeStatsService | null = null;
+    private static instances: Map<Network, BBNStakeStatsService> = new Map();
     private cacheService: CacheService;
     private readonly network: Network;
     private isCalculating: boolean = false;
     
-    private constructor(network: Network = Network.MAINNET) {
+    private constructor(network: Network = Network.TESTNET) {
         this.network = network;
         this.cacheService = CacheService.getInstance();
     }
 
-    public static getInstance(network: Network = Network.MAINNET): BBNStakeStatsService {
-        if (!BBNStakeStatsService.instance) {
-            BBNStakeStatsService.instance = new BBNStakeStatsService(network);
+    public static getInstance(network: Network = Network.TESTNET): BBNStakeStatsService {
+        if (!this.instances.has(network)) {
+            this.instances.set(network, new BBNStakeStatsService(network));
         }
-        return BBNStakeStatsService.instance;
+        return this.instances.get(network)!;
     }
 
     /**

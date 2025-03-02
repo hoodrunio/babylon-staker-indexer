@@ -27,3 +27,5 @@ src/generated/*
 examples/*
 telescope-config.json
 test.json
+cleaned_logs
+doc

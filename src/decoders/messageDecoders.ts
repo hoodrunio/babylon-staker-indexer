@@ -1,19 +1,262 @@
 import { Any } from '../generated/proto/google/protobuf/any';
-import { MsgAddFinalitySig } from '../generated/proto/babylon/finality/v1/tx';
-import { MsgExecuteContract, MsgInstantiateContract } from '../generated/proto/cosmwasm/wasm/v1/tx';
-import { MsgSend } from '../generated/proto/cosmos/bank/v1beta1/tx';
-import { MsgDelegate, MsgUndelegate, MsgBeginRedelegate } from '../generated/proto/cosmos/staking/v1beta1/tx';
 import { MESSAGE_TYPES } from './messageTypes';
-import { base64ToJson } from '../utils/base64';
-
-// Genişletilmiş tip tanımlamaları
-interface DecodedMsgExecuteContract extends MsgExecuteContract {
-  decodedMsg?: any;
+import { logger } from '../utils/logger';
+/**
+ * Helper function to convert buffer objects to hexadecimal strings
+ */
+export function bufferToHex(buffer: Uint8Array | Buffer | null | undefined): string {
+  if (!buffer) return '';
+  return Buffer.from(buffer).toString('hex');
 }
 
-interface DecodedMsgInstantiateContract extends MsgInstantiateContract {
-  decodedMsg?: any;
+/**
+ * Converts all Buffer values within objects to hex strings
+ */
+export function convertBuffersToHex(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  
+  if (Buffer.isBuffer(obj) || (obj && obj.type === 'Buffer' && Array.isArray(obj.data))) {
+    return bufferToHex(Buffer.isBuffer(obj) ? obj : Buffer.from(obj.data));
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertBuffersToHex(item));
+  }
+  
+  if (typeof obj === 'object') {
+    const result: Record<string, any> = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        result[key] = convertBuffersToHex(obj[key]);
+      }
+    }
+    return result;
+  }
+  
+  return obj;
 }
+
+/**
+ * Tries to parse raw message data as JSON
+ */
+function tryParseRawMessage(value: Uint8Array) {
+  try {
+    // First decode as string
+    const text = new TextDecoder().decode(value);
+    // Try JSON parsing
+    return JSON.parse(text);
+  } catch {
+    // If it cannot be parsed as JSON, return as hex
+    return {
+      rawValue: bufferToHex(value)
+    };
+  }
+}
+
+/**
+ * Registry for message type decoders
+ * Provides an efficient and maintainable way to handle multiple message types
+ */
+class MessageRegistry {
+  private messageDecoders = new Map<string, (value: Uint8Array) => any>();
+  private specialCaseHandlers = new Map<string, (decoded: any) => any>();
+  
+  constructor() {
+    this.discoverProtoModules();
+    this.registerSpecialCases();
+  }
+  
+  /**
+   * Discovers and registers message decoders from proto modules
+   */
+  private discoverProtoModules() {
+    logger.info('[Message Decoder] Initializing message registry...');
+    
+    // Babylon messages
+    this.discoverNamespace('babylon', [
+      'finality/v1', 
+      'btcstaking/v1', 
+      'epoching/v1', 
+      'checkpointing/v1'
+    ], '../generated/proto');
+    
+    // CosmWasm messages
+    this.discoverNamespace('cosmwasm', [
+      'wasm/v1'
+    ], '../generated/proto');
+    
+    // Cosmos SDK messages
+    this.discoverNamespace('cosmos', [
+      'bank/v1beta1',
+      'staking/v1beta1', 
+      'distribution/v1beta1',
+      'gov/v1beta1',
+      'authz/v1beta1',
+      'feegrant/v1beta1',
+      'evidence/v1beta1',
+      'slashing/v1beta1',
+      'vesting/v1beta1'
+    ], 'cosmjs-types');
+    
+    logger.info(`[Message Decoder] Registered ${this.messageDecoders.size} message types.`);
+  }
+  
+  /**
+   * Discovers and registers message decoders from a specific namespace
+   */
+  private discoverNamespace(namespace: string, modules: string[], basePath: string) {
+    for (const module of modules) {
+      try {
+        const importPath = `${basePath}/${namespace}/${module}/tx`;
+        let protoModule;
+        
+        try {
+          const relativePath = basePath.startsWith('..') 
+            ? importPath 
+            : `${basePath}/${namespace}/${module}/tx`;
+          
+          protoModule = require(relativePath);
+        } catch (e) {
+          logger.warn(`Could not load module: ${importPath}`, e);
+          continue;
+        }
+        
+        // Register message types from the module
+        for (const key in protoModule) {
+          if (key.startsWith('Msg')) {
+            const typeUrl = `/${namespace}.${module.replace('/', '.')}.${key}`;
+            
+            this.messageDecoders.set(typeUrl, (value: Uint8Array) => {
+              return protoModule[key].decode(value);
+            });
+          }
+        }
+      } catch (e) {
+        logger.warn(`Error processing namespace ${namespace} module ${module}`, e);
+      }
+    }
+  }
+  
+  /**
+   * Registers special case handlers for message types needing custom processing
+   */
+  private registerSpecialCases() {
+    // Handle CosmWasm MsgExecuteContract JSON parsing
+    this.specialCaseHandlers.set(MESSAGE_TYPES.EXECUTE_CONTRACT, (decoded) => {
+      if (decoded.msg) {
+        try {
+          const jsonMsg = JSON.parse(new TextDecoder().decode(decoded.msg));
+          return { ...decoded, decodedMsg: jsonMsg };
+        } catch {
+          // If JSON parsing fails, return the original content
+        }
+      }
+      return decoded;
+    });
+    
+    // Handle CosmWasm MsgInstantiateContract JSON parsing
+    this.specialCaseHandlers.set(MESSAGE_TYPES.INSTANTIATE_CONTRACT, (decoded) => {
+      if (decoded.msg) {
+        try {
+          const jsonMsg = JSON.parse(new TextDecoder().decode(decoded.msg));
+          return { ...decoded, decodedMsg: jsonMsg };
+        } catch {
+          // If JSON parsing fails, return the original content
+        }
+      }
+      return decoded;
+    });
+    
+    // More special cases can be added here if needed
+  }
+  
+  /**
+   * Decodes a message based on its type URL
+   */
+  public decodeMessage(msg: Any): {
+    typeUrl: string;
+    content: any;
+    rawValue?: Uint8Array;
+  } {
+    try {
+      const decoder = this.messageDecoders.get(msg.typeUrl);
+      
+      if (decoder) {
+        let content = decoder(msg.value);
+        
+        // Apply special handlers if they exist for this message type
+        const specialHandler = this.specialCaseHandlers.get(msg.typeUrl);
+        if (specialHandler) {
+          content = specialHandler(content);
+        }
+        
+        return {
+          typeUrl: msg.typeUrl,
+          content: convertBuffersToHex(content)
+        };
+      }
+      
+      // If no registered decoder, try dynamic approach
+      return this.dynamicDecode(msg);
+    } catch (error) {
+      // At minimum, return the type and raw data in case of error
+      return {
+        typeUrl: msg.typeUrl,
+        content: null,
+        rawValue: msg.value,
+        error: `Decode error: ${error instanceof Error ? error.message : String(error)}`
+      } as any;
+    }
+  }
+  
+  /**
+   * Attempts to dynamically decode a message by inferring its module and type
+   */
+  private dynamicDecode(msg: Any): {
+    typeUrl: string;
+    content: any;
+    rawValue?: Uint8Array;
+  } {
+    // Extract namespace and type from the URL
+    const typeName = msg.typeUrl.substring(1);
+    const parts = typeName.split('.');
+    const namespace = parts.slice(0, -1).join('/');
+    const msgType = parts[parts.length - 1];
+    
+    try {
+      let protoModule;
+      
+      // Try to infer module location and load it
+      if (typeName.startsWith('babylon.') || typeName.startsWith('cosmwasm.')) {
+        protoModule = require(`../generated/proto/${namespace}/tx`);
+      } else if (typeName.startsWith('cosmos.')) {
+        protoModule = require(`cosmjs-types/${namespace}/tx`);
+      }
+      
+      if (protoModule && protoModule[msgType]) {
+        // Found the message type, decode it
+        return {
+          typeUrl: msg.typeUrl,
+          content: convertBuffersToHex(protoModule[msgType].decode(msg.value))
+        };
+      }
+    } catch (e) {
+      // Log failure to import but continue with fallback
+      logger.warn(`Dynamic decoding failed for: ${msg.typeUrl}`, e);
+    }
+    
+    // Last resort: Try JSON parsing
+    return {
+      typeUrl: msg.typeUrl,
+      content: tryParseRawMessage(msg.value)
+    };
+  }
+}
+
+// Create a singleton instance of the message registry
+const messageRegistry = new MessageRegistry();
 
 /**
  * Any tipindeki mesajı içeriğine göre decode eder
@@ -25,92 +268,5 @@ export function decodeAnyMessage(anyMsg: Any): {
   content: any;
   rawValue?: Uint8Array;
 } {
-  const { typeUrl, value } = anyMsg;
-  
-  try {
-    // Mesaj içeriğini tipine göre decode et
-    const decodedContent = decodeMessage(typeUrl, value);
-    
-    return {
-      typeUrl,
-      content: decodedContent
-    };
-  } catch (error: unknown) {
-    console.warn(`Mesaj tipi decode edilemedi: ${typeUrl}`, error);
-    // Decode edilemeyen mesajları da eklemek için:
-    return {
-      typeUrl,
-      content: null,
-      rawValue: value
-    };
-  }
-}
-
-/**
- * Belirli bir mesaj tipini decode eder
- * @param typeUrl Mesaj tipi URL'si 
- * @param value Binary mesaj içeriği
- * @returns Decode edilmiş mesaj
- */
-export function decodeMessage(typeUrl: string, value: Uint8Array): any {
-  switch (typeUrl) {
-    // Babylon mesaj tipleri
-    case MESSAGE_TYPES.ADD_FINALITY_SIG:
-      return MsgAddFinalitySig.decode(value);
-    
-    // CosmWasm mesaj tipleri  
-    case MESSAGE_TYPES.EXECUTE_CONTRACT: {
-      const msg = MsgExecuteContract.decode(value) as DecodedMsgExecuteContract;
-      // CosmWasm için JSON mesajlarını da parse et
-      if (msg.msg && msg.msg.length > 0) {
-        try {
-          const textDecoder = new TextDecoder();
-          const jsonStr = textDecoder.decode(msg.msg);
-          msg.decodedMsg = JSON.parse(jsonStr);
-        } catch (error: unknown) {
-          console.warn('Contract mesajı JSON parse edilemedi', error);
-        }
-      }
-      return msg;
-    }
-      
-    case MESSAGE_TYPES.INSTANTIATE_CONTRACT: {
-      const msg = MsgInstantiateContract.decode(value) as DecodedMsgInstantiateContract;
-      // CosmWasm için JSON mesajlarını da parse et
-      if (msg.msg && msg.msg.length > 0) {
-        try {
-          const textDecoder = new TextDecoder();
-          const jsonStr = textDecoder.decode(msg.msg);
-          msg.decodedMsg = JSON.parse(jsonStr);
-        } catch (error: unknown) {
-          console.warn('Contract mesajı JSON parse edilemedi', error);
-        }
-      }
-      return msg;
-    }
-    
-    // Cosmos standart mesaj tipleri
-    case MESSAGE_TYPES.SEND:
-      return MsgSend.decode(value);
-      
-    case MESSAGE_TYPES.DELEGATE:
-      return MsgDelegate.decode(value);
-      
-    case MESSAGE_TYPES.UNDELEGATE:
-      return MsgUndelegate.decode(value);
-      
-    case MESSAGE_TYPES.BEGIN_REDELEGATE:
-      return MsgBeginRedelegate.decode(value);
-    
-    // Bilinmeyen mesaj tipleri
-    default:
-      // Bilinmeyen mesaj tiplerini genel olarak JSON formatına dönüştürmeyi dene
-      try {
-        const textDecoder = new TextDecoder();
-        const jsonStr = textDecoder.decode(value);
-        return JSON.parse(jsonStr);
-      } catch {
-        throw new Error(`Bilinmeyen mesaj tipi: ${typeUrl}`);
-      }
-  }
+  return messageRegistry.decodeMessage(anyMsg);
 } 

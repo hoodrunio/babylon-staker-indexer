@@ -2,8 +2,9 @@ import { BBNTransactionType, BBNTransactionData } from '../../types/bbn';
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { BBNTransactionStatus } from '../../types/bbn';
+import { IBBNTransactionParser } from './interfaces/IBBNTransactionParser';
 
-export class BBNTransactionParser {
+export class BBNTransactionParser implements IBBNTransactionParser {
     private static instance: BBNTransactionParser | null = null;
 
     private constructor() {}
@@ -48,6 +49,50 @@ export class BBNTransactionParser {
                 if (!msgType && events['message.action'] && events['message.action'][0]) {
                     msgType = events['message.action'][0];
                 }
+            } 
+            // Yeni decoder formatını işle
+            else if (tx.decoded && tx.decoded.tx && tx.decoded.messages && tx.decoded.messages.length > 0) {
+                // Hash, height ve timestamp zaten tx objesinin içinde
+                
+                // İlk mesajın içeriğini al
+                const firstMessage = tx.decoded.messages[0];
+                
+                // Mesaj tipini belirle (eğer daha önce belirtilmemişse)
+                if (!msgType && firstMessage.typeUrl) {
+                    msgType = firstMessage.typeUrl;
+                }
+                
+                // Mesaj içeriğine göre sender ve receiver'ı ayarla
+                if (firstMessage.content) {
+                    // Mesaj tipine göre farklı şekilde işle
+                    if (msgType.includes('MsgSend')) {
+                        tx.sender = firstMessage.content.fromAddress || '';
+                        tx.receiver = firstMessage.content.toAddress || '';
+                        
+                        // Amount varsa al
+                        if (firstMessage.content.amount && firstMessage.content.amount.length > 0) {
+                            const amount = firstMessage.content.amount[0];
+                            tx.amount = `${amount.amount}${amount.denom}`;
+                        }
+                    } 
+                    else if (msgType.includes('MsgWrappedDelegate') || msgType.includes('MsgWrappedUndelegate')) {
+                        tx.sender = firstMessage.content.delegatorAddress || '';
+                        tx.receiver = firstMessage.content.validatorAddress || '';
+                        
+                        // Amount varsa al
+                        if (firstMessage.content.amount) {
+                            tx.amount = `${firstMessage.content.amount.amount}${firstMessage.content.amount.denom}`;
+                        }
+                    }
+                    else if (msgType.includes('MsgCreateBTCDelegation')) {
+                        tx.sender = firstMessage.content.stakerAddr || '';
+                        // BTC delegasyonları için özel işleme
+                        if (firstMessage.content.stakingValue) {
+                            tx.amount = firstMessage.content.stakingValue.toString() || '';
+                        }
+                    }
+                    // Diğer mesaj tipleri için gerekli işlemleri ekleyebilirsiniz
+                }
             } else if (tx.tx_response) {
                 // Tam API yanıtı durumu
                 tx.hash = tx.tx_response.txhash;
@@ -62,11 +107,11 @@ export class BBNTransactionParser {
             // Transaction tipine göre parse işlemini yap
             switch (txType) {
                 case BBNTransactionType.TRANSFER:
-                    return this.parseTransferTransaction(tx, network);
+                    return this._parseTransferTransaction(tx, network);
                 case BBNTransactionType.STAKE:
-                    return this.parseStakeTransaction(tx, network);
+                    return this._parseStakeTransaction(tx, network);
                 case BBNTransactionType.UNSTAKE:
-                    return this.parseUnstakeTransaction(tx, network);
+                    return this._parseUnstakeTransaction(tx, network);
                 case BBNTransactionType.REWARD:
                     return this.parseRewardTransaction(tx, network);
                 default:
@@ -87,6 +132,35 @@ export class BBNTransactionParser {
         }
     }
 
+    // Private metodları interface için public yapıyoruz
+    public parseDelegateTransaction(tx: any, network: Network): BBNTransactionData | null {
+        try {
+            return this._parseStakeTransaction(tx, network);
+        } catch (error) {
+            logger.error(`Error parsing delegate transaction: ${error}`);
+            return null;
+        }
+    }
+
+    public parseUnbondingTransaction(tx: any, network: Network): BBNTransactionData | null {
+        try {
+            return this._parseUnstakeTransaction(tx, network);
+        } catch (error) {
+            logger.error(`Error parsing unbonding transaction: ${error}`);
+            return null;
+        }
+    }
+
+    public parseTransferTransaction(tx: any, network: Network): BBNTransactionData | null {
+        try {
+            return this._parseTransferTransaction(tx, network);
+        } catch (error) {
+            logger.error(`Error parsing transfer transaction: ${error}`);
+            return null;
+        }
+    }
+    
+    // Özel metodlar
     private determineTransactionType(msgType: string): BBNTransactionType {
         if (msgType.includes('MsgSend') || msgType.includes('transfer')) {
             return BBNTransactionType.TRANSFER;
@@ -101,96 +175,7 @@ export class BBNTransactionParser {
         }
     }
 
-    private parseTransferTransaction(tx: any, network: Network): BBNTransactionData {
-        if (!tx.hash) {
-            throw new Error('Transaction hash is required');
-        }
-        
-        let sender = 'unknown';
-        let receiver = 'unknown';
-        let amount = 0;
-        let denom = 'ubbn';
-        let blockHeight = 0;
-        let timestamp = Math.floor(Date.now() / 1000);
-        let status = BBNTransactionStatus.SUCCESS;
-        let fee = 0;
-        let memo = '';
-        
-        // Websocket yanıtı durumu
-        if (tx.result && tx.result.data && tx.result.data.value && tx.result.data.value.TxResult) {
-            const txResult = tx.result.data.value.TxResult;
-            const events = tx.result.events || {};
-            
-            blockHeight = parseInt(txResult.height) || 0;
-            
-            // Transfer bilgilerini events'den al
-            if (events['transfer.sender'] && events['transfer.sender'][0]) {
-                sender = events['transfer.sender'][0];
-            }
-            
-            if (events['transfer.recipient'] && events['transfer.recipient'][0]) {
-                receiver = events['transfer.recipient'][0];
-            }
-            
-            if (events['transfer.amount'] && events['transfer.amount'][0]) {
-                const amountStr = events['transfer.amount'][0];
-                // "12523ubbn" gibi bir string'i parse et
-                const match = amountStr.match(/^(\d+)(\w+)$/);
-                if (match) {
-                    amount = parseInt(match[1]) / 1000000; // ubbn to bbn
-                    denom = match[2];
-                }
-            }
-            
-            // Fee bilgisini al
-            if (events['tx.fee'] && events['tx.fee'][0]) {
-                const feeStr = events['tx.fee'][0];
-                const match = feeStr.match(/^(\d+)(\w+)$/);
-                if (match) {
-                    fee = parseInt(match[1]);
-                }
-            }
-            
-            // Status bilgisini al
-            status = txResult.result && txResult.result.code === 0 ? BBNTransactionStatus.SUCCESS : BBNTransactionStatus.FAILED;
-            
-            // Timestamp bilgisini al (eğer varsa)
-            if (events['tx.timestamp'] && events['tx.timestamp'][0]) {
-                timestamp = this.parseTimestamp(events['tx.timestamp'][0]);
-            } else {
-                timestamp = Math.floor(Date.now() / 1000);
-            }
-        } else {
-            // Normal API yanıtı durumu
-            const message = tx.tx?.body?.messages?.[0] || {};
-            sender = message.from_address || tx.sender || 'unknown';
-            receiver = message.to_address || tx.receiver || 'unknown';
-            amount = this.parseAmount(message.amount || tx.amount);
-            denom = this.parseDenom(message.amount || tx.amount);
-            blockHeight = tx.height || 0;
-            timestamp = this.parseTimestamp(tx.timestamp);
-            status = tx.code === 0 ? BBNTransactionStatus.SUCCESS : BBNTransactionStatus.FAILED;
-            fee = this.parseFee(tx);
-            memo = tx.tx?.body?.memo || '';
-        }
-        
-        return {
-            txHash: tx.hash,
-            sender,
-            receiver,
-            amount,
-            denom,
-            type: BBNTransactionType.TRANSFER,
-            blockHeight,
-            timestamp,
-            status,
-            fee,
-            memo,
-            networkType: network
-        };
-    }
-
-    private parseStakeTransaction(tx: any, network: Network): BBNTransactionData {
+    private _parseStakeTransaction(tx: any, network: Network): BBNTransactionData {
         if (!tx.hash) {
             throw new Error('Transaction hash is required');
         }
@@ -280,7 +265,7 @@ export class BBNTransactionParser {
         };
     }
 
-    private parseUnstakeTransaction(tx: any, network: Network): BBNTransactionData {
+    private _parseUnstakeTransaction(tx: any, network: Network): BBNTransactionData {
         if (!tx.hash) {
             throw new Error('Transaction hash is required');
         }
@@ -607,5 +592,94 @@ export class BBNTransactionParser {
             logger.error('Error parsing fee:', error);
             return 0;
         }
+    }
+
+    private _parseTransferTransaction(tx: any, network: Network): BBNTransactionData {
+        if (!tx.hash) {
+            throw new Error('Transaction hash is required');
+        }
+
+        let sender = 'unknown';
+        let receiver = 'unknown';
+        let amount = 0;
+        let denom = 'ubbn';
+        let blockHeight = 0;
+        let timestamp = Math.floor(Date.now() / 1000);
+        let status = BBNTransactionStatus.SUCCESS;
+        let fee = 0;
+        let memo = '';
+        
+        // Websocket yanıtı durumu
+        if (tx.result && tx.result.data && tx.result.data.value && tx.result.data.value.TxResult) {
+            const txResult = tx.result.data.value.TxResult;
+            const events = tx.result.events || {};
+            
+            blockHeight = parseInt(txResult.height) || 0;
+            
+            // Transfer bilgilerini events'den al
+            if (events['transfer.sender'] && events['transfer.sender'][0]) {
+                sender = events['transfer.sender'][0];
+            }
+            
+            if (events['transfer.recipient'] && events['transfer.recipient'][0]) {
+                receiver = events['transfer.recipient'][0];
+            }
+            
+            if (events['transfer.amount'] && events['transfer.amount'][0]) {
+                const amountStr = events['transfer.amount'][0];
+                // "12523ubbn" gibi bir string'i parse et
+                const match = amountStr.match(/^(\d+)(\w+)$/);
+                if (match) {
+                    amount = parseInt(match[1]) / 1000000; // ubbn to bbn
+                    denom = match[2];
+                }
+            }
+            
+            // Fee bilgisini al
+            if (events['tx.fee'] && events['tx.fee'][0]) {
+                const feeStr = events['tx.fee'][0];
+                const match = feeStr.match(/^(\d+)(\w+)$/);
+                if (match) {
+                    fee = parseInt(match[1]);
+                }
+            }
+            
+            // Status bilgisini al
+            status = txResult.result && txResult.result.code === 0 ? BBNTransactionStatus.SUCCESS : BBNTransactionStatus.FAILED;
+            
+            // Timestamp bilgisini al (eğer varsa)
+            if (events['tx.timestamp'] && events['tx.timestamp'][0]) {
+                timestamp = this.parseTimestamp(events['tx.timestamp'][0]);
+            } else {
+                timestamp = Math.floor(Date.now() / 1000);
+            }
+        } else {
+            // Normal API yanıtı durumu
+            const message = tx.tx?.body?.messages?.[0] || {};
+            sender = message.from_address || tx.sender || 'unknown';
+            receiver = message.to_address || tx.receiver || 'unknown';
+            amount = this.parseAmount(message.amount || tx.amount);
+            denom = this.parseDenom(message.amount || tx.amount);
+            blockHeight = tx.height || 0;
+            timestamp = this.parseTimestamp(tx.timestamp);
+            status = tx.code === 0 ? BBNTransactionStatus.SUCCESS : BBNTransactionStatus.FAILED;
+            fee = this.parseFee(tx);
+            memo = tx.tx?.body?.memo || '';
+        }
+        
+        return {
+            txHash: tx.hash,
+            sender,
+            receiver,
+            amount,
+            denom,
+            type: BBNTransactionType.TRANSFER,
+            blockHeight,
+            timestamp,
+            status,
+            fee,
+            memo,
+            networkType: network
+        };
     }
 } 

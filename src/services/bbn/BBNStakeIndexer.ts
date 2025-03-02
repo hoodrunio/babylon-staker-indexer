@@ -58,9 +58,6 @@ export class BBNStakeIndexer {
             // Set up websocket listeners for real-time updates
             this.setupWebsocketListeners();
             
-            // Sync historical data
-            await this.syncHistoricalData();
-            
             // Set up interval to check for completed unbonding periods
             this.setupUnbondingCheck();
             
@@ -114,35 +111,46 @@ export class BBNStakeIndexer {
         try {
             const websocketService = WebsocketService.getInstance();
             
-            // Use a single subscription for both delegate and unbond events
-            websocketService.subscribeToTx(
+            // subscribeToTx yerine subscribeTendermint kullan, çünkü modül filtresi doğru çalışmıyor
+            websocketService.subscribeTendermint(
                 `bbn_stake_indexer_${this.network}_staking`,
                 this.network,
-                {
-                    'message.module': 'staking' // This covers both delegate and unbond operations
-                },
                 async (data: any) => {
-                    logger.debug(`Received staking transaction: ${JSON.stringify(data)}`);
+                    logger.debug(`Received transaction from websocket: ${JSON.stringify(data)}`);
                     try {
-                        // Get the full transaction details
-                        const tx = await this.babylonClient.getTransaction(data.TxHash);
-                        if (!tx) {
-                            logger.warn(`Transaction ${data.TxHash} not found`);
-                            return;
-                        }
-                        
-                        // Determine if this is a delegate or unbond transaction
-                        const msgType = tx.tx?.body?.messages?.[0]?.['@type'] || '';
-                        
-                        if (msgType.includes('MsgDelegate') || msgType.includes('delegate')) {
-                            await this.processDelegateTransaction(tx);
-                        } else if (msgType.includes('MsgUndelegate') || msgType.includes('unbond')) {
-                            await this.processUnbondingTransaction(tx);
-                        } else {
-                            logger.debug(`Skipping non-delegate/unbond transaction: ${data.TxHash} with type ${msgType}`);
+                        // Mesaj verilerini kontrol et - epoching modülünü ara
+                        if (data?.result?.events?.['message.module']?.includes('epoching')) {
+                            const txHash = data?.result?.events?.['tx.hash']?.[0];
+                            
+                            if (!txHash) {
+                                logger.warn(`Missing tx hash in epoching module transaction`);
+                                return;
+                            }
+                            
+                            // Tam işlem detaylarını al
+                            const tx = await this.babylonClient.getTransaction(txHash);
+                            if (!tx) {
+                                logger.warn(`Transaction ${txHash} not found`);
+                                return;
+                            }
+                            
+                            // Mesaj tipini belirle
+                            const msgType = tx.tx?.body?.messages?.[0]?.['@type'] || '';
+                            logger.debug(`Message type from epoching module: ${msgType}`);
+                            
+                            // Doğru mesaj tiplerini kontrol et
+                            if (msgType.includes('/babylon.epoching.v1.MsgWrappedDelegate')) {
+                                logger.info(`Processing wrapped delegate transaction: ${txHash}`);
+                                await this.processDelegateTransaction(tx);
+                            } else if (msgType.includes('/babylon.epoching.v1.MsgWrappedUndelegate')) {
+                                logger.info(`Processing wrapped undelegate transaction: ${txHash}`);
+                                await this.processUnbondingTransaction(tx);
+                            } else {
+                                logger.debug(`Skipping non-stake transaction from epoching module: ${txHash} with type ${msgType}`);
+                            }
                         }
                     } catch (error) {
-                        logger.error(`Error processing staking transaction from websocket: ${data.TxHash}`, error);
+                        logger.error(`Error processing staking transaction from websocket`, error);
                     }
                 }
             );
@@ -156,78 +164,55 @@ export class BBNStakeIndexer {
 
     /**
      * Syncs historical stake data
+     * Not needed anymore as BBNTransactionIndexer handles this now
      */
     private async syncHistoricalData(): Promise<void> {
-        logger.info(`Starting historical stake data sync for network: ${this.network}`);
-        
-        try {
-            // Get the latest stake from the database to determine starting point
-            const latestStake = await BBNStake.findOne({
-                where: { networkType: this.network },
-                order: [['startHeight', 'DESC']]
-            });
-            
-            // Get the current block height from the client
-            const currentBlock = await this.babylonClient.getLatestBlock();
-            const currentHeight = currentBlock.header.height;
-            
-            // Determine the starting height (use 1 if no existing stakes)
-            const startHeight = latestStake ? latestStake.startHeight + 1 : 1;
-            
-            logger.info(`Syncing stake data from block ${startHeight} to ${currentHeight} for network: ${this.network}`);
-            
-            // Process blocks in batches to avoid memory issues
-            const BATCH_SIZE = 100;
-            for (let height = startHeight; height <= currentHeight; height += BATCH_SIZE) {
-                const endHeight = Math.min(height + BATCH_SIZE - 1, currentHeight);
-                
-                // Get delegate transactions in this block range
-                const delegateTransactions = await this.babylonClient.getDelegateTransactions(height, endHeight);
-                logger.info(`Found ${delegateTransactions.length} delegate transactions between blocks ${height} and ${endHeight}`);
-                
-                // Process delegate transactions
-                for (const tx of delegateTransactions) {
-                    await this.processDelegateTransaction(tx);
-                }
-                
-                // Get unbonding transactions in this block range
-                const unbondingTransactions = await this.babylonClient.getUnbondingTransactions(height, endHeight);
-                logger.info(`Found ${unbondingTransactions.length} unbonding transactions between blocks ${height} and ${endHeight}`);
-                
-                // Process unbonding transactions
-                for (const tx of unbondingTransactions) {
-                    await this.processUnbondingTransaction(tx);
-                }
-                
-                logger.info(`Completed syncing blocks ${height} to ${endHeight} for network: ${this.network}`);
-            }
-            
-            logger.info(`Completed historical stake data sync for network: ${this.network}`);
-        } catch (error) {
-            logger.error(`Error syncing historical stake data for network ${this.network}:`, error);
-            throw error;
-        }
+        // Bu metod artık gerekli değil, tarihsel stake işlemleri BBNTransactionIndexer tarafından işleniyor
+        logger.info(`Historical stake data sync is now handled by BBNTransactionIndexer for network: ${this.network}`);
     }
     
     /**
      * Processes a delegate transaction and creates/updates stake records
      */
-    private async processDelegateTransaction(tx: any): Promise<void> {
+    public async processDelegateTransaction(tx: any): Promise<void> {
         try {
-            // Extract stake data from transaction
-            const stakerAddress = tx.sender;
-            const validatorAddress = tx.message.validatorAddress;
-            const amount = tx.message.amount;
-            const denom = tx.message.denom;
+            logger.debug(`Processing delegate transaction: ${JSON.stringify(tx).slice(0, 500)}...`);
+            
+            // Extract stake data from transaction - epoching module için mesaj yapısını güncelle
+            // Wrapped mesajdan delegate bilgilerini çıkart
+            const wrappedMsg = tx.tx?.body?.messages?.[0] || {};
+            const delegateMsg = wrappedMsg.msg || {};
+            
+            const stakerAddress = delegateMsg.delegator_address || wrappedMsg.delegator_address || tx.sender;
+            const validatorAddress = delegateMsg.validator_address || wrappedMsg.validator_address;
+            let amount = '0';
+            let denom = '';
+            
+            // Amount bilgisini çıkart
+            if (delegateMsg.amount) {
+                amount = delegateMsg.amount.amount || '0';
+                denom = delegateMsg.amount.denom || 'ubbn';
+            } else if (wrappedMsg.amount) {
+                amount = wrappedMsg.amount.amount || '0';
+                denom = wrappedMsg.amount.denom || 'ubbn';
+            }
+            
             const blockHeight = tx.height;
             const timestamp = tx.timestamp;
+            
+            if (!validatorAddress) {
+                logger.warn(`Missing validator address in delegate transaction: ${tx.hash}`);
+                return;
+            }
+            
+            logger.info(`Processing delegate transaction for: Staker=${stakerAddress}, Validator=${validatorAddress}, Amount=${amount} ${denom}`);
             
             // Create or update stake record
             await this.createOrUpdateStake({
                 txHash: tx.hash,
                 stakerAddress,
                 validatorAddress,
-                amount,
+                amount: Number(amount),
                 denom,
                 startHeight: blockHeight,
                 startTimestamp: timestamp,
@@ -247,15 +232,38 @@ export class BBNStakeIndexer {
     /**
      * Processes an unbonding transaction and updates stake records
      */
-    private async processUnbondingTransaction(tx: any): Promise<void> {
+    public async processUnbondingTransaction(tx: any): Promise<void> {
         try {
-            // Extract unbonding data from transaction
-            const stakerAddress = tx.sender;
-            const validatorAddress = tx.message.validatorAddress;
-            const amount = tx.message.amount;
-            const denom = tx.message.denom;
+            logger.debug(`Processing unbonding transaction: ${JSON.stringify(tx).slice(0, 500)}...`);
+            
+            // Extract unbonding data from transaction - epoching module için mesaj yapısını güncelle
+            // Wrapped mesajdan undelegate bilgilerini çıkart
+            const wrappedMsg = tx.tx?.body?.messages?.[0] || {};
+            const undelegateMsg = wrappedMsg.msg || {};
+            
+            const stakerAddress = undelegateMsg.delegator_address || wrappedMsg.delegator_address || tx.sender;
+            const validatorAddress = undelegateMsg.validator_address || wrappedMsg.validator_address;
+            let amount = '0';
+            let denom = '';
+            
+            // Amount bilgisini çıkart
+            if (undelegateMsg.amount) {
+                amount = undelegateMsg.amount.amount || '0';
+                denom = undelegateMsg.amount.denom || 'ubbn';
+            } else if (wrappedMsg.amount) {
+                amount = wrappedMsg.amount.amount || '0';
+                denom = wrappedMsg.amount.denom || 'ubbn';
+            }
+            
             const blockHeight = tx.height;
             const timestamp = tx.timestamp;
+            
+            if (!validatorAddress) {
+                logger.warn(`Missing validator address in undelegate transaction: ${tx.hash}`);
+                return;
+            }
+            
+            logger.info(`Processing undelegate transaction for: Staker=${stakerAddress}, Validator=${validatorAddress}, Amount=${amount} ${denom}`);
             
             // Find active stake from this staker to this validator
             const stake = await BBNStake.findOne({

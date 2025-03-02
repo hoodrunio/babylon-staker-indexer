@@ -1,6 +1,6 @@
 import { Tx } from '../generated/proto/cosmos/tx/v1beta1/tx';
 import { base64ToBytes } from '../utils/base64';
-import { decodeAnyMessage } from './messageDecoders';
+import { decodeAnyMessage, convertBuffersToHex } from './messageDecoders';
 
 /**
  * Transaction decoder sonuç tipi
@@ -14,6 +14,68 @@ export interface DecodedTx {
   }>;
   rawBytes?: Uint8Array;
   error?: string;
+}
+
+/**
+ * Long tipindeki değerleri normal JavaScript sayılarına veya BigInt'e dönüştürür
+ * @param longObj Long tipindeki değer 
+ * @returns Normal sayıya dönüştürülmüş değer
+ */
+export function longToNumber(longObj: any): number | bigint | any {
+  if (!longObj || typeof longObj !== 'object') return longObj;
+  
+  if ('low' in longObj && 'high' in longObj && 'unsigned' in longObj) {
+    // Eğer high değeri 0 ise, değer 32-bit sınırları içinde, doğrudan low değerini kullanabiliriz
+    if (longObj.high === 0) {
+      return longObj.unsigned ? longObj.low >>> 0 : longObj.low;
+    }
+    
+    // JavaScript'in sayı sınırlarını aşma ihtimali varsa, BigInt kullan
+    try {
+      if (typeof BigInt !== 'undefined') {
+        const value = (BigInt(longObj.high) << BigInt(32)) | BigInt(longObj.low >>> 0);
+        // String olarak döndürmek daha güvenli, çünkü BigInt doğrudan JSON'a dönüştürülemez
+        return longObj.unsigned || value >= 0n ? value.toString() : value.toString();
+      }
+    } catch {
+      // BigInt yoksa veya çalışmazsa, normal JavaScript sayıları kullan
+    }
+    
+    // Fallback: 32-bit'lik değerleri bitwise işlemlerle birleştir
+    const result = longObj.high * 4294967296 + (longObj.low >>> 0);
+    return longObj.unsigned || result >= 0 ? result : result - 4294967296 * 2;
+  }
+  
+  return longObj;
+}
+
+/**
+ * Nesnelerdeki tüm Long değerlerini normal JavaScript değerlerine dönüştürür
+ * @param obj Long değerleri içerebilecek herhangi bir nesne
+ * @returns Long değerleri dönüştürülmüş nesne
+ */
+export function convertLongValues(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertLongValues(item));
+  }
+  
+  if (typeof obj === 'object') {
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value && typeof value === 'object' && 'low' in value && 'high' in value && 'unsigned' in value) {
+        result[key] = longToNumber(value);
+      } else if (value && typeof value === 'object') {
+        result[key] = convertLongValues(value);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+  
+  return obj;
 }
 
 /**
@@ -34,10 +96,14 @@ export function decodeTx(txBase64: string): DecodedTx {
       return decodeAnyMessage(msg);
     }) || [];
     
+    // Bufferları hex'e ve Long değerleri normal değerlere dönüştür
+    const processedTx = convertLongValues(convertBuffersToHex(tx)) as any;
+    const processedMessages = convertLongValues(decodedMessages);
+    
     return {
-      tx,
-      messages: decodedMessages,
-      rawBytes: txBytes
+      tx: processedTx,
+      messages: processedMessages,
+      //rawBytes: txBytes
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -46,7 +112,7 @@ export function decodeTx(txBase64: string): DecodedTx {
     return {
       tx: null,
       messages: [],
-      rawBytes: txBytes,
+      //rawBytes: txBytes,
       error: `İşlem decode edilemedi: ${errorMessage}`
     };
   }

@@ -11,11 +11,15 @@ export const setNetwork = (req: Request, res: Response, next: NextFunction): voi
         const networkParam = req.query.network as string;
         
         if (networkParam) {
-            const upperCaseNetwork = networkParam.toUpperCase();
+            // Lowercase network param for case-insensitive comparison
+            const networkLower = networkParam.toLowerCase();
             
-            // Check if the provided network is valid
-            if (Object.values(Network).includes(upperCaseNetwork as Network)) {
-                req.network = upperCaseNetwork as Network;
+            // Check if the network is valid using case-insensitive comparison
+            if (networkLower === 'testnet') {
+                req.network = Network.TESTNET;
+                logger.debug(`Network set to ${req.network}`);
+            } else if (networkLower === 'mainnet') {
+                req.network = Network.MAINNET;
                 logger.debug(`Network set to ${req.network}`);
             } else {
                 logger.warn(`Invalid network specified: ${networkParam}, defaulting to MAINNET`);

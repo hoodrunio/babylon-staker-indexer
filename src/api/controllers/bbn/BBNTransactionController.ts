@@ -13,7 +13,7 @@ export class BBNTransactionController {
      */
     public static async getTransactions(req: Request, res: Response) {
         try {
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             const page = parseInt(req.query.page as string) || 1;
             const limit = parseInt(req.query.limit as string) || 20;
             const address = req.query.address as string;
@@ -71,7 +71,7 @@ export class BBNTransactionController {
     public static async getTransactionByHash(req: Request, res: Response) {
         try {
             const { txHash } = req.params;
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             
             logger.info(`Getting transaction with hash=${txHash}, network=${network}`);
             
@@ -109,7 +109,7 @@ export class BBNTransactionController {
     public static async getTransactionsByAddress(req: Request, res: Response) {
         try {
             const { address } = req.params;
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             const page = parseInt(req.query.page as string) || 1;
             const limit = parseInt(req.query.limit as string) || 20;
             
@@ -159,7 +159,7 @@ export class BBNTransactionController {
      */
     public static async getDailyStats(req: Request, res: Response) {
         try {
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             let date = req.query.date ? new Date(req.query.date as string) : new Date();
             
             logger.info(`Getting daily transaction stats for date=${date.toISOString()}, network=${network}`);
@@ -190,7 +190,7 @@ export class BBNTransactionController {
      */
     public static async getWeeklyStats(req: Request, res: Response) {
         try {
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             let date = req.query.date ? new Date(req.query.date as string) : new Date();
             
             logger.info(`Getting weekly transaction stats for week of ${moment(date).startOf('week').format('YYYY-MM-DD')}, network=${network}`);
@@ -221,7 +221,7 @@ export class BBNTransactionController {
      */
     public static async getMonthlyStats(req: Request, res: Response) {
         try {
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             let date = req.query.date ? new Date(req.query.date as string) : new Date();
             
             logger.info(`Getting monthly transaction stats for ${moment(date).format('YYYY-MM')}, network=${network}`);
@@ -252,7 +252,7 @@ export class BBNTransactionController {
      */
     public static async getAllTimeStats(req: Request, res: Response) {
         try {
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             
             logger.info(`Getting all-time transaction stats for network=${network}`);
             
@@ -283,7 +283,7 @@ export class BBNTransactionController {
      */
     public static async recalculateStats(req: Request, res: Response) {
         try {
-            const network = req.network || Network.MAINNET;
+            const network = req.network || Network.TESTNET;
             const periodType = req.query.periodType as StatPeriodType;
             const date = req.query.date ? new Date(req.query.date as string) : new Date();
             
