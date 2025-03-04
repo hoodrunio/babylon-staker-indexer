@@ -7,7 +7,6 @@ analyze.log
 logs
 dist
 package-lock.json
-src/scripts/
 src/tests/
 scripts
 docs
@@ -17,3 +16,5 @@ PROJECT_SCOPE.md
 CHANGELOG.md
 .cursorrules
 logs.log
+proto
+src/generated
