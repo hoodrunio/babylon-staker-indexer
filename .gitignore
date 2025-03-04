@@ -8,7 +8,6 @@ logs
 dist
 package-lock.json
 src/tests/
-scripts
 docs
 .env
 prompt.md
