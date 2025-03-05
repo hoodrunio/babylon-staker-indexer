@@ -17,3 +17,5 @@ CHANGELOG.md
 logs.log
 proto
 src/generated
+decoded.json
+test.json
