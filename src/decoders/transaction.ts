@@ -6,7 +6,7 @@ import { decodeAnyMessage, convertBuffersToHex } from './messageDecoders';
  * Transaction decoder sonuç tipi
  */
 export interface DecodedTx {
-  tx: Tx | null;
+  tx?: Tx | null;
   messages: Array<{
     typeUrl: string;
     content: any;
@@ -97,11 +97,11 @@ export function decodeTx(txBase64: string): DecodedTx {
     }) || [];
     
     // Bufferları hex'e ve Long değerleri normal değerlere dönüştür
-    const processedTx = convertLongValues(convertBuffersToHex(tx)) as any;
+   // const processedTx = convertLongValues(convertBuffersToHex(tx)) as any;
     const processedMessages = convertLongValues(decodedMessages);
     
     return {
-      tx: processedTx,
+      // tx: processedTx,
       messages: processedMessages,
       //rawBytes: txBytes
     };
@@ -110,7 +110,7 @@ export function decodeTx(txBase64: string): DecodedTx {
     console.error('Transaction decode hatası:', errorMessage);
     
     return {
-      tx: null,
+      // tx: null,
       messages: [],
       //rawBytes: txBytes,
       error: `İşlem decode edilemedi: ${errorMessage}`
