@@ -170,7 +170,7 @@ export class FinalityBlockProcessor {
                 const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
                 await this.cacheManager.processBlock(height, signers);
                 
-                logger.debug(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.cacheManager.getCacheSize()}`);
+                logger.info(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.cacheManager.getCacheSize()}`);
                 
                 // Retry if new signatures found and max retries not reached
                 if (retryCount < this.MAX_RETRIES) {

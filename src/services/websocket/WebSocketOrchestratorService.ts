@@ -6,7 +6,7 @@ import { WebSocketMessageService } from './WebSocketMessageService';
 import { WebSocketReconnectionService } from './WebSocketReconnectionService';
 import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
 import { ValidatorHistoricalSyncService } from '../validator/ValidatorHistoricalSyncService';
-import { IWebSocketConnection, IWebSocketEventHandlers } from './interfaces';
+import { IWebSocketEventHandlers } from './interfaces';
 
 // Main WebSocket Orchestrator Service
 export class WebSocketOrchestratorService {

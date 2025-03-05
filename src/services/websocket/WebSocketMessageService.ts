@@ -205,6 +205,7 @@ export class WebSocketMessageService {
         this.subscriptions = [
             new Subscription('btc_staking', "tm.event='Tx' AND message.module='btcstaking'"),
             new Subscription('new_block', "tm.event='NewBlock'"),
+            new Subscription('new_tx', "tm.event='Tx'"),
             new Subscription('checkpoint_for_bls', "tm.event='NewBlock' AND babylon.checkpointing.v1.EventCheckpointSealed.checkpoint CONTAINS 'epoch_num'"),
             new Subscription('governance', "tm.event='Tx' AND message.module='gov'")
         ];
