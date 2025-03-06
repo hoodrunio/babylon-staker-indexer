@@ -83,6 +83,10 @@ export class BabylonClient {
         return this.blockClient.getBlockResults(height);
     }
 
+    public async getBlockByHeight(height: number): Promise<any> {
+        return this.blockClient.getBlockByHeight(height);
+    }
+
     public async getLatestBlock(): Promise<{
         header: {
             height: number;
@@ -170,5 +174,13 @@ export class BabylonClient {
     // StakingClient metodları
     public async getUnbondingPeriod(validatorAddress?: string): Promise<number> {
         return this.stakingClient.getUnbondingPeriod(validatorAddress);
+    }
+
+    /**
+     * Hash değerine göre işlem detaylarını getirir
+     * @param txHash İşlem hash'i
+     */
+    public async getTxByHash(txHash: string): Promise<any | null> {
+        return this.transactionClient.getTransaction(txHash);
     }
 } 

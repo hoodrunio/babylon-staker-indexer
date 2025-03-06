@@ -127,6 +127,13 @@ export class BlockClient extends BaseClient {
         }
     }
 
+    public async getBlockByHeight(height: number): Promise<any> {
+        const url = new URL(`${this.baseRpcUrl}/block`);
+        url.searchParams.append('height', height.toString());
+        const response = await this.fetchWithTimeout(url.toString());
+        return response.json();
+    }
+    
     /**
      * Verilen yükseklikteki işlemleri arar
      * @param height İşlemlerin aranacağı blok yüksekliği

@@ -2,10 +2,18 @@ import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 
 // Metadata cleaning and formatting function
-const cleanMetadata = (obj: any): any => {
+const cleanMetadata = (obj: any, visited = new WeakSet()): any => {
     if (typeof obj !== 'object' || obj === null) {
         return obj;
     }
+    
+    // Detect circular references
+    if (visited.has(obj)) {
+        return '[Circular Reference]';
+    }
+    
+    // Add current object to visited set
+    visited.add(obj);
 
     // Special formatting for subscription messages
     if (obj.jsonrpc === '2.0' && obj.id && obj.result !== undefined) {
@@ -27,7 +35,7 @@ const cleanMetadata = (obj: any): any => {
     // Clean entire object recursively
     const cleaned: any = {};
     for (const [key, value] of Object.entries(obj)) {
-        const cleanedValue = cleanMetadata(value);
+        const cleanedValue = cleanMetadata(value, visited);
         if (cleanedValue !== undefined) {
             cleaned[key] = cleanedValue;
         }
@@ -39,7 +47,7 @@ const cleanMetadata = (obj: any): any => {
 const formatMessage = (message: string, metadata: Record<string, any>): string => {
     // Special formatting for subscription messages
     if (message.includes('subscription confirmed')) {
-        const subscriptionId = cleanMetadata(metadata);
+        const subscriptionId = cleanMetadata(metadata, new WeakSet());
         return typeof subscriptionId === 'string' ? `Subscription confirmed: ${subscriptionId}` : message;
     }
     return message;
@@ -58,7 +66,7 @@ const customFormat = winston.format.combine(
         
         // Metadata exists, clean and add
         const { service, environment, ...restMetadata } = metadata;
-        const cleanedMetadata = cleanMetadata(restMetadata);
+        const cleanedMetadata = cleanMetadata(restMetadata, new WeakSet());
         if (cleanedMetadata && Object.keys(cleanedMetadata).length > 0) {
             log += `\n${JSON.stringify(cleanedMetadata, null, 2)}`;
         }
@@ -86,7 +94,7 @@ const consoleFormat = winston.format.combine(
         
         // Metadata exists, clean and add
         const { service, environment, ...restMetadata } = metadata;
-        const cleanedMetadata = cleanMetadata(restMetadata);
+        const cleanedMetadata = cleanMetadata(restMetadata, new WeakSet());
         if (cleanedMetadata && Object.keys(cleanedMetadata).length > 0) {
             log += `\n${JSON.stringify(cleanedMetadata, null, 2)}`;
         }

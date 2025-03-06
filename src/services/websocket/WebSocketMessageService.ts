@@ -8,6 +8,8 @@ import { CheckpointStatusHandler } from '../checkpointing/CheckpointStatusHandle
 import { ValidatorSignatureService } from '../validator/ValidatorSignatureService';
 import { CovenantEventHandler } from '../covenant/CovenantEventHandler';
 import { GovernanceEventHandler } from '../governance/GovernanceEventHandler';
+import { BlockTransactionHandler } from '../block-processor/handlers/BlockTransactionHandler';
+import { BlockProcessorModule } from '../block-processor/BlockProcessorModule';
 
 // Subscription implementation
 export class Subscription implements ISubscription {
@@ -112,7 +114,8 @@ export class BLSCheckpointMessageProcessor extends BaseMessageProcessor {
 export class NewBlockMessageProcessor extends BaseMessageProcessor {
     constructor(
         private checkpointStatusHandler: CheckpointStatusHandler,
-        private validatorSignatureService: ValidatorSignatureService
+        private validatorSignatureService: ValidatorSignatureService,
+        private blockTransactionHandler: BlockTransactionHandler
     ) {
         super();
     }
@@ -134,6 +137,11 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
         if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
             const blockData = message.result.data.value;
             await this.validatorSignatureService.handleNewBlock(blockData, network);
+        }
+
+        // Handle block transactions
+        if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
+            await this.blockTransactionHandler.handleNewBlock(message.result.data.value.block, network);
         }
     }
 }
@@ -192,12 +200,26 @@ export class WebSocketMessageService {
         const checkpointStatusHandler = CheckpointStatusHandler.getInstance();
         const validatorSignatureService = ValidatorSignatureService.getInstance();
         
+        // BlockProcessorModule'u kullanarak blok işleme sistemini başlat
+        const blockProcessorModule = BlockProcessorModule.getInstance();
+        blockProcessorModule.initialize();
+        
+        // BlockTransactionHandler'ı al
+        const blockTransactionHandler = blockProcessorModule.getBlockTransactionHandler();
+        
+        // Blok ve işlem processor'larını al
+        const blockTxProcessors = blockProcessorModule.getMessageProcessors();
+        
+        logger.info('[WebSocketMessageService] Block processor system initialized successfully');
+        
         this.messageProcessors = [
             new BTCStakingMessageProcessor(eventHandler, healthTracker),
             new CovenantMessageProcessor(covenantEventHandler),
             new BLSCheckpointMessageProcessor(blsCheckpointService),
-            new NewBlockMessageProcessor(checkpointStatusHandler, validatorSignatureService),
-            new GovernanceMessageProcessor(governanceEventHandler)
+            new NewBlockMessageProcessor(checkpointStatusHandler, validatorSignatureService, blockTransactionHandler),
+            new GovernanceMessageProcessor(governanceEventHandler),
+            // Blok ve işlem processor'larını ekle
+            ...blockTxProcessors
         ];
     }
     

@@ -9,6 +9,8 @@ import cors from 'cors';
 import { logger } from './utils/logger';
 import { GovernanceIndexerService } from './services/governance/GovernanceIndexerService';
 import { BabylonClient } from './clients/BabylonClient';
+import { BlockProcessorModule } from './services/block-processor/BlockProcessorModule';
+import { Network } from './types/finality';
 
 // Load environment variables
 dotenv.config();
@@ -23,6 +25,26 @@ async function startServer() {
     // Initialize BTCDelegationService (this will start initial sync)
     logger.info('Initializing BTCDelegationService...');
     BTCDelegationService.getInstance();
+    
+    // Initialize BlockProcessorModule
+    logger.info('Initializing BlockProcessorModule...');
+    const blockProcessorModule = BlockProcessorModule.getInstance();
+    blockProcessorModule.initialize();
+    
+    // Start historical sync if BLOCK_SYNC_ENABLED is true
+    if (process.env.BLOCK_SYNC_ENABLED === 'true') {
+        const network = process.env.NETWORK === 'mainnet' ? Network.MAINNET : Network.TESTNET;
+        const fromHeight = parseInt(process.env.BLOCK_SYNC_FROM_HEIGHT || '0');
+        const blockCount = parseInt(process.env.BLOCK_SYNC_COUNT || '100');
+        
+        if (fromHeight > 0) {
+            logger.info(`Starting historical block sync from height ${fromHeight}...`);
+            blockProcessorModule.startHistoricalSync(network, fromHeight).catch(logger.error);
+        } else {
+            logger.info(`Starting latest ${blockCount} blocks sync...`);
+            blockProcessorModule.startHistoricalSync(network, undefined, blockCount).catch(logger.error);
+        }
+    }
 
     const app = express();
     app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);

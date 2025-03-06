@@ -23,9 +23,15 @@ export class ValidatorHistoricalSyncService {
     }
 
     public async startSync(network: Network, client: BabylonClient): Promise<void> {
+        // Skip historical sync in production environment
+        if (process.env.NODE_ENV !== 'production') {
+            logger.info(`[ValidatorHistoricalSyncService] Skipping sync for ${network} in production environment`);
+            return;
+        }
+        
         // Prevent multiple syncs for the same network
         if (this.syncInProgress.get(network)) {
-            logger.info(`[HistoricalSync] Sync already in progress for ${network}`);
+            logger.info(`[ValidatorHistoricalSyncService] Sync already in progress for ${network}`);
             return;
         }
 
@@ -45,7 +51,7 @@ export class ValidatorHistoricalSyncService {
                 currentHeight - this.MAX_HISTORICAL_BLOCKS
             );
 
-            logger.info(`[HistoricalSync] Starting sync from block ${startHeight} to ${currentHeight} on ${network}`);
+            logger.info(`[ValidatorHistoricalSyncService] Starting sync from block ${startHeight} to ${currentHeight} on ${network}`);
 
             // Process blocks in batches
             while (startHeight <= currentHeight) {
@@ -58,16 +64,16 @@ export class ValidatorHistoricalSyncService {
 
                 try {
                     await Promise.all(batchPromises);
-                    logger.info(`[HistoricalSync] Processed blocks ${startHeight} to ${endHeight} on ${network}`);
+                    logger.info(`[ValidatorHistoricalSyncService] Processed blocks ${startHeight} to ${endHeight} on ${network}`);
                 } catch (error) {
                     if (this.isPruningError(error)) {
-                        logger.warn(`[HistoricalSync] Detected pruned blocks at height ${startHeight}, skipping to latest available block`);
+                        logger.warn(`[ValidatorHistoricalSyncService] Detected pruned blocks at height ${startHeight}, skipping to latest available block`);
                         const availableBlock = await this.findEarliestAvailableBlock(startHeight, currentHeight, client);
                         if (availableBlock) {
                             startHeight = availableBlock;
                             continue;
                         } else {
-                            logger.warn(`[HistoricalSync] No available blocks found, stopping sync`);
+                            logger.warn(`[ValidatorHistoricalSyncService] No available blocks found, stopping sync`);
                             break;
                         }
                     }
@@ -77,9 +83,9 @@ export class ValidatorHistoricalSyncService {
                 startHeight = endHeight + 1;
             }
 
-            logger.info(`[HistoricalSync] Completed for ${network}`);
+            logger.info(`[ValidatorHistoricalSyncService] Completed for ${network}`);
         } catch (error) {
-            logger.error(`[HistoricalSync] Error during sync for ${network}:`, error);
+            logger.error(`[ValidatorHistoricalSyncService] Error during sync for ${network}:`, error);
             throw error;
         } finally {
             this.syncInProgress.set(network, false);
@@ -107,7 +113,7 @@ export class ValidatorHistoricalSyncService {
             if (this.isPruningError(error)) {
                 throw error;
             }
-            logger.error(`[HistoricalSync] Error processing block ${height}:`, error);
+            logger.error(`[ValidatorHistoricalSyncService] Error processing block ${height}:`, error);
         }
     }
 

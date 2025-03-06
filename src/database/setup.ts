@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { PhaseStats } from './models/phase-stats';
 import { getPhaseConfig } from '../config/phase-config';
 import { logger } from '../utils/logger';
+import { Block, BlockchainTransaction } from './models/blockchain';
 
 dotenv.config();
 
@@ -28,7 +29,9 @@ async function setupDatabase() {
     await Promise.all([
       mongoose.model('Transaction').createIndexes(),
       mongoose.model('FinalityProvider').createIndexes(),
-      mongoose.model('Staker').createIndexes()
+      mongoose.model('Staker').createIndexes(),
+      Block.createIndexes(),
+      BlockchainTransaction.createIndexes()
     ]);
 
     // Initialize phase stats
