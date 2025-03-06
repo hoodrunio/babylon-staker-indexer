@@ -51,6 +51,9 @@ export class BlockProcessorService implements IBlockProcessorService {
       // Veritabanına kaydet
       await this.blockStorage.saveBlock(baseBlock, this.network);
       
+      // Özet log kaydı
+      logger.info(`[BlockProcessorService] Processed block at height ${baseBlock.height} with ${baseBlock.numTxs} transactions`);
+      
       return baseBlock;
     } catch (error) {
       if (error instanceof BlockProcessorError) {
@@ -65,20 +68,31 @@ export class BlockProcessorService implements IBlockProcessorService {
    */
   async processBlockFromWebsocket(blockEvent: WebsocketBlockEvent): Promise<BaseBlock> {
     try {
+      // Blok verilerini kontrol et
+      if (!blockEvent?.data?.value?.block) {
+        throw new BlockProcessorError('Block data is missing in websocket event');
+      }
+
       const blockData = blockEvent.data.value.block;
+      
+      // Header kontrolü
+      if (!blockData.header) {
+        throw new BlockProcessorError('Block header bulunamadı');
+      }
+      
       const height = parseInt(blockData.header.height);
       
-          // Doğrudan RPC çağrısı yapalım
-          const response = await this.babylonClient.getBlockByHeight(height);
-          logger.info(`[BlockProcessorService] Block hash: ${response.result.block_id.hash}`);
-          if (response) {
-            // Hash değerini ekle
-            const hash = response.result.block_id.hash;
-            blockData.block_id = {
-              hash: hash
-            };
-          } else {
-            throw new BlockProcessorError(`Block hash bilgisi alınamadı: ${height}`);
+      // Doğrudan RPC çağrısı yapalım
+      const response = await this.babylonClient.getBlockByHeight(height);
+      //logger.info(`[BlockProcessorService] Block hash: ${response.result.block_id.hash}`);
+      if (response) {
+        // Hash değerini ekle
+        const hash = response.result.block_id.hash;
+        blockData.block_id = {
+          hash: hash
+        };
+      } else {
+        throw new BlockProcessorError(`Block hash bilgisi alınamadı: ${height}`);
       }
       
       return this.processBlock(blockData);

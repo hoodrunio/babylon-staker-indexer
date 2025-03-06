@@ -56,19 +56,35 @@ export class BlockTransactionHandler {
                 throw new BlockProcessorError('Block processor or storage not initialized');
             }
 
-            if (blockData.result.data.value.block) {
-                const block = await this.blockProcessor.processBlockFromWebsocket(blockData);
-                await this.blockStorage.saveBlock(block, network);
-                logger.info(`[BlockHandler-Websocket] Processed and saved block ${block.height} on ${network}`);
+            // Blok verilerini kontrol et
+            if (!blockData) {
+                throw new BlockProcessorError('Block data is null or undefined');
             }
 
-            // Common servisini kullanarak bloğu işle
-            const block = await this.blockProcessor.processBlock(blockData);
+            let block;
             
-            // Bloğu veritabanına kaydet
-            await this.blockStorage.saveBlock(block, network);
-            
-            logger.info(`[BlockHandler-Normal] Processed and saved block ${block.height} on ${network}`);
+            if (blockData.header) {
+                // WebsocketBlockEvent formatına uygun olarak veriyi hazırla
+                const blockEvent = {
+                    query: "tm.event='NewBlock'",
+                    data: {
+                        type: "tendermint/event/NewBlock",
+                        value: {
+                            block: blockData,
+                            block_id: blockData.block_id || {},
+                            result_finalize_block: {}
+                        }
+                    },
+                    events: {}
+                };
+                block = await this.blockProcessor.processBlockFromWebsocket(blockEvent);
+                //logger.debug(`[BlockHandler-Websocket] Processed block ${block.height} on ${network} with ${block.numTxs} transactions`);
+            } else {
+                // Common servisini kullanarak bloğu işle
+                block = await this.blockProcessor.processBlock(blockData);
+                // Bloğu veritabanına kaydet
+                logger.debug(`[BlockHandler-Normal] Processed block ${block.height} on ${network} with ${block.numTxs} transactions`);
+            }
             
             // Blok işlendikten sonra yapılacak ek işlemler burada yapılabilir
             // Örneğin event aboneleri, diğer servislere bildirim vs.
@@ -106,7 +122,8 @@ export class BlockTransactionHandler {
             // İşlemi veritabanına kaydet
             await this.txStorage.saveTx(tx, network);
             
-            logger.info(`[TxHandler] Processed and saved transaction ${tx.txHash} at height ${tx.height} on ${network}`);
+            // Daha özet bir log kaydı
+            //logger.debug(`[TxHandler] Processed tx ${tx.txHash.substring(0, 8)}... at height ${tx.height} on ${network}`);
             
             // İşlem başarılıysa yapılabilecek ek işlemler
             
@@ -180,19 +197,34 @@ export class BlockTransactionHandler {
             await this.blockStorage.saveBlock(block, network);
             
             // İşlemleri al ve işle
+            let processedTxCount = 0;
+            let savedTxCount = 0;
+            let errorTxCount = 0;
+            
             if (blockData.block.data?.txs && blockData.block.data.txs.length > 0) {
+                const totalTxCount = blockData.block.data.txs.length;
+                
                 for (const encodedTx of blockData.block.data.txs) {
                     try {
                         // İşlem detayını al
                         const txDetail = await this.rpcClient.getTxByHash(encodedTx);
                         // İşlemi işle
                         const tx = await this.txProcessor.processTx(txDetail);
+                        processedTxCount++;
+                        
                         // İşlemi veritabanına kaydet
                         await this.txStorage.saveTx(tx, network);
+                        savedTxCount++;
                     } catch (txError) {
+                        errorTxCount++;
                         logger.error(`[TxHandler] Error processing tx in block ${height}: ${txError instanceof Error ? txError.message : String(txError)}`);
                     }
                 }
+                
+                // Blok işleme özetini logla
+                logger.info(`[BlockHandler] Block ${height} on ${network}: Processed ${processedTxCount}/${totalTxCount} transactions, Saved ${savedTxCount}/${totalTxCount}, Errors ${errorTxCount}/${totalTxCount}`);
+            } else {
+                logger.info(`[BlockHandler] Block ${height} on ${network}: No transactions`);
             }
             
         } catch (error) {

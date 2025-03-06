@@ -141,7 +141,13 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
 
         // Handle block transactions
         if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
-            await this.blockTransactionHandler.handleNewBlock(message.result.data.value.block, network);
+            // Blok verilerini kontrol et ve doğru şekilde geçir
+            const blockData = message.result.data.value;
+            if (blockData && blockData.block) {
+                await this.blockTransactionHandler.handleNewBlock(blockData.block, network);
+            } else {
+                logger.warn(`[BlockMessageProcessor] Block data structure is not as expected: ${JSON.stringify(blockData).substring(0, 200)}...`);
+            }
         }
     }
 }

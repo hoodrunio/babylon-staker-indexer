@@ -51,7 +51,7 @@ export class TxStorage implements ITxStorage {
                 }
             );
             
-            logger.debug(`[TxStorage] Transaction saved to database: ${tx.txHash} at height ${tx.height}`);
+         //   logger.debug(`[TxStorage] Transaction saved to database: ${tx.txHash} at height ${tx.height}`);
         } catch (error) {
             logger.error(`[TxStorage] Error saving transaction to database: ${error instanceof Error ? error.message : String(error)}`);
             throw error;

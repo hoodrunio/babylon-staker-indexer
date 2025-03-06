@@ -91,7 +91,7 @@ export class FinalityClient extends BaseClient {
     async getVotesAtHeight(height: number): Promise<Vote[]> {
         return this.retryOperation(
             async () => {
-                logger.debug(`[Votes] Fetching votes for height ${height}`);
+                //logger.debug(`[Votes] Fetching votes for height ${height}`);
                 const response = await this.client.get(`/babylon/finality/v1/votes/${height}`);
                 
                 if (!response.data) {
@@ -109,7 +109,7 @@ export class FinalityClient extends BaseClient {
                     return [];
                 }
 
-                logger.debug(`[Votes] Found ${response.data.btc_pks.length} votes for height ${height}`);
+                //logger.debug(`[Votes] Found ${response.data.btc_pks.length} votes for height ${height}`);
                 
                 // Duplicate check
                 const uniquePks = new Set(response.data.btc_pks);

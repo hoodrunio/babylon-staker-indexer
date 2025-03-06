@@ -24,7 +24,9 @@ export class BlockMessageProcessor extends BaseMessageProcessor {
 
     canProcess(message: any): boolean {
         try {
-            return message?.result?.data?.type === 'tendermint/event/NewBlock';
+            // Bu tür mesajlar artık NewBlockMessageProcessor tarafından işleniyor
+            // Bu nedenle burada false döndürüyoruz
+            return false;
         } catch {
             return false;
         }
@@ -33,7 +35,7 @@ export class BlockMessageProcessor extends BaseMessageProcessor {
     async process(message: any, network: Network): Promise<void> {
         try {
             const blockData = message;
-            logger.info(`[BlockMessageProcessor] Processing block at height ${blockData.header?.height}`);
+            //logger.debug(`[BlockMessageProcessor] Processing block at height ${blockData.header?.height}`);
             await this.blockHandler.handleNewBlock(blockData, network);
         } catch (error) {
             logger.error(`[BlockMessageProcessor] Error processing block message: ${error instanceof Error ? error.message : String(error)}`);
@@ -67,7 +69,7 @@ export class TransactionMessageProcessor extends BaseMessageProcessor {
                 tx_hash: message.result.events['tx.hash']?.[0] || ''
             };
             
-            logger.info(`[TransactionMessageProcessor] Processing tx ${txData.tx_hash} at height ${txData.TxResult.height}`);
+            //logger.debug(`[TransactionMessageProcessor] Processing tx ${txData.tx_hash.substring(0, 8)}... at height ${txData.TxResult.height}`);
             await this.blockHandler.handleNewTransaction(txData, network);
         } catch (error) {
             logger.error(`[TransactionMessageProcessor] Error processing tx message: ${error instanceof Error ? error.message : String(error)}`);
