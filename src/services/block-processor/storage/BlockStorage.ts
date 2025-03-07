@@ -153,7 +153,9 @@ export class BlockStorage implements IBlockStorage {
                 validator: sig.validator,
                 timestamp: sig.timestamp,
             })),
-            appHash: block.appHash
+            appHash: block.appHash,
+            totalGasWanted: block.totalGasWanted || "0",
+            totalGasUsed: block.totalGasUsed || "0"
         };
     }
 } 

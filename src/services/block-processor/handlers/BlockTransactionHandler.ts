@@ -63,16 +63,16 @@ export class BlockTransactionHandler {
 
             let block;
             
-            if (blockData.header) {
+            if (blockData.block.header) {
                 // WebsocketBlockEvent formatına uygun olarak veriyi hazırla
                 const blockEvent = {
                     query: "tm.event='NewBlock'",
                     data: {
                         type: "tendermint/event/NewBlock",
                         value: {
-                            block: blockData,
-                            block_id: blockData.block_id || {},
-                            result_finalize_block: {}
+                            block: blockData.block,
+                            block_id: blockData.block.block_id || {},
+                            result_finalize_block: blockData.result_finalize_block || {}
                         }
                     },
                     events: {}

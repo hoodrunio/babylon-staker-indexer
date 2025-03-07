@@ -1,5 +1,5 @@
 /**
- * Transaction işleme servisi
+ * Transaction processing service
  */
 
 import { BaseTx, TxMessage, TxProcessorError, TxStatus, WebsocketTxEvent } from '../types/common';
@@ -19,71 +19,52 @@ export class TransactionProcessorService implements ITransactionProcessorService
   }
 
   /**
-   * JSON RPC'den gelen transaction verisini işler
+   * Process transaction data from JSON RPC
    */
   async processTx(txData: any): Promise<BaseTx> {
     try {
+      this.validateTxData(txData);
+      
       const { hash, height, tx, tx_result } = txData;
-
-      // TX'i decode et
-      const decodedTx = decodeTx(tx);
+      const decodedTx = this.decodeTxData(tx);
       
-      if (!decodedTx || decodedTx.error) {
-        throw new TxProcessorError(`TX decode hatası: ${decodedTx?.error || 'Bilinmeyen hata'}`);
-      }
-
-      // Mesaj tipini belirle (ilk mesajın tipi)
-      const mainMessageType = decodedTx.messages.length > 0 ? decodedTx.messages[0].typeUrl : 'unknown';
+      // Create message type and meta information
+      const { mainMessageType, meta } = this.extractMessageInfo(decodedTx);
       
-      // TX durumunu belirle
-      const status = !tx_result.code ? TxStatus.SUCCESS : (tx_result.code !== 0 ? TxStatus.FAILED : TxStatus.SUCCESS);
+      // Determine TX status
+      const status = this.determineTxStatus(tx_result);
       
-      // Meta bilgisini oluştur
-      const meta: TxMessage[] = decodedTx.messages.map(msg => ({
-        typeUrl: msg.typeUrl,
-        content: msg.content
-      }));
-
-      // Temel TX bilgilerini oluştur
-      const baseTx: BaseTx = {
-        txHash: hash,
-        height: height.toString(),
-        status,
-        fee: decodedTx.tx?.authInfo?.fee ? {
-          amount: decodedTx.tx.authInfo.fee.amount,
-          gasLimit: decodedTx.tx.authInfo.fee.gasLimit.toString()
-        } : {
-          amount: [],
-          gasLimit: '0'
-        },
-        messageCount: decodedTx.messages.length,
-        type: mainMessageType,
-        time: new Date().toISOString(), // TX zamanı genellikle bloktan alınır, ama burada yok
+      // Create base TX information
+      const baseTx = this.createBaseTx(
+        hash, 
+        height, 
+        status, 
+        decodedTx, 
+        mainMessageType, 
         meta
-      };
+      );
 
-      // Veritabanına kaydet
+      // Save to database
       await this.txStorage.saveTx(baseTx, this.network);
       
       return baseTx;
     } catch (error) {
-      if (error instanceof TxProcessorError) {
-        throw error;
-      }
-      throw new TxProcessorError(`TX işleme hatası: ${error instanceof Error ? error.message : String(error)}`);
+      return this.handleProcessingError(error, 'TX processing error');
     }
   }
 
   /**
-   * Websocket'ten gelen transaction verisini işler
+   * Process transaction data from Websocket
    */
   async processTxFromWebsocket(txEvent: WebsocketTxEvent): Promise<BaseTx> {
     try {
+      this.validateTxEvent(txEvent);
+      
       const txResult = txEvent.data.value.TxResult;
       const txHash = txEvent.events['tx.hash'][0];
       const height = txResult.height;
       
-      // TX verisini hazırla
+      // Prepare TX data
       const txData = {
         hash: txHash,
         height,
@@ -93,57 +74,175 @@ export class TransactionProcessorService implements ITransactionProcessorService
       
       return this.processTx(txData);
     } catch (error) {
-      throw new TxProcessorError(`Websocket TX işleme hatası: ${error instanceof Error ? error.message : String(error)}`);
+      return this.handleProcessingError(error, 'Websocket TX processing error');
     }
   }
 
   /**
-   * Hash değerine göre transaction bilgisini getirir
+   * Get transaction information by hash
    */
   async getTxByHash(txHash: string): Promise<BaseTx | null> {
     return this.txStorage.getTxByHash(txHash, this.network);
   }
 
   /**
-   * Hash değerine göre transaction detayını getirir
+   * Get transaction details by hash
    */
   async getTxDetailByHash(txHash: string): Promise<any> {
-    // Önce veritabanında kontrol et
-    const storedTx = await this.txStorage.getTxByHash(txHash, this.network);
-    
-    if (!storedTx) {
-      // Veritabanında yoksa, RPC üzerinden getir
-      const txDetail = await this.fetchTxDetails(txHash);
+    try {
+      // First check in database
+      const storedTx = await this.txStorage.getTxByHash(txHash, this.network);
       
-      if (!txDetail) {
-        throw new TxProcessorError(`TX bulunamadı: ${txHash}`);
+      if (!storedTx) {
+        return await this.fetchAndProcessTxDetails(txHash);
       }
       
-      return txDetail;
+      // Get full unreduced details
+      if (storedTx.meta && storedTx.meta.length > 0) {
+        return {
+          tx: storedTx,
+          details: await this.fetchTxDetails(txHash)
+        };
+      }
+      
+      return storedTx;
+    } catch (error) {
+      return this.handleProcessingError(error, 'Error getting TX details');
     }
-    
-    // İndirgenmemiş tüm detayı getir
-    if (storedTx.meta && storedTx.meta.length > 0) {
-      return {
-        tx: storedTx,
-        details: await this.fetchTxDetails(txHash)
-      };
-    }
-    
-    return storedTx;
   }
 
   /**
-   * Network değerini ayarlar
+   * Decode transaction data
+   */
+  private decodeTxData(tx: any): any {
+    const decodedTx = decodeTx(tx);
+    
+    if (!decodedTx || decodedTx.error) {
+      throw new TxProcessorError(`TX decode error: ${decodedTx?.error || 'Unknown error'}`);
+    }
+    
+    return decodedTx;
+  }
+
+  /**
+   * Extract message type and meta information
+   */
+  private extractMessageInfo(decodedTx: any): { mainMessageType: string, meta: TxMessage[] } {
+    // Determine message type (type of first message)
+    const mainMessageType = decodedTx.messages.length > 0 
+      ? decodedTx.messages[0].typeUrl 
+      : 'unknown';
+    
+    // Create meta information
+    const meta: TxMessage[] = decodedTx.messages.map((msg: any) => ({
+      typeUrl: msg.typeUrl,
+      content: msg.content
+    }));
+    
+    return { mainMessageType, meta };
+  }
+
+  /**
+   * Determine transaction status
+   */
+  private determineTxStatus(txResult: any): TxStatus {
+    return !txResult.code 
+      ? TxStatus.SUCCESS 
+      : (txResult.code !== 0 ? TxStatus.FAILED : TxStatus.SUCCESS);
+  }
+
+  /**
+   * Create base TX information
+   */
+  private createBaseTx(
+    hash: string, 
+    height: string | number, 
+    status: TxStatus, 
+    decodedTx: any, 
+    messageType: string, 
+    meta: TxMessage[]
+  ): BaseTx {
+    return {
+      txHash: hash,
+      height: height.toString(),
+      status,
+      fee: this.extractFeeInfo(decodedTx),
+      messageCount: decodedTx.messages.length,
+      type: messageType,
+      time: new Date().toISOString(), // TX time usually comes from block, but not available here
+      meta
+    };
+  }
+
+  /**
+   * Extract fee information
+   */
+  private extractFeeInfo(decodedTx: any): { amount: any[], gasLimit: string } {
+    return decodedTx.tx?.authInfo?.fee 
+      ? {
+          amount: decodedTx.tx.authInfo.fee.amount,
+          gasLimit: decodedTx.tx.authInfo.fee.gasLimit.toString()
+        } 
+      : {
+          amount: [],
+          gasLimit: '0'
+        };
+  }
+
+  /**
+   * Fetch and process TX details via RPC
+   */
+  private async fetchAndProcessTxDetails(txHash: string): Promise<any> {
+    const txDetail = await this.fetchTxDetails(txHash);
+    
+    if (!txDetail) {
+      throw new TxProcessorError(`TX not found: ${txHash}`);
+    }
+    
+    return txDetail;
+  }
+
+  /**
+   * Handle processing errors
+   */
+  private handleProcessingError(error: unknown, prefix: string): never {
+    if (error instanceof TxProcessorError) {
+      throw error;
+    }
+    throw new TxProcessorError(
+      `${prefix}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  /**
+   * Set network value
    */
   setNetwork(network: Network): void {
     this.network = network;
   }
 
   /**
-   * Mevcut network değerini döndürür
+   * Get current network value
    */
   getNetwork(): Network {
     return this.network;
   }
-} 
+
+  /**
+   * Validate transaction data
+   */
+  private validateTxData(txData: any): void {
+    if (!txData || !txData.hash || !txData.tx) {
+      throw new TxProcessorError('Invalid TX data');
+    }
+  }
+
+  /**
+   * Validate websocket event data
+   */
+  private validateTxEvent(txEvent: WebsocketTxEvent): void {
+    if (!txEvent?.data?.value?.TxResult || !txEvent.events?.['tx.hash']?.[0]) {
+      throw new TxProcessorError('Invalid websocket TX event data');
+    }
+  }
+}

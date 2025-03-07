@@ -28,6 +28,8 @@ export interface IBlock extends Document {
     signature: string;
   }>;
   appHash: string;
+  totalGasWanted: string;
+  totalGasUsed: string;
   network: string;
   createdAt: Date;
   updatedAt: Date;
@@ -66,6 +68,14 @@ const BlockSchema = new Schema({
   appHash: { 
     type: String, 
     required: true 
+  },
+  totalGasWanted: {
+    type: String,
+    default: "0"
+  },
+  totalGasUsed: {
+    type: String,
+    default: "0"
   },
   network: {
     type: String,

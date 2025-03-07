@@ -149,7 +149,7 @@ export class FinalityBlockProcessor {
             const currentHeight = await this.babylonClient.getCurrentHeight();
             
             // Ensure we're at least 2 blocks behind the current height
-            if (currentHeight <= height + 2) {
+            if (currentHeight <= height + 3) {
                 logger.debug(`[Cache] Block ${height} is too recent, waiting for finalization (current: ${currentHeight})`);
                 this.requestLocks.delete(requestKey);
                 await new Promise(resolve => setTimeout(resolve, this.FINALIZATION_DELAY));

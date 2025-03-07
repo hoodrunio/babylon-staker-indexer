@@ -144,7 +144,7 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
             // Blok verilerini kontrol et ve doğru şekilde geçir
             const blockData = message.result.data.value;
             if (blockData && blockData.block) {
-                await this.blockTransactionHandler.handleNewBlock(blockData.block, network);
+                await this.blockTransactionHandler.handleNewBlock(blockData, network);
             } else {
                 logger.warn(`[BlockMessageProcessor] Block data structure is not as expected: ${JSON.stringify(blockData).substring(0, 200)}...`);
             }

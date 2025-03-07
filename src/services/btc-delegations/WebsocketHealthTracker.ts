@@ -60,7 +60,7 @@ export class WebsocketHealthTracker {
             const currentState = this.getOrCreateState(network);
             
             // Only process real gaps (if more than 1 block is skipped)
-            /* if (height > currentState.lastProcessedHeight + 1) {
+            if (height > currentState.lastProcessedHeight + 1) {
                 logger.debug(`[${network}] Gap detected: ${currentState.lastProcessedHeight} -> ${height}`);
                 
                 // Process missing blocks
@@ -85,7 +85,7 @@ export class WebsocketHealthTracker {
                     height,
                     this.CACHE_TTL
                 );
-            } */
+            }
         } finally {
             // Always release mutex
             release();
@@ -116,7 +116,7 @@ export class WebsocketHealthTracker {
             const lastProcessedHeight = state.lastProcessedHeight;
 
             // Process if there are missing blocks
-            /* if (currentHeight > lastProcessedHeight) {
+            if (currentHeight > lastProcessedHeight) {
                 logger.debug(`[${network}] Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
                 
                 await this.missedBlocksProcessor.processMissedBlocks(
@@ -140,7 +140,7 @@ export class WebsocketHealthTracker {
             // Update connection status
             state.isConnected = true;
             state.disconnectedAt = undefined;
-            this.state.set(network, state); */
+            this.state.set(network, state);
 
         } catch (error) {
             logger.error(`[${network}] Error processing missed blocks:`, error);

@@ -12,6 +12,8 @@ export interface BaseBlock {
   time: string;
   signatures: SignatureInfo[];
   appHash: string;
+  totalGasWanted: string;
+  totalGasUsed: string;
 }
 
 export interface SignatureInfo {
