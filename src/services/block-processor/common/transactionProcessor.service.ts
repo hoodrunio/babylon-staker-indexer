@@ -36,7 +36,7 @@ export class TransactionProcessorService implements ITransactionProcessorService
       const mainMessageType = decodedTx.messages.length > 0 ? decodedTx.messages[0].typeUrl : 'unknown';
       
       // TX durumunu belirle
-      const status = tx_result.code === 0 ? TxStatus.SUCCESS : TxStatus.FAILED;
+      const status = !tx_result.code ? TxStatus.SUCCESS : (tx_result.code !== 0 ? TxStatus.FAILED : TxStatus.SUCCESS);
       
       // Meta bilgisini oluştur
       const meta: TxMessage[] = decodedTx.messages.map(msg => ({

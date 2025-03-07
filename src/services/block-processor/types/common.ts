@@ -2,10 +2,12 @@
  * Block ve Transaction servisleri için ortak tipler
  */
 
+import { Types } from 'mongoose';
+
 export interface BaseBlock {
   height: string;
   blockHash: string;
-  proposerAddress: string;
+  proposer: Types.ObjectId;
   numTxs: number;
   time: string;
   signatures: SignatureInfo[];
@@ -13,9 +15,8 @@ export interface BaseBlock {
 }
 
 export interface SignatureInfo {
-  validatorAddress: string;
+  validator: Types.ObjectId;
   timestamp: string;
-  signature: string;
 }
 
 export interface BaseTx {

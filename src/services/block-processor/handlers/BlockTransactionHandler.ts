@@ -150,6 +150,12 @@ export class BlockTransactionHandler {
             
             // Mevcut blockchain yüksekliğini al
             const latestBlockInfo = await this.rpcClient.getLatestBlock();
+            
+            // latestBlockInfo kontrolü
+            if (!latestBlockInfo || !latestBlockInfo.block || !latestBlockInfo.block.header) {
+                throw new BlockProcessorError('Could not get latest block information from RPC client');
+            }
+            
             const currentHeight = parseInt(latestBlockInfo.block.header.height);
             
             // Hedef yüksekliği belirle
@@ -157,17 +163,31 @@ export class BlockTransactionHandler {
             
             logger.info(`[BlockHandler] Syncing blocks from ${fromHeight} to ${syncToHeight} on ${network}...`);
             
+            // Başarısız blokları takip et
+            const failedBlocks: number[] = [];
+            
             // Blocklari işle (burada basit bir senkron işlem yapıyoruz, paralel işleme eklenebilir)
             for (let height = fromHeight; height <= syncToHeight; height++) {
-                await this.syncBlockAtHeight(height, network);
-                
-                // Her 100 blokta bir logging
-                if (height % 100 === 0) {
-                    logger.info(`[BlockHandler] Synced up to block ${height} (${Math.floor((height - fromHeight) * 100 / (syncToHeight - fromHeight + 1))}%)`);
+                try {
+                    await this.syncBlockAtHeight(height, network);
+                    
+                    // Her 100 blokta bir logging
+                    if (height % 100 === 0) {
+                        logger.info(`[BlockHandler] Synced up to block ${height} (${Math.floor((height - fromHeight) * 100 / (syncToHeight - fromHeight + 1))}%)`);
+                    }
+                } catch (blockError) {
+                    // Blok senkronizasyonu başarısız oldu, ancak devam et
+                    failedBlocks.push(height);
+                    logger.warn(`[BlockHandler] Failed to sync block ${height}, continuing with next block`);
                 }
             }
             
-            logger.info(`[BlockHandler] Historical sync completed: ${syncToHeight - fromHeight + 1} blocks processed on ${network}`);
+            // Başarısız blokları raporla
+            if (failedBlocks.length > 0) {
+                logger.warn(`[BlockHandler] Failed to sync ${failedBlocks.length} blocks: ${failedBlocks.join(', ')}`);
+            }
+            
+            logger.info(`[BlockHandler] Historical sync completed: ${syncToHeight - fromHeight + 1 - failedBlocks.length} blocks processed on ${network}`);
             
         } catch (error) {
             logger.error(`[BlockHandler] Error syncing historical blocks: ${error instanceof Error ? error.message : String(error)}`);
@@ -181,7 +201,10 @@ export class BlockTransactionHandler {
     /**
      * Belirli bir yükseklikteki bloğu ve işlemlerini senkronize eder
      */
-    private async syncBlockAtHeight(height: number, network: Network): Promise<void> {
+    private async syncBlockAtHeight(height: number, network: Network, retryCount: number = 0): Promise<void> {
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 2000; // 2 saniye
+        
         try {
             if (!this.blockProcessor || !this.txProcessor || !this.blockStorage || !this.txStorage) {
                 throw new BlockProcessorError('Processors or storage not initialized');
@@ -190,8 +213,13 @@ export class BlockTransactionHandler {
             // Bloğu al
             const blockData = await this.rpcClient.getBlockByHeight(height);
             
+            // blockData kontrolü
+            if (!blockData || !blockData.result || !blockData.result.block) {
+                throw new BlockProcessorError(`Could not get block data for height ${height}`);
+            }
+            
             // Bloğu işle
-            const block = await this.blockProcessor.processBlock(blockData.block);
+            const block = await this.blockProcessor.processBlock(blockData.result.block);
             
             // Bloğu veritabanına kaydet
             await this.blockStorage.saveBlock(block, network);
@@ -201,38 +229,129 @@ export class BlockTransactionHandler {
             let savedTxCount = 0;
             let errorTxCount = 0;
             
-            if (blockData.block.data?.txs && blockData.block.data.txs.length > 0) {
-                const totalTxCount = blockData.block.data.txs.length;
+            // Blok yüksekliğindeki tüm işlemleri getTxSearch ile al
+            try {
+                const txSearchResult = await this.rpcClient.getTxSearch(height);
                 
-                for (const encodedTx of blockData.block.data.txs) {
-                    try {
-                        // İşlem detayını al
-                        const txDetail = await this.rpcClient.getTxByHash(encodedTx);
-                        // İşlemi işle
-                        const tx = await this.txProcessor.processTx(txDetail);
-                        processedTxCount++;
+                // txSearchResult kontrolü - daha güvenli kontrol
+                if (txSearchResult && txSearchResult.result && txSearchResult.result.txs && Array.isArray(txSearchResult.result.txs)) {
+                    const totalTxCount = txSearchResult.result.txs.length;
+                    logger.info(`[BlockHandler] Found ${totalTxCount} transactions for block ${height} on ${network}`);
+                    
+                    for (const txData of txSearchResult.result.txs) {
+                        try {
+                            // İşlemi işle
+                            const tx = await this.txProcessor.processTx(txData);
+                            processedTxCount++;
+                            
+                            // İşlemi veritabanına kaydet
+                            await this.txStorage.saveTx(tx, network);
+                            savedTxCount++;
+                        } catch (txError) {
+                            errorTxCount++;
+                            logger.error(`[TxHandler] Error processing tx in block ${height}: ${txError instanceof Error ? txError.message : String(txError)}`);
+                        }
+                    }
+                    
+                    // Blok işleme özetini logla
+                    logger.info(`[BlockHandler] Block ${height} on ${network}: Processed ${processedTxCount}/${totalTxCount} transactions, Saved ${savedTxCount}/${totalTxCount}, Errors ${errorTxCount}/${totalTxCount}`);
+                } else {
+                    // Alternatif olarak blok verilerinden işlemleri kontrol et
+                    if (blockData.result.block.data?.txs && blockData.result.block.data.txs.length > 0) {
+                        logger.warn(`[BlockHandler] getTxSearch returned no results for block ${height}, but block contains ${blockData.result.block.data.txs.length} transactions. Falling back to getTxByHash.`);
                         
-                        // İşlemi veritabanına kaydet
-                        await this.txStorage.saveTx(tx, network);
-                        savedTxCount++;
-                    } catch (txError) {
-                        errorTxCount++;
-                        logger.error(`[TxHandler] Error processing tx in block ${height}: ${txError instanceof Error ? txError.message : String(txError)}`);
+                        const totalTxCount = blockData.result.block.data.txs.length;
+                        
+                        for (const encodedTx of blockData.result.block.data.txs) {
+                            try {
+                                // İşlem detayını al
+                                const txDetail = await this.rpcClient.getTxByHash(encodedTx);
+                                
+                                // txDetail kontrolü
+                                if (!txDetail) {
+                                    logger.warn(`[TxHandler] Could not get transaction details for hash ${encodedTx}`);
+                                    errorTxCount++;
+                                    continue;
+                                }
+                                
+                                // İşlemi işle
+                                const tx = await this.txProcessor.processTx(txDetail);
+                                processedTxCount++;
+                                
+                                // İşlemi veritabanına kaydet
+                                await this.txStorage.saveTx(tx, network);
+                                savedTxCount++;
+                            } catch (txError) {
+                                errorTxCount++;
+                                logger.error(`[TxHandler] Error processing tx in block ${height}: ${txError instanceof Error ? txError.message : String(txError)}`);
+                            }
+                        }
+                        
+                        // Blok işleme özetini logla
+                        logger.info(`[BlockHandler] Block ${height} on ${network} (fallback): Processed ${processedTxCount}/${totalTxCount} transactions, Saved ${savedTxCount}/${totalTxCount}, Errors ${errorTxCount}/${totalTxCount}`);
+                    } else {
+                        logger.info(`[BlockHandler] Block ${height} on ${network}: No transactions`);
                     }
                 }
+            } catch (txSearchError) {
+                logger.error(`[BlockHandler] Error getting transactions for block ${height}: ${txSearchError instanceof Error ? txSearchError.message : String(txSearchError)}`);
                 
-                // Blok işleme özetini logla
-                logger.info(`[BlockHandler] Block ${height} on ${network}: Processed ${processedTxCount}/${totalTxCount} transactions, Saved ${savedTxCount}/${totalTxCount}, Errors ${errorTxCount}/${totalTxCount}`);
-            } else {
-                logger.info(`[BlockHandler] Block ${height} on ${network}: No transactions`);
+                // getTxSearch başarısız olursa, blok verilerinden işlemleri al
+                if (blockData.result.block.data?.txs && blockData.result.block.data.txs.length > 0) {
+                    logger.warn(`[BlockHandler] Falling back to getTxByHash for block ${height} due to getTxSearch error`);
+                    
+                    const totalTxCount = blockData.result.block.data.txs.length;
+                    
+                    for (const encodedTx of blockData.result.block.data.txs) {
+                        try {
+                            // İşlem detayını al
+                            const txDetail = await this.rpcClient.getTxByHash(encodedTx);
+                            
+                            // txDetail kontrolü
+                            if (!txDetail) {
+                                logger.warn(`[TxHandler] Could not get transaction details for hash ${encodedTx}`);
+                                errorTxCount++;
+                                continue;
+                            }
+                            
+                            // İşlemi işle
+                            const tx = await this.txProcessor.processTx(txDetail);
+                            processedTxCount++;
+                            
+                            // İşlemi veritabanına kaydet
+                            await this.txStorage.saveTx(tx, network);
+                            savedTxCount++;
+                        } catch (txError) {
+                            errorTxCount++;
+                            logger.error(`[TxHandler] Error processing tx in block ${height}: ${txError instanceof Error ? txError.message : String(txError)}`);
+                        }
+                    }
+                    
+                    // Blok işleme özetini logla
+                    logger.info(`[BlockHandler] Block ${height} on ${network} (fallback): Processed ${processedTxCount}/${totalTxCount} transactions, Saved ${savedTxCount}/${totalTxCount}, Errors ${errorTxCount}/${totalTxCount}`);
+                } else {
+                    logger.info(`[BlockHandler] Block ${height} on ${network}: No transactions`);
+                }
             }
             
         } catch (error) {
             logger.error(`[BlockHandler] Error syncing block at height ${height}: ${error instanceof Error ? error.message : String(error)}`);
+            
+            // Yeniden deneme mantığı
+            if (retryCount < MAX_RETRIES) {
+                logger.info(`[BlockHandler] Retrying sync for block ${height} (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
+                
+                // Yeniden denemeden önce bekle
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                
+                // Yeniden dene
+                return this.syncBlockAtHeight(height, network, retryCount + 1);
+            }
+            
             throw error;
         }
     }
-    
+
     /**
      * Son blokları senkronize eder
      */
@@ -244,6 +363,12 @@ export class BlockTransactionHandler {
             
             // Mevcut blockchain yüksekliğini al
             const latestBlockInfo = await this.rpcClient.getLatestBlock();
+            
+            // latestBlockInfo kontrolü
+            if (!latestBlockInfo || !latestBlockInfo.block || !latestBlockInfo.block.header) {
+                throw new BlockProcessorError('Could not get latest block information from RPC client');
+            }
+            
             const currentHeight = parseInt(latestBlockInfo.block.header.height);
             
             // Senkronize edilecek başlangıç yüksekliğini hesapla
@@ -260,4 +385,4 @@ export class BlockTransactionHandler {
             throw error;
         }
     }
-} 
+}

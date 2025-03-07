@@ -59,12 +59,16 @@ export class BlockStorage implements IBlockStorage {
     }
     
     /**
-     * Belirli bir yükseklikteki bloğu veritabanından getirir
+     * Belirli bir yükseklikteki bloğu getirir
      */
     public async getBlockByHeight(height: string | number, network: Network): Promise<BaseBlock | null> {
         try {
-            const heightStr = height.toString();
-            const block = await Block.findOne({ height: heightStr, network: network });
+            const block = await Block.findOne({ 
+                height: height.toString(), 
+                network: network 
+            })
+            .populate('proposer')
+            .populate('signatures.validator');
             
             if (!block) {
                 return null;
@@ -72,17 +76,22 @@ export class BlockStorage implements IBlockStorage {
             
             return this.mapToBaseBlock(block);
         } catch (error) {
-            logger.error(`[BlockStorage] Error getting block by height from database: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[BlockStorage] Error getting block by height: ${error instanceof Error ? error.message : String(error)}`);
             return null;
         }
     }
     
     /**
-     * Hash değerine göre bloğu veritabanından getirir
+     * Belirli bir hash değerine sahip bloğu getirir
      */
     public async getBlockByHash(blockHash: string, network: Network): Promise<BaseBlock | null> {
         try {
-            const block = await Block.findOne({ blockHash, network });
+            const block = await Block.findOne({ 
+                blockHash: blockHash, 
+                network: network 
+            })
+            .populate('proposer')
+            .populate('signatures.validator');
             
             if (!block) {
                 return null;
@@ -90,27 +99,30 @@ export class BlockStorage implements IBlockStorage {
             
             return this.mapToBaseBlock(block);
         } catch (error) {
-            logger.error(`[BlockStorage] Error getting block by hash from database: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[BlockStorage] Error getting block by hash: ${error instanceof Error ? error.message : String(error)}`);
             return null;
         }
     }
     
     /**
-     * En son bloğu veritabanından getirir
+     * En son bloğu getirir
      */
     public async getLatestBlock(network: Network): Promise<BaseBlock | null> {
         try {
-            const latestBlock = await Block.findOne({ network: network })
-                .sort({ height: -1 })
-                .limit(1);
-                
-            if (!latestBlock) {
+            const block = await Block.findOne({ 
+                network: network 
+            })
+            .sort({ height: -1 })
+            .populate('proposer')
+            .populate('signatures.validator');
+            
+            if (!block) {
                 return null;
             }
             
-            return this.mapToBaseBlock(latestBlock);
+            return this.mapToBaseBlock(block);
         } catch (error) {
-            logger.error(`[BlockStorage] Error getting latest block from database: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[BlockStorage] Error getting latest block: ${error instanceof Error ? error.message : String(error)}`);
             return null;
         }
     }
@@ -134,13 +146,12 @@ export class BlockStorage implements IBlockStorage {
         return {
             height: block.height,
             blockHash: block.blockHash,
-            proposerAddress: block.proposerAddress,
+            proposer: block.proposer,
             numTxs: block.numTxs,
             time: block.time,
             signatures: block.signatures.map(sig => ({
-                validatorAddress: sig.validatorAddress,
+                validator: sig.validator,
                 timestamp: sig.timestamp,
-                signature: sig.signature
             })),
             appHash: block.appHash
         };

@@ -87,12 +87,17 @@ export class BabylonClient {
         return this.blockClient.getBlockByHeight(height);
     }
 
+    /**
+     * En son bloğu alır
+     */
     public async getLatestBlock(): Promise<{
-        header: {
-            height: number;
-            time: string;
+        block: {
+            header: {
+                height: string;
+                time: string;
+            };
+            data: any;
         };
-        data: any;
     }> {
         return this.blockClient.getLatestBlock();
     }

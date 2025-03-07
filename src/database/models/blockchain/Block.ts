@@ -7,20 +7,23 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 // Signature alt şeması
 const SignatureSchema = new Schema({
-  validatorAddress: { type: String, required: true },
-  timestamp: { type: String, required: true },
-  signature: { type: String, required: true }
+  validator: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'ValidatorInfo', 
+    required: true 
+  },
+  timestamp: { type: String, required: true }
 }, { _id: false });
 
 // Block şeması
 export interface IBlock extends Document {
   height: string;
   blockHash: string;
-  proposerAddress: string;
+  proposer: mongoose.Types.ObjectId;
   numTxs: number;
   time: string;
   signatures: Array<{
-    validatorAddress: string;
+    validator: mongoose.Types.ObjectId;
     timestamp: string;
     signature: string;
   }>;
@@ -42,8 +45,9 @@ const BlockSchema = new Schema({
     unique: true,
     index: true 
   },
-  proposerAddress: { 
-    type: String, 
+  proposer: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'ValidatorInfo',
     required: true,
     index: true 
   },

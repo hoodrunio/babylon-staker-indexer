@@ -96,14 +96,16 @@ export class BlockClient extends BaseClient {
     }
 
     /**
-     * En son blok bilgilerini alır
+     * En son bloğu alır
      */
     public async getLatestBlock(): Promise<{
-        header: {
-            height: number;
-            time: string;
+        block: {
+            header: {
+                height: string;
+                time: string;
+            };
+            data: any;
         };
-        data: any;
     }> {
         try {
             logger.debug(`[BlockClient] Getting latest block for ${this.network}`);
@@ -111,15 +113,24 @@ export class BlockClient extends BaseClient {
             const response = await this.client.get('/cosmos/base/tendermint/v1beta1/blocks/latest');
             
             if (!response || !response.data || !response.data.block) {
+                logger.error(`[BlockClient] Invalid response from Babylon node for ${this.network}`);
                 throw new Error('Invalid response from Babylon node');
             }
             
+            // Daha detaylı kontrol
+            if (!response.data.block.header || !response.data.block.header.height) {
+                logger.error(`[BlockClient] Missing header or height in response for ${this.network}`);
+                throw new Error('Missing header or height in response');
+            }
+            
             return {
-                header: {
-                    height: parseInt(response.data.block.header.height),
-                    time: response.data.block.header.time
-                },
-                data: response.data.block.data
+                block: {
+                    header: {
+                        height: response.data.block.header.height,
+                        time: response.data.block.header.time
+                    },
+                    data: response.data.block.data
+                }
             };
         } catch (error) {
             logger.error(`[BlockClient] Error getting latest block for ${this.network}:`, error);
@@ -127,11 +138,64 @@ export class BlockClient extends BaseClient {
         }
     }
 
+    /**
+     * Belirli bir yükseklikteki bloğu alır
+     * @param height Blok yüksekliği
+     */
     public async getBlockByHeight(height: number): Promise<any> {
-        const url = new URL(`${this.baseRpcUrl}/block`);
-        url.searchParams.append('height', height.toString());
-        const response = await this.fetchWithTimeout(url.toString());
-        return response.json();
+        try {
+            logger.debug(`[BlockClient] Getting block at height ${height} for ${this.network}`);
+            
+            const url = new URL(`${this.baseRpcUrl}/block`);
+            url.searchParams.append('height', height.toString());
+            
+            // Daha uzun bir timeout ile deneyelim
+            const response = await this.fetchWithTimeout(url.toString(), 15000);
+            
+            // Yanıt durumunu kontrol et
+            if (!response.ok) {
+                logger.error(`[BlockClient] HTTP error ${response.status} for block at height ${height} for ${this.network}`);
+                throw new Error(`HTTP error ${response.status} for block at height ${height}`);
+            }
+            
+            // JSON yanıtını parse et
+            const data = await response.json() as any;
+            
+            // Veri yapısını kontrol et
+            if (!data || !data.result || !data.result.block) {
+                logger.error(`[BlockClient] Invalid response for block at height ${height} for ${this.network}: ${JSON.stringify(data)}`);
+                throw new Error(`Invalid response for block at height ${height}`);
+            }
+            
+            return data;
+        } catch (error) {
+            // Hata detaylarını logla
+            if (error instanceof Error) {
+                logger.error(`[BlockClient] Error getting block at height ${height} for ${this.network}: ${error.message}`);
+                if (error.stack) {
+                    logger.debug(`[BlockClient] Error stack: ${error.stack}`);
+                }
+            } else {
+                logger.error(`[BlockClient] Unknown error getting block at height ${height} for ${this.network}`);
+            }
+            
+            // Alternatif bir yöntem deneyelim - Axios ile
+            try {
+                logger.debug(`[BlockClient] Retrying with axios for block at height ${height} for ${this.network}`);
+                
+                const axiosResponse = await this.client.get(`${this.baseRpcUrl}/block?height=${height}`);
+                
+                if (!axiosResponse.data || !axiosResponse.data.result || !axiosResponse.data.result.block) {
+                    logger.error(`[BlockClient] Invalid axios response for block at height ${height} for ${this.network}`);
+                    throw new Error(`Invalid axios response for block at height ${height}`);
+                }
+                
+                return axiosResponse.data;
+            } catch (axiosError) {
+                logger.error(`[BlockClient] Axios retry also failed for block at height ${height} for ${this.network}`);
+                throw error; // Orijinal hatayı fırlat
+            }
+        }
     }
     
     /**
@@ -139,15 +203,84 @@ export class BlockClient extends BaseClient {
      * @param height İşlemlerin aranacağı blok yüksekliği
      */
     public async getTxSearch(height: number): Promise<any> {
-        const url = new URL(`${this.baseRpcUrl}/tx_search`);
-        url.searchParams.append('query', `"tx.height=${height}"`);
-        url.searchParams.append('page', '1');
-        url.searchParams.append('per_page', '500');
-
-        logger.debug(`[BlockClient] Fetching transactions from: ${url.toString()}`);
-
-        const response = await this.fetchWithTimeout(url.toString());
-        const data = await response.json() as { result: any };
-        return data.result;
+        try {
+            logger.debug(`[BlockClient] Fetching transactions for height ${height} for ${this.network}`);
+            
+            const url = new URL(`${this.baseRpcUrl}/tx_search`);
+            url.searchParams.append('query', `"tx.height=${height}"`);
+            url.searchParams.append('page', '1');
+            url.searchParams.append('per_page', '500');
+            
+            logger.debug(`[BlockClient] Fetching transactions from: ${url.toString()}`);
+            
+            // Daha uzun bir timeout ile deneyelim
+            const response = await this.fetchWithTimeout(url.toString(), 15000);
+            
+            // Yanıt durumunu kontrol et
+            if (!response.ok) {
+                logger.error(`[BlockClient] HTTP error ${response.status} for tx_search at height ${height} for ${this.network}`);
+                throw new Error(`HTTP error ${response.status} for tx_search at height ${height}`);
+            }
+            
+            // JSON yanıtını parse et
+            const data = await response.json() as any;
+            
+            // Veri yapısını kontrol et
+            if (!data || !data.result) {
+                logger.error(`[BlockClient] Invalid response for tx_search at height ${height} for ${this.network}: ${JSON.stringify(data)}`);
+                throw new Error(`Invalid response for tx_search at height ${height}`);
+            }
+            
+            // tx_search.json formatına uygun olarak döndür
+            return {
+                jsonrpc: data.jsonrpc,
+                id: data.id,
+                result: {
+                    txs: data.result.txs || [],
+                    total_count: data.result.total_count || "0"
+                }
+            };
+        } catch (error) {
+            // Hata detaylarını logla
+            if (error instanceof Error) {
+                logger.error(`[BlockClient] Error getting transactions for height ${height} for ${this.network}: ${error.message}`);
+                if (error.stack) {
+                    logger.debug(`[BlockClient] Error stack: ${error.stack}`);
+                }
+            } else {
+                logger.error(`[BlockClient] Unknown error getting transactions for height ${height} for ${this.network}`);
+            }
+            
+            // Alternatif bir yöntem deneyelim - Axios ile
+            try {
+                logger.debug(`[BlockClient] Retrying tx_search with axios for height ${height} for ${this.network}`);
+                
+                const axiosResponse = await this.client.get(`${this.baseRpcUrl}/tx_search`, {
+                    params: {
+                        query: `"tx.height=${height}"`,
+                        page: 1,
+                        per_page: 500
+                    }
+                });
+                
+                if (!axiosResponse.data || !axiosResponse.data.result) {
+                    logger.error(`[BlockClient] Invalid axios response for tx_search at height ${height} for ${this.network}`);
+                    throw new Error(`Invalid axios response for tx_search at height ${height}`);
+                }
+                
+                // tx_search.json formatına uygun olarak döndür
+                return {
+                    jsonrpc: axiosResponse.data.jsonrpc,
+                    id: axiosResponse.data.id,
+                    result: {
+                        txs: axiosResponse.data.result.txs || [],
+                        total_count: axiosResponse.data.result.total_count || "0"
+                    }
+                };
+            } catch (axiosError) {
+                logger.error(`[BlockClient] Axios retry also failed for tx_search at height ${height} for ${this.network}`);
+                throw error; // Orijinal hatayı fırlat
+            }
+        }
     }
 } 

@@ -119,7 +119,13 @@ export class MissedBlocksProcessor {
         babylonClient: BabylonClient
     ): Promise<boolean> {
         try {
-            const txSearchResults = await babylonClient.getTxSearch(height) as TxSearchResult;
+            const txSearchResponse = await babylonClient.getTxSearch(height);
+            
+            // Yeni veri yapısı kontrolü
+            const txSearchResults = txSearchResponse?.result?.txs ? 
+                { txs: txSearchResponse.result.txs } : 
+                txSearchResponse as TxSearchResult;
+                
             if (!txSearchResults?.txs) return false;
 
             const btcStakingEvents: BTCStakingEvent[] = [];
@@ -132,7 +138,7 @@ export class MissedBlocksProcessor {
                             events: [event],
                             height: parseInt(tx.height),
                             hash: tx.hash,
-                            sender: events.find(e => e.type === 'message')?.attributes.find(a => a.key === 'sender')?.value
+                            sender: events.find((e: any) => e.type === 'message')?.attributes.find((a: any) => a.key === 'sender')?.value
                         });
                     }
                 }

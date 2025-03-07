@@ -79,22 +79,38 @@ export class HistoricalSyncService implements IHistoricalSyncService {
       // Eğer fromHeight belirtilmişse, o yükseklikten itibaren senkronize et
       if (fromHeight) {
         logger.info(`[HistoricalSync] Starting sync from specified height ${fromHeight}`);
-        await this.syncFromHeight(fromHeight, undefined, network);
+        try {
+          await this.syncFromHeight(fromHeight, undefined, network);
+        } catch (error) {
+          logger.error(`[HistoricalSync] Error syncing from height ${fromHeight}: ${error instanceof Error ? error.message : String(error)}`);
+          // Hata durumunda son N bloğu senkronize etmeyi dene
+          const count = blockCount || this.MAX_BLOCK_SYNC;
+          logger.info(`[HistoricalSync] Falling back to syncing latest ${count} blocks`);
+          await this.syncLatestBlocks(count, network);
+        }
         return;
       }
       
       // Veritabanındaki son bloğu kontrol et
-      const latestBlock = await this.blockStorage.getLatestBlock(network);
-      
-      if (latestBlock) {
-        // Veritabanında blok varsa, son bloktan itibaren senkronize et
-        const lastHeight = Number(latestBlock.height);
-        logger.info(`[HistoricalSync] Found latest block in database at height ${lastHeight}, syncing from there`);
-        await this.syncFromHeight(lastHeight + 1, undefined, network);
-      } else {
-        // Veritabanı boşsa, son N bloğu senkronize et
+      try {
+        const latestBlock = await this.blockStorage.getLatestBlock(network);
+        
+        if (latestBlock) {
+          // Veritabanında blok varsa, son bloktan itibaren senkronize et
+          const lastHeight = Number(latestBlock.height);
+          logger.info(`[HistoricalSync] Found latest block in database at height ${lastHeight}, syncing from there`);
+          await this.syncFromHeight(lastHeight + 1, undefined, network);
+        } else {
+          // Veritabanı boşsa, son N bloğu senkronize et
+          const count = blockCount || this.MAX_BLOCK_SYNC;
+          logger.info(`[HistoricalSync] No blocks found in database, syncing latest ${count} blocks`);
+          await this.syncLatestBlocks(count, network);
+        }
+      } catch (dbError) {
+        // Veritabanı hatası durumunda son N bloğu senkronize et
+        logger.error(`[HistoricalSync] Error accessing database: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
         const count = blockCount || this.MAX_BLOCK_SYNC;
-        logger.info(`[HistoricalSync] No blocks found in database, syncing latest ${count} blocks`);
+        logger.info(`[HistoricalSync] Falling back to syncing latest ${count} blocks`);
         await this.syncLatestBlocks(count, network);
       }
     } catch (error) {

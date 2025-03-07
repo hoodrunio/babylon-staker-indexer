@@ -7,11 +7,11 @@ import { IBlockProcessorService, IBlockStorage } from '../types/interfaces';
 import { Network } from '../../../types/finality';
 import { BabylonClient } from '../../../clients/BabylonClient';
 import { logger } from '../../../utils/logger';
-
+import { ValidatorInfoService } from '../../validator/ValidatorInfoService';
 export class BlockProcessorService implements IBlockProcessorService {
   private network: Network;
   private babylonClient: BabylonClient;
-
+  private validatorInfoService: ValidatorInfoService;
   constructor(
     private readonly blockStorage: IBlockStorage, 
     network: Network = Network.TESTNET,
@@ -19,6 +19,7 @@ export class BlockProcessorService implements IBlockProcessorService {
   ) {
     this.network = network;
     this.babylonClient = babylonClient || BabylonClient.getInstance(network);
+    this.validatorInfoService = ValidatorInfoService.getInstance();
   }
 
   /**
@@ -31,17 +32,49 @@ export class BlockProcessorService implements IBlockProcessorService {
       if (!header) {
         throw new BlockProcessorError('Block header bulunamadı');
       }
-
-      const signatures = blockData.last_commit?.signatures.map((sig: any) => ({
-        validatorAddress: sig.validator_address,
-        timestamp: sig.timestamp,
-        signature: sig.signature ? true : false
-      })) || [];
-
+      
+      // Önce proposer validator bilgisini alalım
+      const proposerValidator = await this.validatorInfoService.getValidatorByHexAddress(header.proposer_address, this.network);
+      if (!proposerValidator) {
+        throw new BlockProcessorError(`Proposer validator bulunamadı: ${header.proposer_address}`);
+      }
+      
+      // İmzaları işleyelim
+      const signaturesPromises = blockData.last_commit?.signatures.map(async (sig: any) => {
+        if (!sig.validator_address) {
+          return null; // Geçersiz imzaları atlayalım
+        }
+        
+        const validator = await this.validatorInfoService.getValidatorByHexAddress(sig.validator_address, this.network);
+        if (!validator) {
+          return null; // Validator bulunamadıysa atlayalım
+        }
+        
+        return {
+          validator: validator._id,
+          timestamp: sig.timestamp || '',
+          signature: sig.signature || ''
+        };
+      }) || [];
+      
+      // Promise'ları çözümleyelim ve null olanları filtreleyelim
+      const signatures = (await Promise.all(signaturesPromises)).filter(sig => sig !== null);
+      const height = parseInt(blockData.header.height);
+      
+      // Doğrudan RPC çağrısı yapalım
+      const response = await this.babylonClient.getBlockByHeight(height);
+      if (response) {
+        // Hash değerini ekle
+        const hash = response.result.block_id.hash;
+        blockData.block_id = {
+          hash: hash
+        };
+      }
+      const blockhash = blockData.block_id?.hash || '';
       const baseBlock: BaseBlock = {
         height: header.height,
-        blockHash: blockData.block_id?.hash || '',
-        proposerAddress: header.proposer_address,
+        blockHash: blockhash,
+        proposer: proposerValidator._id,
         numTxs: Array.isArray(blockData.data?.txs) ? blockData.data.txs.length : 0,
         time: header.time,
         signatures,
