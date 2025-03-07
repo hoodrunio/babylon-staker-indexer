@@ -12,6 +12,8 @@ export interface BlockResult {
                 value: string;
             }>;
         }>;
+        gas_wanted?: string;
+        gas_used?: string;
     }>;
 }
 
@@ -80,7 +82,9 @@ export class BlockClient extends BaseClient {
                     events: (txResult.events || []).map((event: any) => ({
                         type: event.type,
                         attributes: event.attributes || []
-                    }))
+                    })),
+                    gas_wanted: txResult.gas_wanted || '0',
+                    gas_used: txResult.gas_used || '0'
                 }))
             };
 
