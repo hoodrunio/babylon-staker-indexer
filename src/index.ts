@@ -18,41 +18,9 @@ dotenv.config();
 async function startServer() {
     logger.info('Starting services...');
 
-    // Initialize and start the FinalitySignatureService
-    const finalityService = FinalitySignatureService.getInstance();
-    await finalityService.start();
-
-    // Initialize BTCDelegationService (this will start initial sync)
-    logger.info('Initializing BTCDelegationService...');
-    BTCDelegationService.getInstance();
-    
-    // Initialize BlockProcessorModule
-    logger.info('Initializing BlockProcessorModule...');
-    const blockProcessorModule = BlockProcessorModule.getInstance();
-    blockProcessorModule.initialize();
-    
-    // Start historical sync if BLOCK_SYNC_ENABLED is true
-    if (process.env.BLOCK_SYNC_ENABLED === 'true') {
-        const network = process.env.NETWORK === 'mainnet' ? Network.MAINNET : Network.TESTNET;
-        const fromHeight = parseInt(process.env.BLOCK_SYNC_FROM_HEIGHT || '0');
-        const blockCount = parseInt(process.env.BLOCK_SYNC_COUNT || '100');
-        
-        if (fromHeight > 0) {
-            logger.info(`Starting historical block sync from height ${fromHeight}...`);
-            blockProcessorModule.startHistoricalSync(network, fromHeight).catch(logger.error);
-        } else {
-            logger.info(`Starting latest ${blockCount} blocks sync...`);
-            blockProcessorModule.startHistoricalSync(network, undefined, blockCount).catch(logger.error);
-        }
-    }
-
     const app = express();
     app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
     const port = process.env.PORT || 3000;
-
-    // Initialize and start the WebSocket service
-    const websocketService = WebsocketService.getInstance();
-    websocketService.startListening();
 
     // CORS settings
     app.use(cors({
@@ -93,6 +61,38 @@ async function startServer() {
     app.listen(port, () => {
         logger.info(`Server running at http://localhost:${port}`);
     });
+
+    // Initialize and start the FinalitySignatureService
+    const finalityService = FinalitySignatureService.getInstance();
+    await finalityService.start();
+
+    // Initialize BTCDelegationService (this will start initial sync)
+    logger.info('Initializing BTCDelegationService...');
+    BTCDelegationService.getInstance();
+    
+    // Initialize BlockProcessorModule
+    logger.info('Initializing BlockProcessorModule...');
+    const blockProcessorModule = BlockProcessorModule.getInstance();
+    blockProcessorModule.initialize();
+    
+    // Start historical sync if BLOCK_SYNC_ENABLED is true
+    if (process.env.BLOCK_SYNC_ENABLED === 'true') {
+        const network = process.env.NETWORK === 'mainnet' ? Network.MAINNET : Network.TESTNET;
+        const fromHeight = parseInt(process.env.BLOCK_SYNC_FROM_HEIGHT || '0');
+        const blockCount = parseInt(process.env.BLOCK_SYNC_COUNT || '100');
+        
+        if (fromHeight > 0) {
+            logger.info(`Starting historical block sync from height ${fromHeight}...`);
+            blockProcessorModule.startHistoricalSync(network, fromHeight).catch(logger.error);
+        } else {
+            logger.info(`Starting latest ${blockCount} blocks sync...`);
+            blockProcessorModule.startHistoricalSync(network, undefined, blockCount).catch(logger.error);
+        }
+    }
+
+    // Initialize and start the WebSocket service
+    const websocketService = WebsocketService.getInstance();
+    websocketService.startListening();
 
     // Initialize indexer
     const indexer = new BabylonIndexer();

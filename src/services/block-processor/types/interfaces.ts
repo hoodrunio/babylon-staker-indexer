@@ -38,21 +38,25 @@ export interface IFallbackService {
 
 export interface IFetcherService {
   fetchTxDetails(txHash: string, network: Network): Promise<any>;
+  fetchTxsByHeight(height: number | string, network: Network): Promise<any[]>;
+  fetchBlockByHeight(height: number | string, network: Network): Promise<any>;
+  fetchBlockByHash(blockHash: string, network: Network): Promise<any>;
+  fetchLatestBlock(network: Network): Promise<any>;
   getSupportedNetworks(): Network[];
 }
 
 // Database interfaces
 export interface IBlockStorage {
   saveBlock(block: BaseBlock, network: Network): Promise<void>;
-  getBlockByHeight(height: string | number, network: Network): Promise<BaseBlock | null>;
-  getBlockByHash(blockHash: string, network: Network): Promise<BaseBlock | null>;
-  getLatestBlock(network: Network): Promise<BaseBlock | null>;
+  getBlockByHeight(height: string | number, network: Network, useRawFormat?: boolean): Promise<BaseBlock | any | null>;
+  getBlockByHash(blockHash: string, network: Network, useRawFormat?: boolean): Promise<BaseBlock | any | null>;
+  getLatestBlock(network: Network, useRawFormat?: boolean): Promise<BaseBlock | any | null>;
   getBlockCount(network: Network): Promise<number>;
 }
 
 export interface ITxStorage {
   saveTx(tx: BaseTx, network: Network): Promise<void>;
-  getTxByHash(txHash: string, network: Network): Promise<BaseTx | null>;
-  getTxsByHeight(height: string | number, network: Network): Promise<BaseTx[]>;
+  getTxByHash(txHash: string, network: Network, useRawFormat?: boolean): Promise<BaseTx | any | null>;
+  getTxsByHeight(height: string | number, network: Network, useRawFormat?: boolean): Promise<BaseTx[] | any[]>;
   getTxCount(network: Network): Promise<number>;
 }

@@ -152,7 +152,7 @@ export class BlockProcessorController {
   public getBlockByHeight = async (req: Request, res: Response): Promise<void> => {
     try {
       const { height } = req.params;
-      const { network } = req.query;
+      const { network, raw } = req.query;
       
       if (!height) {
         res.status(400).json({
@@ -180,7 +180,9 @@ export class BlockProcessorController {
         return;
       }
       
-      const block = await this.blockStorage.getBlockByHeight(height, network as Network);
+      // Get block with optional raw format
+      const useRawFormat = raw === 'true';
+      const block = await this.blockStorage.getBlockByHeight(height, network as Network, useRawFormat);
       
       if (!block) {
         res.status(404).json({
@@ -192,7 +194,8 @@ export class BlockProcessorController {
 
       res.status(200).json({
         success: true,
-        data: block
+        data: block,
+        format: useRawFormat ? 'raw' : 'standard'
       });
     } catch (error) {
       logger.error(`[BlockProcessorController] Error getting block by height: ${error instanceof Error ? error.message : String(error)}`);
@@ -251,6 +254,117 @@ export class BlockProcessorController {
       res.status(500).json({
         success: false,
         error: 'Failed to get transactions by height'
+      });
+    }
+  };
+
+  /**
+   * Get latest block
+   */
+  public getLatestBlock = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { network, raw } = req.query;
+      
+      if (!network) {
+        res.status(400).json({
+          success: false,
+          error: 'Network parameter is required'
+        });
+        return;
+      }
+
+      // Validate network
+      const supportedNetworks = this.blockProcessor.getSupportedNetworks();
+      if (!supportedNetworks.includes(network as Network)) {
+        res.status(400).json({
+          success: false,
+          error: `Network ${network} is not supported. Supported networks: ${supportedNetworks.join(', ')}`
+        });
+        return;
+      }
+      
+      // Get latest block with optional raw format
+      const useRawFormat = raw === 'true';
+      const block = await this.blockStorage.getLatestBlock(network as Network, useRawFormat);
+      
+      if (!block) {
+        res.status(404).json({
+          success: false,
+          error: `Latest block not found for network ${network}`
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: block,
+        format: useRawFormat ? 'raw' : 'standard'
+      });
+    } catch (error) {
+      logger.error(`[BlockProcessorController] Error getting latest block: ${error instanceof Error ? error.message : String(error)}`);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get latest block'
+      });
+    }
+  };
+
+  /**
+   * Get block by hash
+   */
+  public getBlockByHash = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { hash } = req.params;
+      const { network, raw } = req.query;
+      
+      if (!hash) {
+        res.status(400).json({
+          success: false,
+          error: 'Block hash is required'
+        });
+        return;
+      }
+
+      if (!network) {
+        res.status(400).json({
+          success: false,
+          error: 'Network parameter is required'
+        });
+        return;
+      }
+
+      // Validate network
+      const supportedNetworks = this.blockProcessor.getSupportedNetworks();
+      if (!supportedNetworks.includes(network as Network)) {
+        res.status(400).json({
+          success: false,
+          error: `Network ${network} is not supported. Supported networks: ${supportedNetworks.join(', ')}`
+        });
+        return;
+      }
+
+      // Get block with optional raw format
+      const useRawFormat = raw === 'true';
+      const block = await this.blockStorage.getBlockByHash(hash, network as Network, useRawFormat);
+
+      if (!block) {
+        res.status(404).json({
+          success: false,
+          error: `Block with hash ${hash} not found`
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: block,
+        format: useRawFormat ? 'raw' : 'standard'
+      });
+    } catch (error) {
+      logger.error(`[BlockProcessorController] Error getting block by hash: ${error instanceof Error ? error.message : String(error)}`);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get block by hash'
       });
     }
   };

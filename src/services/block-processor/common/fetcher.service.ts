@@ -87,4 +87,124 @@ export class FetcherService implements IFetcherService {
   public getSupportedNetworks(): Network[] {
     return Array.from(this.babylonClients.keys());
   }
+
+  /**
+   * Fetches transactions by block height
+   * @param height Block height
+   * @param network Network type
+   * @returns Array of transactions
+   */
+  public async fetchTxsByHeight(height: number | string, network: Network): Promise<any[]> {
+    try {
+      logger.debug(`[FetcherService] Fetching transactions for height ${height} on ${network}`);
+      
+      const client = this.babylonClients.get(network);
+      if (!client) {
+        throw new Error(`[FetcherService] No client configured for network ${network}`);
+      }
+      
+      // Use the getTxSearch method from BlockClient through BabylonClient
+      const txSearchResult = await client.getTxSearch(Number(height));
+      
+      if (!txSearchResult || !txSearchResult.result || !txSearchResult.result.txs) {
+        logger.warn(`[FetcherService] No transactions found for height ${height} on ${network}`);
+        return [];
+      }
+      
+      logger.debug(`[FetcherService] Successfully fetched ${txSearchResult.result.txs.length} transactions for height ${height} on ${network}`);
+      return txSearchResult.result.txs;
+    } catch (error) {
+      logger.error(`[FetcherService] Error fetching transactions for height ${height} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to fetch transactions for height ${height}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Fetches block by height
+   * @param height Block height
+   * @param network Network type
+   * @returns Block details
+   */
+  public async fetchBlockByHeight(height: number | string, network: Network): Promise<any> {
+    try {
+      logger.debug(`[FetcherService] Fetching block at height ${height} on ${network}`);
+      
+      const client = this.babylonClients.get(network);
+      if (!client) {
+        throw new Error(`[FetcherService] No client configured for network ${network}`);
+      }
+      
+      const blockData = await client.getBlockByHeight(Number(height));
+      if (!blockData) {
+        logger.warn(`[FetcherService] Block at height ${height} not found on ${network}`);
+        return null;
+      }
+      
+      logger.debug(`[FetcherService] Successfully fetched block at height ${height} on ${network}`);
+      return blockData;
+    } catch (error) {
+      logger.error(`[FetcherService] Error fetching block at height ${height} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to fetch block at height ${height}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Fetches block by hash
+   * Note: Currently, BabylonClient does not have a direct method to fetch blocks by hash.
+   * This method is a placeholder and will return null until the functionality is implemented.
+   * @param blockHash Block hash
+   * @param network Network type
+   * @returns Block details or null
+   */
+  public async fetchBlockByHash(blockHash: string, network: Network): Promise<any> {
+    try {
+      logger.debug(`[FetcherService] Fetching block with hash ${blockHash} on ${network}`);
+      
+      const client = this.babylonClients.get(network);
+      if (!client) {
+        throw new Error(`[FetcherService] No client configured for network ${network}`);
+      }
+      
+      const blockData = await client.getBlockByHash(blockHash);
+      if (!blockData) {
+        logger.warn(`[FetcherService] Block with hash ${blockHash} not found on ${network}`);
+        return null;
+      }
+      
+      logger.debug(`[FetcherService] Successfully fetched block with hash ${blockHash} on ${network}`);
+      return blockData;
+     
+    } catch (error) {
+      logger.error(`[FetcherService] Error fetching block with hash ${blockHash} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to fetch block with hash ${blockHash}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Fetches latest block
+   * @param network Network type
+   * @returns Latest block details
+   */
+  public async fetchLatestBlock(network: Network): Promise<any> {
+    try {
+      logger.debug(`[FetcherService] Fetching latest block on ${network}`);
+      
+      const client = this.babylonClients.get(network);
+      if (!client) {
+        throw new Error(`[FetcherService] No client configured for network ${network}`);
+      }
+      
+      const blockData = await client.getLatestBlock();
+      if (!blockData) {
+        logger.warn(`[FetcherService] Latest block not found on ${network}`);
+        return null;
+      }
+      
+      logger.debug(`[FetcherService] Successfully fetched latest block on ${network}`);
+      return blockData;
+    } catch (error) {
+      logger.error(`[FetcherService] Error fetching latest block on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to fetch latest block: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }

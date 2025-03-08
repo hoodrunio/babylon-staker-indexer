@@ -35,7 +35,8 @@ export interface BaseTx {
   messageCount: number;
   type: string;
   time: string;
-  meta: TxMessage[];
+  meta?: TxMessage[];
+  totalCount?: number;
 }
 
 export interface TxMessage {

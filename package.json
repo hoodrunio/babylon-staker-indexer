@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts",
     "test": "jest",
     "lint": "eslint . --ext .ts",
     "typecheck": "tsc --noEmit",
@@ -81,6 +81,7 @@
     "jest": "^29.7.0",
     "mocha": "^11.0.1",
     "node-cron": "^3.0.3",
+    "nodemon": "^3.1.9",
     "protobufjs": "^7.4.0",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",

@@ -287,4 +287,14 @@ export class BlockClient extends BaseClient {
             }
         }
     }
+
+    public async getBlockByHash(hash: string): Promise<any> {
+        try {
+            const response = await this.client.get(`${this.baseRpcUrl}/block?hash=0x${hash}`);
+            return response.data;
+        } catch (error) {
+            logger.error(`[BlockClient] Error getting block by hash ${hash}: ${error instanceof Error ? error.message : String(error)}`);
+            throw error;    
+        }
+    }
 } 

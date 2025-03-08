@@ -9,5 +9,7 @@ router.post('/sync', blockProcessorController.startHistoricalSync);
 router.get('/tx/:txHash', blockProcessorController.getTxDetails);
 router.get('/block/:height', blockProcessorController.getBlockByHeight);
 router.get('/block/:height/txs', blockProcessorController.getTxsByHeight);
+router.get('/latest-block', blockProcessorController.getLatestBlock);
+router.get('/block-by-hash/:hash', blockProcessorController.getBlockByHash);
 
 export default router;

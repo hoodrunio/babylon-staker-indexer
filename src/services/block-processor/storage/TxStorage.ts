@@ -9,7 +9,6 @@ import { logger } from '../../../utils/logger';
 import { BlockchainTransaction, ITransaction } from '../../../database/models/blockchain/Transaction';
 import { Network } from '../../../types/finality';
 import { FetcherService } from '../common/fetcher.service';
-import { TransactionProcessorService } from '../common/transactionProcessor.service';
 
 /**
  * Service for storing transaction data
@@ -149,11 +148,21 @@ export class TxStorage implements ITxStorage {
                 
                 logger.info(`[TxStorage] Raw format requested for height ${height}, fetching from blockchain`);
                 
-                // This requires implementation in FetcherService to get transactions by height
-                // For now, we'll return an empty array
-                // TODO: Implement fetchTxsByHeight in FetcherService
-                
-                return [];
+                try {
+                    // Fetch transactions from blockchain using fetcherService
+                    const rawTxs = await this.fetcherService.fetchTxsByHeight(height, network);
+                    
+                    if (rawTxs && rawTxs.length > 0) {
+                        logger.info(`[TxStorage] Found ${rawTxs.length} raw transactions for height ${height} from blockchain`);
+                        return rawTxs;
+                    } else {
+                        logger.info(`[TxStorage] No raw transactions found for height ${height} from blockchain`);
+                        return [];
+                    }
+                } catch (error) {
+                    logger.error(`[TxStorage] Error fetching raw transactions from blockchain: ${error instanceof Error ? error.message : String(error)}`);
+                    return [];
+                }
             }
             
             // For standard format, first try to get from database
@@ -162,18 +171,47 @@ export class TxStorage implements ITxStorage {
             
             // If transactions found in database, return them
             if (txs.length > 0) {
-                return txs.map(tx => this.mapToBaseTx(tx));
+                return txs.map(tx => this.mapToBlockTx(tx));
             }
             
             // If no transactions found in database and fetcherService is available, try to fetch from blockchain
             if (this.fetcherService) {
                 logger.info(`[TxStorage] No transactions found for height ${height} in storage, fetching from blockchain`);
                 
-                // This requires implementation in FetcherService to get transactions by height
-                // For now, we'll return an empty array
-                // TODO: Implement fetchTxsByHeight in FetcherService
-                
-                return [];
+                try {
+                    // Fetch transactions from blockchain using fetcherService
+                    const rawTxs = await this.fetcherService.fetchTxsByHeight(height, network);
+                    
+                    if (rawTxs && rawTxs.length > 0) {
+                        logger.info(`[TxStorage] Found ${rawTxs.length} transactions for height ${height} from blockchain`);
+                        
+                        // If raw format is requested, return the raw transactions
+                        if (useRawFormat) {
+                            return rawTxs;
+                        }
+                        
+                        // Otherwise, convert to BaseTx format
+                        // Check if the response is in tx_search format (has tx_result property)
+                        try {
+                            if (Array.isArray(rawTxs) && rawTxs[0]?.hash && rawTxs[0]?.tx_result) {
+                                logger.debug(`[TxStorage] Converting tx_search format transactions for height ${height}`);
+                                return rawTxs.map(tx => this.convertTxSearchResultToBaseTx(tx));
+                            } else {
+                                logger.debug(`[TxStorage] Converting standard format transactions for height ${height}`);
+                                return rawTxs.map(tx => this.convertRawTxToBaseTx(tx));
+                            }
+                        } catch (conversionError) {
+                            logger.error(`[TxStorage] Error converting transactions: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`);
+                            return [];
+                        }
+                    } else {
+                        logger.info(`[TxStorage] No transactions found for height ${height} from blockchain`);
+                        return [];
+                    }
+                } catch (error) {
+                    logger.error(`[TxStorage] Error fetching transactions from blockchain: ${error instanceof Error ? error.message : String(error)}`);
+                    return [];
+                }
             }
             
             return [];
@@ -211,6 +249,19 @@ export class TxStorage implements ITxStorage {
         };
     }
 
+    private mapToBlockTx(tx: ITransaction): BaseTx {
+        return {
+            txHash: tx.txHash,
+            height: tx.height,
+            status: tx.status as TxStatus,
+            fee: tx.fee,
+            messageCount: tx.messageCount,
+            type: tx.type,
+            time: tx.time,
+        //  meta: tx.meta as TxMessage[]
+        };
+    }
+
     /**
      * Converts raw transaction data from blockchain to BaseTx format
      * This is a simplified implementation and may need to be adjusted based on actual data structure
@@ -218,17 +269,20 @@ export class TxStorage implements ITxStorage {
     private convertRawTxToBaseTx(rawTx: any): BaseTx {
         try {
             // Extract basic information
-            const txHash = rawTx.hash || rawTx.txhash || '';
-            const height = rawTx.height?.toString() || '0';
+            const txHash = rawTx.tx_response.txhash || '';
+            const height = rawTx.tx_response.height?.toString() || '0';
             
             // Determine status
-            const status = rawTx.code === 0 || rawTx.code === undefined 
-                ? TxStatus.SUCCESS 
+            const status = rawTx.tx_response.code === 0
+                ? TxStatus.SUCCESS
                 : TxStatus.FAILED;
             
             // Extract fee information
             const fee = {
-                amount: rawTx.tx?.auth_info?.fee?.amount || [],
+                amount: rawTx.tx?.auth_info?.fee?.amount?.[0] ? [{
+                    denom: rawTx.tx.auth_info.fee.amount[0].denom || '',
+                    amount: rawTx.tx.auth_info.fee.amount[0].amount || '0'
+                }] : [],
                 gasLimit: rawTx.tx?.auth_info?.fee?.gas_limit?.toString() || '0'
             };
             
@@ -256,11 +310,126 @@ export class TxStorage implements ITxStorage {
                 messageCount,
                 type,
                 time,
-                meta
+                //meta
             };
         } catch (error) {
             logger.error(`[TxStorage] Error converting raw tx to BaseTx: ${error instanceof Error ? error.message : String(error)}`);
             throw new Error(`Failed to convert raw transaction: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Converts tx_search result format to BaseTx format
+     * This is specifically for transactions fetched via BlockClient.getTxSearch
+     * Returns only basic transaction information: txhash, time, height, status, fee, message count and message type
+     */
+    private convertTxSearchResultToBaseTx(rawTx: any): BaseTx {
+        try {
+            if (!rawTx) {
+                throw new Error('Invalid transaction: rawTx is null or undefined');
+            }
+            
+            if (!rawTx.hash) {
+                throw new Error('Invalid transaction format: missing hash');
+            }
+
+            // Extract basic information
+            const txHash = rawTx.hash || '';
+            const height = rawTx.height?.toString() || '0';
+            
+            // Determine status from tx_result.code
+            const status = rawTx.tx_result?.code === 0
+                ? TxStatus.SUCCESS
+                : TxStatus.FAILED;
+            
+            // Extract fee information from events
+            let feeAmount = '0';
+            let feeDenom = 'ubbn';
+            let gasWanted = '0';
+            
+            // Try to find fee information in events
+            if (rawTx.tx_result?.events) {
+                for (const event of rawTx.tx_result.events) {
+                    if (event.type === 'tx' && event.attributes) {
+                        for (const attr of event.attributes) {
+                            if (attr.key === 'fee') {
+                                // Fee format is typically "10869ubbn"
+                                const feeValue = attr.value || '';
+                                const match = feeValue.match(/(\d+)(\D+)/);
+                                if (match) {
+                                    feeAmount = match[1];
+                                    feeDenom = match[2];
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Get gas_wanted from tx_result if available
+            if (rawTx.tx_result?.gas_wanted) {
+                gasWanted = rawTx.tx_result.gas_wanted.toString();
+            }
+            
+            const fee = {
+                amount: [{
+                    denom: feeDenom,
+                    amount: feeAmount
+                }],
+                gasLimit: gasWanted
+            };
+            
+            // Extract message type from events
+            let messageType = 'unknown';
+            let messageCount = 0;
+            let messageEvents = [];
+            
+            // First, collect all message events
+            if (rawTx.tx_result?.events) {
+                messageEvents = rawTx.tx_result.events.filter((event: any) => 
+                    event.type === 'message' && 
+                    event.attributes && 
+                    event.attributes.some((attr: any) => attr.key === 'action')
+                );
+                
+                logger.debug(`[TxStorage] Found ${messageEvents.length} message events with action for tx ${txHash}`);
+            }
+            
+            // Then process them
+            if (messageEvents.length > 0) {
+                messageCount = messageEvents.length;
+                
+                // Get the first message event with an action attribute
+                const firstMessageEvent = messageEvents[0];
+                const actionAttr = firstMessageEvent.attributes.find((attr: { key: string, value: string }) => attr.key === 'action');
+                
+                if (actionAttr && actionAttr.value) {
+                    messageType = actionAttr.value;
+                }
+            } else {
+                logger.warn(`[TxStorage] No message events with action found for tx ${txHash}`);
+            }
+            
+            // Create minimal meta information - just empty array as we don't need details
+            const meta: TxMessage[] = [];
+            
+            // Use current time as we don't have timestamp in tx_search results
+            const time = new Date().toISOString();
+            
+            return {
+                txHash,
+                height,
+                status,
+                fee,
+                messageCount: Math.max(1, messageCount), // At least 1 message
+                type: messageType,
+                time,
+                meta // Empty array for minimal response
+            };
+        } catch (error) {
+            logger.error(`[TxStorage] Error converting tx_search result to BaseTx: ${error instanceof Error ? error.message : String(error)}`);
+            throw new Error(`Failed to convert tx_search result: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 }

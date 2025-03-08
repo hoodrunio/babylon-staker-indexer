@@ -86,7 +86,6 @@ export class BabylonClient {
     public async getBlockByHeight(height: number): Promise<any> {
         return this.blockClient.getBlockByHeight(height);
     }
-
     /**
      * En son bloğu alır
      */
@@ -100,6 +99,10 @@ export class BabylonClient {
         };
     }> {
         return this.blockClient.getLatestBlock();
+    }
+
+    public async getBlockByHash(hash: string): Promise<any> {
+        return this.blockClient.getBlockByHash(hash);
     }
 
     public async getTxSearch(height: number): Promise<any> {
