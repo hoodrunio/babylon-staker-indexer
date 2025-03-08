@@ -50,7 +50,7 @@ export class BTCDelegationService {
         }
         
         const networks = Array.from(this.babylonClients.keys());
-        const enableFullSync = process.env.ENABLE_FULL_SYNC === 'true';
+        const enableFullSync = process.env.DELEGATION_FULL_SYNC === 'true';
         
         if (enableFullSync) {
             logger.info(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
