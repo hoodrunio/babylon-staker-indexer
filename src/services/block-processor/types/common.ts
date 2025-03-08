@@ -1,5 +1,5 @@
 /**
- * Block ve Transaction servisleri için ortak tipler
+ * Common types for Block and Transaction services
  */
 
 import { Types } from 'mongoose';
@@ -49,7 +49,7 @@ export enum TxStatus {
   PENDING = 'PENDING'
 }
 
-// Websocket üzerinden gelen block ve tx eventleri için tipler
+// Types for block and tx events received via websocket
 export interface WebsocketEventData {
   type: string;
   value: any;
@@ -93,7 +93,7 @@ export interface WebsocketTxEvent {
   };
 }
 
-// Hata tipleri
+// Error types
 export class BlockProcessorError extends Error {
   constructor(message: string) {
     super(message);

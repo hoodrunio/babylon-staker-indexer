@@ -1,5 +1,5 @@
 /**
- * Block ve Transaction servisleri için interface tanımlamaları
+ * Interface definitions for Block and Transaction services
  */
 
 import { BaseBlock, BaseTx, WebsocketBlockEvent, WebsocketTxEvent } from './common';
@@ -37,10 +37,11 @@ export interface IFallbackService {
 }
 
 export interface IFetcherService {
-  fetchTxDetails(txHash: string): Promise<any>;
+  fetchTxDetails(txHash: string, network: Network): Promise<any>;
+  getSupportedNetworks(): Network[];
 }
 
-// Database interfaceleri
+// Database interfaces
 export interface IBlockStorage {
   saveBlock(block: BaseBlock, network: Network): Promise<void>;
   getBlockByHeight(height: string | number, network: Network): Promise<BaseBlock | null>;
@@ -54,4 +55,4 @@ export interface ITxStorage {
   getTxByHash(txHash: string, network: Network): Promise<BaseTx | null>;
   getTxsByHeight(height: string | number, network: Network): Promise<BaseTx[]>;
   getTxCount(network: Network): Promise<number>;
-} 
+}

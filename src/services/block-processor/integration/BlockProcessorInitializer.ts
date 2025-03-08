@@ -14,6 +14,7 @@ import { Network } from '../../../types/finality';
 import { createBlockTxProcessors } from '../handlers/messageProcessors';
 import { IMessageProcessor } from '../../websocket/interfaces';
 import { HistoricalSyncService } from '../sync/historicalSync.service';
+import { FetcherService } from '../common/fetcher.service';
 
 /**
  * BlockProcessor sistemini başlatan ve yöneten sınıf
@@ -27,6 +28,7 @@ export class BlockProcessorInitializer {
     private txProcessor: TransactionProcessorService | null = null;
     private rpcClient: BabylonClient | null = null;
     private historicalSyncService: HistoricalSyncService | null = null;
+    private fetcherService: FetcherService | null = null;
     private defaultNetwork: Network = Network.TESTNET;
     
     private constructor() {
@@ -58,12 +60,17 @@ export class BlockProcessorInitializer {
             // RPC client'ı al
             this.rpcClient = BabylonClient.getInstance();
             
+            // FetcherService'i al
+            this.fetcherService = FetcherService.getInstance();
+            
             // Processor servisleri oluştur
             this.blockProcessor = new BlockProcessorService(this.blockStorage, this.defaultNetwork);
             
-            // Tx detaylarını getirmek için bir fonksiyon oluştur
-            const fetchTxDetails = async (txHash: string) => {
-                return this.rpcClient?.getTxByHash(txHash) || null;
+            // FetcherService'i kullanarak tx detaylarını getir
+            const fetchTxDetails = async (txHash: string, network?: Network) => {
+                // Kullanılan network'ü belirle
+                const targetNetwork = network || this.defaultNetwork;
+                return this.fetcherService?.fetchTxDetails(txHash, targetNetwork) || null;
             };
             
             this.txProcessor = new TransactionProcessorService(this.txStorage, fetchTxDetails, this.defaultNetwork);
@@ -154,6 +161,16 @@ export class BlockProcessorInitializer {
      */
     public getBlockTransactionHandler(): BlockTransactionHandler | null {
         return this.blockTransactionHandler;
+    }
+    
+    /**
+     * FetcherService instance'ını döndürür
+     */
+    public getFetcherService(): FetcherService | null {
+        if (!this.fetcherService) {
+            this.fetcherService = FetcherService.getInstance();
+        }
+        return this.fetcherService;
     }
     
     /**

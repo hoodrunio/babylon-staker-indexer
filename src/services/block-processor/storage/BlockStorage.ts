@@ -1,6 +1,6 @@
 /**
  * Block Storage Service
- * Blok verilerini veritabanında saklar
+ * Stores block data in the database
  */
 
 import { BaseBlock } from '../types/common';
@@ -10,7 +10,7 @@ import { Block, IBlock } from '../../../database/models/blockchain/Block';
 import { Network } from '../../../types/finality';
 
 /**
- * Blok verilerini saklayan servis
+ * Service for storing block data
  */
 export class BlockStorage implements IBlockStorage {
     private static instance: BlockStorage | null = null;
@@ -30,11 +30,11 @@ export class BlockStorage implements IBlockStorage {
     }
     
     /**
-     * Bloğu veritabanına kaydeder
+     * Saves block to database
      */
     public async saveBlock(block: BaseBlock, network: Network): Promise<void> {
         try {
-            // Veritabanına kaydet
+            // Save to database
             await Block.findOneAndUpdate(
                 { 
                     blockHash: block.blockHash,
@@ -59,7 +59,7 @@ export class BlockStorage implements IBlockStorage {
     }
     
     /**
-     * Belirli bir yükseklikteki bloğu getirir
+     * Gets block at specific height
      */
     public async getBlockByHeight(height: string | number, network: Network): Promise<BaseBlock | null> {
         try {
@@ -82,7 +82,7 @@ export class BlockStorage implements IBlockStorage {
     }
     
     /**
-     * Belirli bir hash değerine sahip bloğu getirir
+     * Gets block with specific hash
      */
     public async getBlockByHash(blockHash: string, network: Network): Promise<BaseBlock | null> {
         try {
@@ -105,7 +105,7 @@ export class BlockStorage implements IBlockStorage {
     }
     
     /**
-     * En son bloğu getirir
+     * Gets latest block
      */
     public async getLatestBlock(network: Network): Promise<BaseBlock | null> {
         try {
@@ -128,7 +128,7 @@ export class BlockStorage implements IBlockStorage {
     }
     
     /**
-     * Toplam blok sayısını veritabanından getirir
+     * Gets total block count from database
      */
     public async getBlockCount(network: Network): Promise<number> {
         try {
@@ -140,7 +140,7 @@ export class BlockStorage implements IBlockStorage {
     }
     
     /**
-     * IBlock modelini BaseBlock'a dönüştürür
+     * Maps IBlock model to BaseBlock
      */
     private mapToBaseBlock(block: IBlock): BaseBlock {
         return {
@@ -158,4 +158,4 @@ export class BlockStorage implements IBlockStorage {
             totalGasUsed: block.totalGasUsed || "0"
         };
     }
-} 
+}

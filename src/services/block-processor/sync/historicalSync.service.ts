@@ -1,5 +1,5 @@
 /**
- * Geçmiş blok ve işlem senkronizasyonu servisi
+ * Historical block and transaction synchronization service
  */
   
 import { IHistoricalSyncService } from '../types/interfaces';
@@ -18,9 +18,9 @@ export class HistoricalSyncService implements IHistoricalSyncService {
   private blockStorage: BlockStorage;
   
   private constructor() {
-    // BlockTransactionHandler singleton instance'ını al
+    // Get BlockTransactionHandler singleton instance
     this.blockHandler = BlockTransactionHandler.getInstance();
-    // BlockStorage singleton instance'ını al
+    // Get BlockStorage singleton instance
     this.blockStorage = BlockStorage.getInstance();
     
     try {
@@ -58,32 +58,32 @@ export class HistoricalSyncService implements IHistoricalSyncService {
   }
 
   /**
-   * Periyodik güncellemeleri başlatır
+   * Starts periodic updates
    */
   private startPeriodicUpdates(): void {
-    // Burada periyodik güncelleme mantığı eklenebilir
+    // Periodic update logic can be added here
     logger.info('[HistoricalSync] Periodic updates initialized');
   }
 
   /**
-   * Ana senkronizasyon metodu - Dışarıdan çağrılacak ana metot
-   * Veritabanı durumuna göre senkronizasyon stratejisini belirler
-   * @param network Ağ bilgisi (MAINNET, TESTNET)
-   * @param fromHeight Başlangıç blok yüksekliği (opsiyonel)
-   * @param blockCount Senkronize edilecek blok sayısı (opsiyonel)
+   * Main synchronization method - Main method to be called externally
+   * Determines synchronization strategy based on database state
+   * @param network Network information (MAINNET, TESTNET)
+   * @param fromHeight Starting block height (optional)
+   * @param blockCount Number of blocks to synchronize (optional)
    */
   public async startSync(network: Network, fromHeight?: number, blockCount?: number): Promise<void> {
     try {
       logger.info(`[HistoricalSync] Starting sync for network ${network}...`);
       
-      // Eğer fromHeight belirtilmişse, o yükseklikten itibaren senkronize et
+      // If fromHeight is specified, synchronize from that height
       if (fromHeight) {
         logger.info(`[HistoricalSync] Starting sync from specified height ${fromHeight}`);
         try {
           await this.syncFromHeight(fromHeight, undefined, network);
         } catch (error) {
           logger.error(`[HistoricalSync] Error syncing from height ${fromHeight}: ${error instanceof Error ? error.message : String(error)}`);
-          // Hata durumunda son N bloğu senkronize etmeyi dene
+          // In case of error, try to synchronize last N blocks
           const count = blockCount || this.MAX_BLOCK_SYNC;
           logger.info(`[HistoricalSync] Falling back to syncing latest ${count} blocks`);
           await this.syncLatestBlocks(count, network);
@@ -91,23 +91,23 @@ export class HistoricalSyncService implements IHistoricalSyncService {
         return;
       }
       
-      // Veritabanındaki son bloğu kontrol et
+      // Check the latest block in database
       try {
         const latestBlock = await this.blockStorage.getLatestBlock(network);
         
         if (latestBlock) {
-          // Veritabanında blok varsa, son bloktan itibaren senkronize et
+          // If block exists in database, sync from last block
           const lastHeight = Number(latestBlock.height);
           logger.info(`[HistoricalSync] Found latest block in database at height ${lastHeight}, syncing from there`);
           await this.syncFromHeight(lastHeight + 1, undefined, network);
         } else {
-          // Veritabanı boşsa, son N bloğu senkronize et
+          // If database is empty, sync last N blocks
           const count = blockCount || this.MAX_BLOCK_SYNC;
           logger.info(`[HistoricalSync] No blocks found in database, syncing latest ${count} blocks`);
           await this.syncLatestBlocks(count, network);
         }
       } catch (dbError) {
-        // Veritabanı hatası durumunda son N bloğu senkronize et
+        // In case of database error, sync last N blocks
         logger.error(`[HistoricalSync] Error accessing database: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
         const count = blockCount || this.MAX_BLOCK_SYNC;
         logger.info(`[HistoricalSync] Falling back to syncing latest ${count} blocks`);
@@ -120,7 +120,7 @@ export class HistoricalSyncService implements IHistoricalSyncService {
   }
 
   /**
-   * Belirli bir yükseklikten başlayarak blokları senkronize eder
+   * Synchronizes blocks starting from a specific height
    */
   async syncFromHeight(fromHeight: number, toHeight?: number, network?: Network): Promise<void> {
     if (this.isSyncing) {
@@ -131,7 +131,7 @@ export class HistoricalSyncService implements IHistoricalSyncService {
     this.isSyncing = true;
     
     try {
-      // Eğer network belirtilmemişse, tüm yapılandırılmış networkler için senkronizasyon yap
+      // If network is not specified, synchronize for all configured networks
       const networksToSync = network ? [network] : Array.from(this.babylonClients.keys());
       
       for (const currentNetwork of networksToSync) {
@@ -143,7 +143,7 @@ export class HistoricalSyncService implements IHistoricalSyncService {
         
         logger.info(`[HistoricalSync] Starting synchronization from height ${fromHeight} for network ${currentNetwork}`);
         
-        // BlockTransactionHandler'ı kullanarak senkronizasyon yap
+        // Synchronize using BlockTransactionHandler
         await this.blockHandler.syncHistoricalBlocks(currentNetwork, fromHeight, toHeight);
       }
     } catch (error) {
@@ -155,11 +155,11 @@ export class HistoricalSyncService implements IHistoricalSyncService {
   }
 
   /**
-   * Son N bloğu senkronize eder
+   * Synchronizes last N blocks
    */
   async syncLatestBlocks(blockCount = this.MAX_BLOCK_SYNC, network?: Network): Promise<void> {
     try {
-      // Eğer network belirtilmemişse, tüm yapılandırılmış networkler için senkronizasyon yap
+      // If network is not specified, synchronize for all configured networks
       const networksToSync = network ? [network] : Array.from(this.babylonClients.keys());
       
       for (const currentNetwork of networksToSync) {
@@ -171,7 +171,7 @@ export class HistoricalSyncService implements IHistoricalSyncService {
         
         logger.info(`[HistoricalSync] Synchronizing latest ${blockCount} blocks for network ${currentNetwork}`);
         
-        // BlockTransactionHandler'ı kullanarak son blokları senkronize et
+        // Synchronize latest blocks using BlockTransactionHandler
         await this.blockHandler.syncLatestBlocks(currentNetwork, blockCount);
       }
     } catch (error) {
@@ -181,14 +181,14 @@ export class HistoricalSyncService implements IHistoricalSyncService {
   }
 
   /**
-   * Belirtilen ağ için BabylonClient örneğini döndürür
+   * Returns BabylonClient instance for the specified network
    */
   public getBabylonClient(network: Network): BabylonClient | undefined {
     return this.babylonClients.get(network);
   }
 
   /**
-   * Yapılandırılmış tüm ağları döndürür
+   * Returns all configured networks
    */
   public getConfiguredNetworks(): Network[] {
     return Array.from(this.babylonClients.keys());

@@ -12,7 +12,7 @@ export class TransactionProcessorService implements ITransactionProcessorService
 
   constructor(
     private readonly txStorage: ITxStorage,
-    private readonly fetchTxDetails: (txHash: string) => Promise<any>,
+    private readonly fetchTxDetails: (txHash: string, network?: Network) => Promise<any>,
     network: Network = Network.TESTNET
   ) {
     this.network = network;
@@ -101,7 +101,7 @@ export class TransactionProcessorService implements ITransactionProcessorService
       if (storedTx.meta && storedTx.meta.length > 0) {
         return {
           tx: storedTx,
-          details: await this.fetchTxDetails(txHash)
+          details: await this.fetchTxDetails(txHash, this.network)
         };
       }
       
@@ -193,7 +193,7 @@ export class TransactionProcessorService implements ITransactionProcessorService
    * Fetch and process TX details via RPC
    */
   private async fetchAndProcessTxDetails(txHash: string): Promise<any> {
-    const txDetail = await this.fetchTxDetails(txHash);
+    const txDetail = await this.fetchTxDetails(txHash, this.network);
     
     if (!txDetail) {
       throw new TxProcessorError(`TX not found: ${txHash}`);

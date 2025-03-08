@@ -1,5 +1,5 @@
 /**
- * WebSocketMessageService yapısına uyumlu mesaj işleyicileri
+ * Message processors compatible with WebSocketMessageService structure
  */
 
 import { BlockTransactionHandler } from './BlockTransactionHandler';
@@ -7,7 +7,7 @@ import { logger } from '../../../utils/logger';
 import { Network } from '../../../types/finality';
 
 /**
- * Tüm mesaj işleyicileri için temel abstract sınıf
+ * Base abstract class for all message processors
  */
 export abstract class BaseMessageProcessor {
     abstract canProcess(message: any): boolean;
@@ -15,7 +15,7 @@ export abstract class BaseMessageProcessor {
 }
 
 /**
- * Blok mesajlarını işleyen processor
+ * Processor that processes block messages
  */
 export class BlockMessageProcessor extends BaseMessageProcessor {
     constructor(private blockHandler: BlockTransactionHandler) {
@@ -24,8 +24,8 @@ export class BlockMessageProcessor extends BaseMessageProcessor {
 
     canProcess(message: any): boolean {
         try {
-            // Bu tür mesajlar artık NewBlockMessageProcessor tarafından işleniyor
-            // Bu nedenle burada false döndürüyoruz
+            // These types of messages are now handled by NewBlockMessageProcessor
+            // Therefore, we return false here
             return false;
         } catch {
             return false;
@@ -47,7 +47,7 @@ export class BlockMessageProcessor extends BaseMessageProcessor {
 }
 
 /**
- * Transaction mesajlarını işleyen processor
+ * Processor that processes transaction messages
  */
 export class TransactionMessageProcessor extends BaseMessageProcessor {
     constructor(private blockHandler: BlockTransactionHandler) {
@@ -81,13 +81,13 @@ export class TransactionMessageProcessor extends BaseMessageProcessor {
 }
 
 /**
- * BlockMessageProcessor ve TransactionMessageProcessor nesnelerini oluşturur
- * @param handler BlockTransactionHandler instance'ı
- * @returns Processor dizisi
+ * Creates BlockMessageProcessor and TransactionMessageProcessor objects
+ * @param handler BlockTransactionHandler instance
+ * @returns Processor array
  */
 export function createBlockTxProcessors(handler: BlockTransactionHandler): BaseMessageProcessor[] {
     return [
         new BlockMessageProcessor(handler),
         new TransactionMessageProcessor(handler)
     ];
-} 
+}
