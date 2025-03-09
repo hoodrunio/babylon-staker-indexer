@@ -17,16 +17,37 @@ export class GovernanceIndexerService {
         this.babylonClient = babylonClient;
         this.shouldSync = process.env.GOVERNANCE_SYNC === 'true';
         
-        // Initialize networks based on environment variables
-        if (process.env.BABYLON_NODE_URL && process.env.BABYLON_RPC_URL) {
-            this.networks.push(Network.MAINNET);
+        // Ağları BabylonClient üzerinden kontrol edelim
+        try {
+            // Mainnet için BabylonClient oluşturarak URL'leri kontrol et
+            const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
+            const mainnetBaseUrl = mainnetClient.getBaseUrl();
+            const mainnetRpcUrl = mainnetClient.getRpcUrl();
+            
+            if (mainnetBaseUrl && mainnetRpcUrl) {
+                this.networks.push(Network.MAINNET);
+                logger.info(`[Governance] Mainnet enabled with base URL: ${mainnetBaseUrl}`);
+            }
+        } catch (err) {
+            logger.warn(`[Governance] Mainnet not available: ${err instanceof Error ? err.message : String(err)}`);
         }
-        if (process.env.BABYLON_TESTNET_NODE_URL && process.env.BABYLON_TESTNET_RPC_URL) {
-            this.networks.push(Network.TESTNET);
+        
+        try {
+            // Testnet için BabylonClient oluşturarak URL'leri kontrol et
+            const testnetClient = BabylonClient.getInstance(Network.TESTNET);
+            const testnetBaseUrl = testnetClient.getBaseUrl();
+            const testnetRpcUrl = testnetClient.getRpcUrl();
+            
+            if (testnetBaseUrl && testnetRpcUrl) {
+                this.networks.push(Network.TESTNET);
+                logger.info(`[Governance] Testnet enabled with base URL: ${testnetBaseUrl}`);
+            }
+        } catch (err) {
+            logger.warn(`[Governance] Testnet not available: ${err instanceof Error ? err.message : String(err)}`);
         }
 
         if (this.networks.length === 0) {
-            throw new Error('No network configuration found in environment variables');
+            throw new Error('No network configuration found with valid URLs');
         }
     }
 

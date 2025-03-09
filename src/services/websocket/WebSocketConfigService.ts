@@ -15,6 +15,16 @@ export class NetworkConfig implements INetworkConfig {
     }
 
     getWsUrl(): string | undefined {
+        // BabylonClient varsa ondan WebSocket URL'sini al
+        if (this.client) {
+            try {
+                return this.client.getWsEndpoint();
+            } catch (err) {
+                logger.warn(`[WebSocketConfig] Error getting WebSocket endpoint for ${this.network}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        
+        // BabylonClient yoksa veya hata olursa eski yöntemle dene (geriye uyumluluk için)
         return this.network === Network.MAINNET 
             ? process.env.BABYLON_WS_URL 
             : process.env.BABYLON_TESTNET_WS_URL;
@@ -44,34 +54,56 @@ export class WebSocketConfigService {
     private initializeNetworkConfigs(): void {
         // Add mainnet configuration if exists
         try {
-            if (process.env.BABYLON_NODE_URL && process.env.BABYLON_RPC_URL) {
-                const client = BabylonClient.getInstance(Network.MAINNET);
-                this.networkConfigs.set(
-                    Network.MAINNET, 
-                    new NetworkConfig(Network.MAINNET, client)
-                );
+            const client = BabylonClient.getInstance(Network.MAINNET);
+            // BabylonClient'tan base URL, RPC URL ve WS URL al ve kontrol et
+            const baseUrl = client.getBaseUrl();
+            const rpcUrl = client.getRpcUrl();
+            const wsUrl = client.getWsEndpoint();
+            
+            if (baseUrl && rpcUrl) {
+                const networkConfig = new NetworkConfig(Network.MAINNET, client);
+                this.networkConfigs.set(Network.MAINNET, networkConfig);
+                
+                // WS URL durumunu logla
+                if (wsUrl) {
+                    logger.info(`[WebSocketConfig] Mainnet initialized with WebSocket URL: ${wsUrl}`);
+                } else {
+                    logger.warn('[WebSocketConfig] Mainnet initialized but WebSocket URL is not available');
+                }
+                
                 logger.info('[WebSocketConfig] Mainnet client initialized successfully');
             } else {
-                logger.info('[WebSocketConfig] Mainnet is not configured, skipping');
+                logger.info('[WebSocketConfig] Mainnet is not configured properly, skipping');
             }
-        } catch (error) {
-            logger.warn('[WebSocketConfig] Failed to initialize Mainnet client:', error);
+        } catch (err) {
+            logger.warn(`[WebSocketConfig] Failed to initialize Mainnet client: ${err instanceof Error ? err.message : String(err)}`);
         }
 
         // Add testnet configuration if exists
         try {
-            if (process.env.BABYLON_TESTNET_NODE_URL && process.env.BABYLON_TESTNET_RPC_URL) {
-                const client = BabylonClient.getInstance(Network.TESTNET);
-                this.networkConfigs.set(
-                    Network.TESTNET, 
-                    new NetworkConfig(Network.TESTNET, client)
-                );
+            const client = BabylonClient.getInstance(Network.TESTNET);
+            // BabylonClient'tan base URL, RPC URL ve WS URL al ve kontrol et
+            const baseUrl = client.getBaseUrl();
+            const rpcUrl = client.getRpcUrl();
+            const wsUrl = client.getWsEndpoint();
+            
+            if (baseUrl && rpcUrl) {
+                const networkConfig = new NetworkConfig(Network.TESTNET, client);
+                this.networkConfigs.set(Network.TESTNET, networkConfig);
+                
+                // WS URL durumunu logla
+                if (wsUrl) {
+                    logger.info(`[WebSocketConfig] Testnet initialized with WebSocket URL: ${wsUrl}`);
+                } else {
+                    logger.warn('[WebSocketConfig] Testnet initialized but WebSocket URL is not available');
+                }
+                
                 logger.info('[WebSocketConfig] Testnet client initialized successfully');
             } else {
-                logger.info('[WebSocketConfig] Testnet is not configured, skipping');
+                logger.info('[WebSocketConfig] Testnet is not configured properly, skipping');
             }
-        } catch (error) {
-            logger.warn('[WebSocketConfig] Failed to initialize Testnet client:', error);
+        } catch (err) {
+            logger.warn(`[WebSocketConfig] Failed to initialize Testnet client: ${err instanceof Error ? err.message : String(err)}`);
         }
 
         // At least one network must be configured

@@ -46,15 +46,23 @@ export class WebSocketOrchestratorService {
     private connectToNetwork(network: Network): void {
         const config = this.configService.getNetworkConfig(network);
         if (!config) {
-            logger.error(`Network configuration for ${network} not found`);
+            logger.error(`[WebSocketOrchestrator] Network configuration for ${network} not found`);
             return;
         }
         
         const wsUrl = config.getWsUrl();
         if (!wsUrl) {
-            logger.error(`WebSocket URL for ${network} is not defined`);
+            logger.warn(`[WebSocketOrchestrator] WebSocket URL for ${network} is not defined, skipping this network`);
+            // BabylonClient varsa infoları logla
+            const client = config.getClient();
+            if (client) {
+                logger.info(`[WebSocketOrchestrator] ${network} is configured with baseURL: ${client.getBaseUrl()} and rpcURL: ${client.getRpcUrl()}`);
+                logger.info(`[WebSocketOrchestrator] But WebSocket URL is missing. Please check BABYLON_WS_URLS or BABYLON_TESTNET_WS_URLS in your .env file`);
+            }
             return;
         }
+        
+        logger.info(`[WebSocketOrchestrator] Connecting to ${network} WebSocket at ${wsUrl}`);
         
         // Create event handlers
         const eventHandlers: IWebSocketEventHandlers = {

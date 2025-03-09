@@ -59,9 +59,10 @@ export class FinalitySignatureService {
     }
 
     private getNetworkConfig(network: Network = Network.MAINNET) {
+        const client = BabylonClient.getInstance(network);
         return {
-            nodeUrl: network === Network.MAINNET ? process.env.BABYLON_NODE_URL : process.env.BABYLON_TESTNET_NODE_URL,
-            rpcUrl: network === Network.MAINNET ? process.env.BABYLON_RPC_URL : process.env.BABYLON_TESTNET_RPC_URL
+            nodeUrl: client.getBaseUrl(),
+            rpcUrl: client.getRpcUrl()
         };
     }
 
