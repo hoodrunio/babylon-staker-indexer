@@ -19,11 +19,25 @@ export class TxStorage implements ITxStorage {
     
     private constructor() {
         // Private constructor to enforce singleton pattern
+        this.initializeServices();
+    }
+
+    /**
+     * Initialize required services
+     */
+    private initializeServices(): void {
         try {
             this.fetcherService = FetcherService.getInstance();
         } catch (error) {
-            logger.warn(`[TxStorage] FetcherService initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+            logger.warn(`[TxStorage] FetcherService initialization failed: ${this.formatError(error)}`);
         }
+    }
+
+    /**
+     * Format error message consistently
+     */
+    private formatError(error: unknown): string {
+        return error instanceof Error ? error.message : String(error);
     }
 
     /**
@@ -60,7 +74,7 @@ export class TxStorage implements ITxStorage {
 
             //   logger.debug(`[TxStorage] Transaction saved to database: ${tx.txHash} at height ${tx.height}`);
         } catch (error) {
-            logger.error(`[TxStorage] Error saving transaction to database: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[TxStorage] Error saving transaction to database: ${this.formatError(error)}`);
             throw error;
         }
     }
@@ -78,52 +92,20 @@ export class TxStorage implements ITxStorage {
         try {
             // If raw format is requested, always fetch from blockchain
             if (useRawFormat) {
-                if (!this.fetcherService) {
-                    logger.error(`[TxStorage] Raw format requested but FetcherService is not available`);
-                    return null;
-                }
-                
-                logger.info(`[TxStorage] Raw format requested for transaction ${txHash}, fetching from blockchain`);
-                const txDetails = await this.fetcherService.fetchTxDetails(txHash, network);
-                
-                if (!txDetails) {
-                    return null;
-                }
-                
-                return txDetails;
+                return await this.fetchRawTxByHash(txHash, network);
             }
             
             // For standard format, first try to get from database
-            const tx = await BlockchainTransaction.findOne({ txHash, network });
+            const tx = await this.findTxInDatabase({ txHash, network });
 
             if (tx) {
                 return this.mapToBaseTx(tx);
             }
             
-            // If not found in database and fetcherService is available, try to fetch from blockchain
-            if (this.fetcherService) {
-                logger.info(`[TxStorage] Transaction ${txHash} not found in storage, fetching from blockchain`);
-                const txDetails = await this.fetcherService.fetchTxDetails(txHash, network);
-                
-                if (!txDetails) {
-                    return null;
-                }
-                
-                // Convert to BaseTx format and save to database
-                try {
-                    const baseTx = this.convertRawTxToBaseTx(txDetails);
-                    await this.saveTx(baseTx, network);
-                    return baseTx;
-                } catch (error) {
-                    logger.error(`[TxStorage] Error converting raw tx to BaseTx: ${error instanceof Error ? error.message : String(error)}`);
-                    // Return raw data as fallback
-                    return txDetails;
-                }
-            }
-            
-            return null;
+            // If not found in database, try to fetch from blockchain
+            return await this.fetchAndSaveTxByHash(txHash, network);
         } catch (error) {
-            logger.error(`[TxStorage] Error getting transaction by hash from database: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[TxStorage] Error getting transaction by hash from database: ${this.formatError(error)}`);
             return null;
         }
     }
@@ -141,82 +123,22 @@ export class TxStorage implements ITxStorage {
         try {
             // If raw format is requested, always fetch from blockchain
             if (useRawFormat) {
-                if (!this.fetcherService) {
-                    logger.error(`[TxStorage] Raw format requested but FetcherService is not available`);
-                    return [];
-                }
-                
-                logger.info(`[TxStorage] Raw format requested for height ${height}, fetching from blockchain`);
-                
-                try {
-                    // Fetch transactions from blockchain using fetcherService
-                    const rawTxs = await this.fetcherService.fetchTxsByHeight(height, network);
-                    
-                    if (rawTxs && rawTxs.length > 0) {
-                        logger.info(`[TxStorage] Found ${rawTxs.length} raw transactions for height ${height} from blockchain`);
-                        return rawTxs;
-                    } else {
-                        logger.info(`[TxStorage] No raw transactions found for height ${height} from blockchain`);
-                        return [];
-                    }
-                } catch (error) {
-                    logger.error(`[TxStorage] Error fetching raw transactions from blockchain: ${error instanceof Error ? error.message : String(error)}`);
-                    return [];
-                }
+                return await this.fetchRawTxsByHeight(height, network);
             }
             
             // For standard format, first try to get from database
             const heightStr = height.toString();
-            const txs = await BlockchainTransaction.find({ height: heightStr, network });
+            const txs = await this.findTxsInDatabase({ height: heightStr, network });
             
             // If transactions found in database, return them
             if (txs.length > 0) {
                 return txs.map(tx => this.mapToBlockTx(tx));
             }
             
-            // If no transactions found in database and fetcherService is available, try to fetch from blockchain
-            if (this.fetcherService) {
-                logger.info(`[TxStorage] No transactions found for height ${height} in storage, fetching from blockchain`);
-                
-                try {
-                    // Fetch transactions from blockchain using fetcherService
-                    const rawTxs = await this.fetcherService.fetchTxsByHeight(height, network);
-                    
-                    if (rawTxs && rawTxs.length > 0) {
-                        logger.info(`[TxStorage] Found ${rawTxs.length} transactions for height ${height} from blockchain`);
-                        
-                        // If raw format is requested, return the raw transactions
-                        if (useRawFormat) {
-                            return rawTxs;
-                        }
-                        
-                        // Otherwise, convert to BaseTx format
-                        // Check if the response is in tx_search format (has tx_result property)
-                        try {
-                            if (Array.isArray(rawTxs) && rawTxs[0]?.hash && rawTxs[0]?.tx_result) {
-                                logger.debug(`[TxStorage] Converting tx_search format transactions for height ${height}`);
-                                return rawTxs.map(tx => this.convertTxSearchResultToBaseTx(tx));
-                            } else {
-                                logger.debug(`[TxStorage] Converting standard format transactions for height ${height}`);
-                                return rawTxs.map(tx => this.convertRawTxToBaseTx(tx));
-                            }
-                        } catch (conversionError) {
-                            logger.error(`[TxStorage] Error converting transactions: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`);
-                            return [];
-                        }
-                    } else {
-                        logger.info(`[TxStorage] No transactions found for height ${height} from blockchain`);
-                        return [];
-                    }
-                } catch (error) {
-                    logger.error(`[TxStorage] Error fetching transactions from blockchain: ${error instanceof Error ? error.message : String(error)}`);
-                    return [];
-                }
-            }
-            
-            return [];
+            // If no transactions found in database, try to fetch from blockchain
+            return await this.fetchAndSaveTxsByHeight(height, network);
         } catch (error) {
-            logger.error(`[TxStorage] Error getting transactions by height from database: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[TxStorage] Error getting transactions by height from database: ${this.formatError(error)}`);
             return [];
         }
     }
@@ -228,8 +150,167 @@ export class TxStorage implements ITxStorage {
         try {
             return await BlockchainTransaction.countDocuments({ network });
         } catch (error) {
-            logger.error(`[TxStorage] Error getting transaction count from database: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[TxStorage] Error getting transaction count from database: ${this.formatError(error)}`);
             return 0;
+        }
+    }
+
+    /**
+     * Find a transaction in the database with the given query
+     */
+    private async findTxInDatabase(query: Record<string, any>): Promise<ITransaction | null> {
+        return BlockchainTransaction.findOne(query);
+    }
+
+    /**
+     * Find transactions in the database with the given query
+     */
+    private async findTxsInDatabase(query: Record<string, any>): Promise<ITransaction[]> {
+        return BlockchainTransaction.find(query);
+    }
+
+    /**
+     * Fetch raw transaction by hash from blockchain
+     */
+    private async fetchRawTxByHash(txHash: string, network: Network): Promise<any | null> {
+        if (!this.fetcherService) {
+            logger.error(`[TxStorage] Raw format requested but FetcherService is not available`);
+            return null;
+        }
+        
+        logger.info(`[TxStorage] Raw format requested for transaction ${txHash}, fetching from blockchain`);
+        
+        try {
+            return await this.fetcherService.fetchTxDetails(txHash, network);
+        } catch (error) {
+            logger.error(`[TxStorage] Error fetching raw transaction by hash: ${this.formatError(error)}`);
+            return null;
+        }
+    }
+
+    /**
+     * Fetch raw transactions by height from blockchain
+     */
+    private async fetchRawTxsByHeight(height: string | number, network: Network): Promise<any[]> {
+        if (!this.fetcherService) {
+            logger.error(`[TxStorage] Raw format requested but FetcherService is not available`);
+            return [];
+        }
+        
+        logger.info(`[TxStorage] Raw format requested for height ${height}, fetching from blockchain`);
+        
+        try {
+            const rawTxs = await this.fetcherService.fetchTxsByHeight(height, network);
+            
+            if (rawTxs && rawTxs.length > 0) {
+                logger.info(`[TxStorage] Found ${rawTxs.length} raw transactions for height ${height} from blockchain`);
+                return rawTxs;
+            } else {
+                logger.info(`[TxStorage] No raw transactions found for height ${height} from blockchain`);
+                return [];
+            }
+        } catch (error) {
+            logger.error(`[TxStorage] Error fetching raw transactions from blockchain: ${this.formatError(error)}`);
+            return [];
+        }
+    }
+
+    /**
+     * Fetch transaction by hash from blockchain, convert to BaseTx, save to database, and return
+     */
+    private async fetchAndSaveTxByHash(txHash: string, network: Network): Promise<BaseTx | any | null> {
+        if (!this.fetcherService) {
+            return null;
+        }
+        
+        logger.info(`[TxStorage] Transaction ${txHash} not found in storage, fetching from blockchain`);
+        
+        try {
+            const txDetails = await this.fetcherService.fetchTxDetails(txHash, network);
+            
+            if (!txDetails) {
+                return null;
+            }
+            
+            return await this.processAndSaveRawTx(txDetails, network);
+        } catch (error) {
+            logger.error(`[TxStorage] Error fetching transaction by hash: ${this.formatError(error)}`);
+            return null;
+        }
+    }
+
+    /**
+     * Fetch transactions by height from blockchain, convert to BaseTx, save to database, and return
+     */
+    private async fetchAndSaveTxsByHeight(height: string | number, network: Network): Promise<BaseTx[]> {
+        if (!this.fetcherService) {
+            return [];
+        }
+        
+        logger.info(`[TxStorage] No transactions found for height ${height} in storage, fetching from blockchain`);
+        
+        try {
+            const rawTxs = await this.fetcherService.fetchTxsByHeight(height, network);
+            
+            if (!rawTxs || rawTxs.length === 0) {
+                logger.info(`[TxStorage] No transactions found for height ${height} from blockchain`);
+                return [];
+            }
+            
+            logger.info(`[TxStorage] Found ${rawTxs.length} transactions for height ${height} from blockchain`);
+            
+            return await this.processAndSaveRawTxs(rawTxs, network);
+        } catch (error) {
+            logger.error(`[TxStorage] Error fetching transactions by height: ${this.formatError(error)}`);
+            return [];
+        }
+    }
+
+    /**
+     * Process raw transaction data, convert to BaseTx, save to database, and return
+     */
+    private async processAndSaveRawTx(txDetails: any, network: Network): Promise<BaseTx | any> {
+        try {
+            const baseTx = this.convertRawTxToBaseTx(txDetails);
+            await this.saveTx(baseTx, network);
+            return baseTx;
+        } catch (error) {
+            logger.error(`[TxStorage] Error processing raw transaction: ${this.formatError(error)}`);
+            // Return raw data as fallback
+            return txDetails;
+        }
+    }
+
+    /**
+     * Process raw transactions data, convert to BaseTx, save to database, and return
+     */
+    private async processAndSaveRawTxs(rawTxs: any[], network: Network): Promise<BaseTx[]> {
+        try {
+            // Check if the response is in tx_search format (has tx_result property)
+            if (Array.isArray(rawTxs) && rawTxs[0]?.hash && rawTxs[0]?.tx_result) {
+                logger.debug(`[TxStorage] Converting tx_search format transactions`);
+                const baseTxs = rawTxs.map(tx => this.convertTxSearchResultToBaseTx(tx));
+                
+                // Save all transactions to database
+                for (const tx of baseTxs) {
+                    await this.saveTx(tx, network);
+                }
+                
+                return baseTxs;
+            } else {
+                logger.debug(`[TxStorage] Converting standard format transactions`);
+                const baseTxs = rawTxs.map(tx => this.convertRawTxToBaseTx(tx));
+                
+                // Save all transactions to database
+                for (const tx of baseTxs) {
+                    await this.saveTx(tx, network);
+                }
+                
+                return baseTxs;
+            }
+        } catch (error) {
+            logger.error(`[TxStorage] Error processing raw transactions: ${this.formatError(error)}`);
+            return [];
         }
     }
 
@@ -249,6 +330,9 @@ export class TxStorage implements ITxStorage {
         };
     }
 
+    /**
+     * Maps ITransaction model to BaseTx for block view (without meta data)
+     */
     private mapToBlockTx(tx: ITransaction): BaseTx {
         return {
             txHash: tx.txHash,
@@ -310,11 +394,11 @@ export class TxStorage implements ITxStorage {
                 messageCount,
                 type,
                 time,
-                //meta
+                meta
             };
         } catch (error) {
-            logger.error(`[TxStorage] Error converting raw tx to BaseTx: ${error instanceof Error ? error.message : String(error)}`);
-            throw new Error(`Failed to convert raw transaction: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[TxStorage] Error converting raw tx to BaseTx: ${this.formatError(error)}`);
+            throw new Error(`Failed to convert raw transaction: ${this.formatError(error)}`);
         }
     }
 
@@ -343,73 +427,10 @@ export class TxStorage implements ITxStorage {
                 : TxStatus.FAILED;
             
             // Extract fee information from events
-            let feeAmount = '0';
-            let feeDenom = 'ubbn';
-            let gasWanted = '0';
+            const feeInfo = this.extractFeeFromEvents(rawTx);
             
-            // Try to find fee information in events
-            if (rawTx.tx_result?.events) {
-                for (const event of rawTx.tx_result.events) {
-                    if (event.type === 'tx' && event.attributes) {
-                        for (const attr of event.attributes) {
-                            if (attr.key === 'fee') {
-                                // Fee format is typically "10869ubbn"
-                                const feeValue = attr.value || '';
-                                const match = feeValue.match(/(\d+)(\D+)/);
-                                if (match) {
-                                    feeAmount = match[1];
-                                    feeDenom = match[2];
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Get gas_wanted from tx_result if available
-            if (rawTx.tx_result?.gas_wanted) {
-                gasWanted = rawTx.tx_result.gas_wanted.toString();
-            }
-            
-            const fee = {
-                amount: [{
-                    denom: feeDenom,
-                    amount: feeAmount
-                }],
-                gasLimit: gasWanted
-            };
-            
-            // Extract message type from events
-            let messageType = 'unknown';
-            let messageCount = 0;
-            let messageEvents = [];
-            
-            // First, collect all message events
-            if (rawTx.tx_result?.events) {
-                messageEvents = rawTx.tx_result.events.filter((event: any) => 
-                    event.type === 'message' && 
-                    event.attributes && 
-                    event.attributes.some((attr: any) => attr.key === 'action')
-                );
-                
-                logger.debug(`[TxStorage] Found ${messageEvents.length} message events with action for tx ${txHash}`);
-            }
-            
-            // Then process them
-            if (messageEvents.length > 0) {
-                messageCount = messageEvents.length;
-                
-                // Get the first message event with an action attribute
-                const firstMessageEvent = messageEvents[0];
-                const actionAttr = firstMessageEvent.attributes.find((attr: { key: string, value: string }) => attr.key === 'action');
-                
-                if (actionAttr && actionAttr.value) {
-                    messageType = actionAttr.value;
-                }
-            } else {
-                logger.warn(`[TxStorage] No message events with action found for tx ${txHash}`);
-            }
+            // Extract message type and count from events
+            const { messageType, messageCount } = this.extractMessageInfoFromEvents(rawTx, txHash);
             
             // Create minimal meta information - just empty array as we don't need details
             const meta: TxMessage[] = [];
@@ -421,15 +442,92 @@ export class TxStorage implements ITxStorage {
                 txHash,
                 height,
                 status,
-                fee,
+                fee: feeInfo,
                 messageCount: Math.max(1, messageCount), // At least 1 message
                 type: messageType,
                 time,
                 meta // Empty array for minimal response
             };
         } catch (error) {
-            logger.error(`[TxStorage] Error converting tx_search result to BaseTx: ${error instanceof Error ? error.message : String(error)}`);
-            throw new Error(`Failed to convert tx_search result: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[TxStorage] Error converting tx_search result to BaseTx: ${this.formatError(error)}`);
+            throw new Error(`Failed to convert tx_search result: ${this.formatError(error)}`);
         }
+    }
+
+    /**
+     * Extract fee information from transaction events
+     */
+    private extractFeeFromEvents(rawTx: any): { amount: { denom: string, amount: string }[], gasLimit: string } {
+        let feeAmount = '0';
+        let feeDenom = 'ubbn';
+        let gasWanted = '0';
+        
+        // Try to find fee information in events
+        if (rawTx.tx_result?.events) {
+            for (const event of rawTx.tx_result.events) {
+                if (event.type === 'tx' && event.attributes) {
+                    for (const attr of event.attributes) {
+                        if (attr.key === 'fee') {
+                            // Fee format is typically "10869ubbn"
+                            const feeValue = attr.value || '';
+                            const match = feeValue.match(/(\d+)(\D+)/);
+                            if (match) {
+                                feeAmount = match[1];
+                                feeDenom = match[2];
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Get gas_wanted from tx_result if available
+        if (rawTx.tx_result?.gas_wanted) {
+            gasWanted = rawTx.tx_result.gas_wanted.toString();
+        }
+        
+        return {
+            amount: [{
+                denom: feeDenom,
+                amount: feeAmount
+            }],
+            gasLimit: gasWanted
+        };
+    }
+
+    /**
+     * Extract message type and count from transaction events
+     */
+    private extractMessageInfoFromEvents(rawTx: any, txHash: string): { messageType: string, messageCount: number } {
+        let messageType = 'unknown';
+        let messageCount = 0;
+        let messageEvents = [];
+        
+        // First, collect all message events
+        if (rawTx.tx_result?.events) {
+            messageEvents = rawTx.tx_result.events.filter((event: any) => 
+                event.type === 'message' && 
+                event.attributes && 
+                event.attributes.some((attr: any) => attr.key === 'action')
+            );
+        }
+        
+        // Then process them
+        if (messageEvents.length > 0) {
+            messageCount = messageEvents.length;
+            
+            // Get the first message event with an action attribute
+            const firstMessageEvent = messageEvents[0];
+            const actionAttr = firstMessageEvent.attributes.find((attr: { key: string, value: string }) => attr.key === 'action');
+            
+            if (actionAttr && actionAttr.value) {
+                messageType = actionAttr.value;
+            }
+        } else {
+            logger.warn(`[TxStorage] No message events with action found for tx ${txHash}`);
+        }
+        
+        return { messageType, messageCount };
     }
 }
