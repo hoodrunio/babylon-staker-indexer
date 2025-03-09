@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { BlockSignatureInfo, SignatureStatsParams } from '../../types';
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 export class FinalitySSEManager {
     private static instance: FinalitySSEManager | null = null;
@@ -97,21 +98,46 @@ export class FinalitySSEManager {
             const safeHeight = currentHeight - 2;
             const startHeight = Math.max(1, safeHeight - this.DEFAULT_LAST_N_BLOCKS + 1);
             
-            logger.info(`[SSE] Fetching stats for height range: ${startHeight} - ${safeHeight}`);
+            // Determine dynamically configured network in the system
+            let network: Network;
+            try {
+                // Try testnet first
+                const testnetClient = BabylonClient.getInstance(Network.TESTNET);
+                if (testnetClient.getBaseUrl()) {
+                    network = Network.TESTNET;
+                    logger.info(`[SSE] Using TESTNET for client ${clientId}`);
+                } else {
+                    // If testnet not configured, try mainnet
+                    const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
+                    if (mainnetClient.getBaseUrl()) {
+                        network = Network.MAINNET;
+                        logger.info(`[SSE] Using MAINNET for client ${clientId}`);
+                    } else {
+                        throw new Error("No network configured");
+                    }
+                }
+            } catch (error) {
+                // Throw error if no network is configured
+                logger.error(`[SSE] No valid network configuration found: ${error instanceof Error ? error.message : String(error)}`);
+                throw new Error("No valid network configuration found");
+            }
+            
+            logger.info(`[SSE] Fetching stats for height range: ${startHeight} - ${safeHeight} on network ${network}`);
             const stats = await getSignatureStats({
                 fpBtcPkHex: client.fpBtcPkHex,
                 startHeight,
                 endHeight: safeHeight,
-                network: Network.MAINNET
+                network
             });
 
             logger.info(`[SSE] Got stats, sending initial event to client ${clientId}`);
             this.sendEvent(clientId, 'initial', stats);
             client.initialDataSent = true;
             client.lastSentBlockHeight = safeHeight;
-            logger.info(`[SSE] Initial data sent successfully for client ${clientId}`);
         } catch (error) {
-            logger.error(`[SSE] Error sending initial data to client ${clientId}:`, error);
+            logger.error(`[SSE] Error sending initial data to client ${clientId}: ${error instanceof Error ? error.message : String(error)}`);
+            // Send the error to the client
+            this.sendEvent(clientId, 'error', { message: `Error fetching data: ${error instanceof Error ? error.message : String(error)}` });
         }
     }
 
