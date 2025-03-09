@@ -23,9 +23,9 @@ export class ValidatorHistoricalSyncService {
     }
 
     public async startSync(network: Network, client: BabylonClient): Promise<void> {
-        // Skip historical sync in production environment
+        // Skip historical sync in non-production environment
         if (process.env.NODE_ENV !== 'production') {
-            logger.info(`[ValidatorHistoricalSyncService] Skipping sync for ${network} in production environment`);
+            logger.info(`[ValidatorHistoricalSyncService] Skipping sync for ${network} in non-production environment`);
             return;
         }
         
@@ -38,9 +38,8 @@ export class ValidatorHistoricalSyncService {
         try {
             this.syncInProgress.set(network, true);
 
-            // Get current block height
-            const response = await axios.get(`${client.getRpcUrl()}/status`);
-            const currentHeight = parseInt(response.data.result.sync_info.latest_block_height);
+            // Get current block height - BabylonClient'ın failover mekanizmasını kullan
+            const currentHeight = await client.getCurrentHeight();
             
             // Get last processed block
             const lastProcessedBlock = await this.validatorSignatureService.getLastProcessedBlock(network);
@@ -83,10 +82,9 @@ export class ValidatorHistoricalSyncService {
                 startHeight = endHeight + 1;
             }
 
-            logger.info(`[ValidatorHistoricalSyncService] Completed for ${network}`);
+            logger.info(`[ValidatorHistoricalSyncService] Completed historical sync for ${network} up to block ${currentHeight}`);
         } catch (error) {
-            logger.error(`[ValidatorHistoricalSyncService] Error during sync for ${network}:`, error);
-            throw error;
+            logger.error(`[ValidatorHistoricalSyncService] Error during historical sync for ${network}:`, error);
         } finally {
             this.syncInProgress.set(network, false);
         }
@@ -94,26 +92,33 @@ export class ValidatorHistoricalSyncService {
 
     private async processBlock(height: number, network: Network, client: BabylonClient): Promise<void> {
         try {
-            const response = await axios.get(`${client.getRpcUrl()}/block?height=${height}`);
-            const blockData = {
+            // BabylonClient'ın getBlockByHeight metodunu kullan - failover özelliğinden yararlan
+            const blockData = await client.getBlockByHeight(height);
+            
+            if (!blockData || !blockData.result || !blockData.result.block) {
+                logger.warn(`[ValidatorHistoricalSyncService] No valid block data returned for height ${height}`);
+                return;
+            }
+            
+            const formattedBlock = {
                 block: {
                     header: {
                         height: height.toString(),
-                        time: response.data.result.block.header.time
+                        time: blockData.result.block.header.time
                     },
                     last_commit: {
-                        round: response.data.result.block.last_commit.round,
-                        signatures: response.data.result.block.last_commit.signatures
+                        round: blockData.result.block.last_commit.round,
+                        signatures: blockData.result.block.last_commit.signatures
                     }
                 }
             };
 
-            await this.validatorSignatureService.handleNewBlock(blockData, network);
+            await this.validatorSignatureService.handleNewBlock(formattedBlock, network);
         } catch (error) {
             if (this.isPruningError(error)) {
                 throw error;
             }
-            logger.error(`[ValidatorHistoricalSyncService] Error processing block ${height}:`, error);
+            logger.error(`[ValidatorHistoricalSyncService] Error processing block ${height}: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -125,14 +130,17 @@ export class ValidatorHistoricalSyncService {
         while (left <= right) {
             const mid = Math.floor((left + right) / 2);
             try {
-                await axios.get(`${client.getRpcUrl()}/block?height=${mid}`);
+                // BabylonClient'ın getBlockByHeight metodunu kullan - failover özelliğinden yararlan
+                await client.getBlockByHeight(mid);
                 earliestAvailable = mid;
                 right = mid - 1;
             } catch (error) {
                 if (this.isPruningError(error)) {
                     left = mid + 1;
                 } else {
-                    throw error;
+                    // Eğer hata pruning nedenli değilse, şu anki mid değerini döndür
+                    logger.error(`[ValidatorHistoricalSyncService] Unexpected error searching for available block: ${error instanceof Error ? error.message : String(error)}`);
+                    return earliestAvailable; 
                 }
             }
         }
