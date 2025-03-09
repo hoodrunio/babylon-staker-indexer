@@ -5,6 +5,51 @@ PROTO_DIR="./proto"
 # Output directory
 OUT_DIR="./src/generated/proto"
 
+# Check and install buf if not found
+if ! command -v buf &> /dev/null; then
+  echo "buf not found, installing..."
+  
+  # Detect OS
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    if command -v brew &> /dev/null; then
+      brew install bufbuild/buf/buf
+    else
+      echo "Error: Homebrew not found. Please install Homebrew first"
+      exit 1
+    fi
+  elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Ubuntu/Debian
+    # Detect architecture
+    ARCH=$(uname -m)
+    case $ARCH in
+      x86_64)
+        PLATFORM="Linux-x86_64"
+        ;;
+      aarch64)
+        PLATFORM="Linux-aarch64"
+        ;;
+      arm64)
+        PLATFORM="Linux-arm64"
+        ;;
+      *)
+        echo "Error: Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+    esac
+    
+    # Add buf's package repository
+    curl -sSL "https://github.com/bufbuild/buf/releases/latest/download/buf-$PLATFORM" -o "buf"
+    chmod +x buf
+    sudo mv buf /usr/local/bin/
+  else
+    echo "Error: Unsupported operating system"
+    exit 1
+  fi
+  
+  echo "buf installed successfully"
+fi
+
 # Clean output directory
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
@@ -70,8 +115,27 @@ echo "Using proto compilation options: $PROTOC_GEN_TS_PROTO_OPTS"
 
 # Check if protoc is installed
 if ! command -v protoc &> /dev/null; then
-  echo "Error: protoc is not installed or not in PATH"
-  exit 1
+  echo "protoc not found, installing..."
+  
+  # Detect OS
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    if command -v brew &> /dev/null; then
+      brew install protobuf
+    else
+      echo "Error: Homebrew not found. Please install Homebrew first"
+      exit 1
+    fi
+  elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Ubuntu/Debian
+    sudo apt-get update
+    sudo apt-get install -y protobuf-compiler
+  else
+    echo "Error: Unsupported operating system"
+    exit 1
+  fi
+  
+  echo "protoc installed successfully"
 fi
 
 # Check if protoc-gen-ts_proto is installed
