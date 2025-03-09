@@ -16,6 +16,24 @@ export interface BaseBlock {
   totalGasUsed: string;
 }
 
+export interface SimpleBlock {
+  height: string;
+  blockHash: string;
+  proposer: any; // Will be populated with validator info
+  numTxs: number;
+  time: string;
+}
+
+export interface PaginatedBlocksResponse {
+  blocks: SimpleBlock[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  };
+}
+
 export interface SignatureInfo {
   validator: Types.ObjectId;
   timestamp: string;
@@ -37,6 +55,25 @@ export interface BaseTx {
   time: string;
   meta?: TxMessage[];
   totalCount?: number;
+}
+
+export interface SimpleTx {
+  txHash: string;
+  height: string;
+  status: TxStatus;
+  type: string;
+  time: string;
+  messageCount: number;
+}
+
+export interface PaginatedTxsResponse {
+  transactions: SimpleTx[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  };
 }
 
 export interface TxMessage {

@@ -1,9 +1,9 @@
 /**
  * Block Storage Service
- * Stores block data in the database
+ * Stores and fetches blocks in the database
  */
 
-import { BaseBlock, SignatureInfo } from '../types/common';
+import { BaseBlock, SignatureInfo, SimpleBlock, PaginatedBlocksResponse } from '../types/common';
 import { IBlockStorage } from '../types/interfaces';
 import { logger } from '../../../utils/logger';
 import { Block, IBlock } from '../../../database/models/blockchain/Block';
@@ -504,5 +504,63 @@ export class BlockStorage implements IBlockStorage {
         }
         
         return signatures;
+    }
+
+    /**
+     * Gets latest blocks with pagination
+     * @param network Network type
+     * @param page Page number (1-based, default: 1)
+     * @param limit Number of blocks per page (default: 50)
+     * @returns Paginated blocks response
+     */
+    public async getLatestBlocks(
+        network: Network,
+        page: number = 1,
+        limit: number = 50
+    ): Promise<PaginatedBlocksResponse> {
+        try {
+            // Ensure page and limit are valid
+            page = Math.max(1, page); // Minimum page is 1
+            limit = Math.min(100, Math.max(1, limit)); // limit between 1 and 100
+            
+            // Get total count for pagination
+            const total = await Block.countDocuments({ network });
+            
+            // Calculate total pages
+            const pages = Math.ceil(total / limit);
+            
+            // Calculate skip value for pagination
+            const skip = (page - 1) * limit;
+            
+            // Get blocks
+            const blocks = await Block.find({ network })
+                .sort({ height: -1 }) // Sort by height descending (latest first)
+                .skip(skip)
+                .limit(limit)
+                .populate('proposer', 'moniker valoper_address logo_url') // Populate proposer field with selected fields
+                .select('height blockHash proposer numTxs time'); // Select only required fields
+            
+            // Map blocks to SimpleBlock type
+            const simpleBlocks: SimpleBlock[] = blocks.map(block => ({
+                height: block.height,
+                blockHash: block.blockHash,
+                proposer: block.proposer, // This will be the populated validator info
+                numTxs: block.numTxs,
+                time: block.time
+            }));
+            
+            return {
+                blocks: simpleBlocks,
+                pagination: {
+                    total,
+                    page,
+                    limit,
+                    pages
+                }
+            };
+        } catch (error) {
+            logger.error(`[BlockStorage] Error getting latest blocks: ${this.formatError(error)}`);
+            throw error;
+        }
     }
 }

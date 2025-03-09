@@ -3,7 +3,7 @@
  * Stores transaction data in the database
  */
 
-import { BaseTx, TxMessage, TxStatus } from '../types/common';
+import { BaseTx, TxMessage, TxStatus, SimpleTx, PaginatedTxsResponse } from '../types/common';
 import { ITxStorage } from '../types/interfaces';
 import { logger } from '../../../utils/logger';
 import { BlockchainTransaction, ITransaction } from '../../../database/models/blockchain/Transaction';
@@ -289,7 +289,15 @@ export class TxStorage implements ITxStorage {
             // Check if the response is in tx_search format (has tx_result property)
             if (Array.isArray(rawTxs) && rawTxs[0]?.hash && rawTxs[0]?.tx_result) {
                 logger.debug(`[TxStorage] Converting tx_search format transactions`);
-                const baseTxs = rawTxs.map(tx => this.convertTxSearchResultToBaseTx(tx));
+                
+                // Use Promise.all to handle async map
+                const baseTxs = await Promise.all(
+                    rawTxs.map(async tx => {
+                        // Add network information to the raw tx for use in convertTxSearchResultToBaseTx
+                        tx.network = network;
+                        return await this.convertTxSearchResultToBaseTx(tx, network);
+                    })
+                );
                 
                 // Save all transactions to database
                 for (const tx of baseTxs) {
@@ -407,7 +415,7 @@ export class TxStorage implements ITxStorage {
      * This is specifically for transactions fetched via BlockClient.getTxSearch
      * Returns only basic transaction information: txhash, time, height, status, fee, message count and message type
      */
-    private convertTxSearchResultToBaseTx(rawTx: any): BaseTx {
+    private async convertTxSearchResultToBaseTx(rawTx: any, network: Network): Promise<BaseTx> {
         try {
             if (!rawTx) {
                 throw new Error('Invalid transaction: rawTx is null or undefined');
@@ -435,8 +443,29 @@ export class TxStorage implements ITxStorage {
             // Create minimal meta information - just empty array as we don't need details
             const meta: TxMessage[] = [];
             
-            // Use current time as we don't have timestamp in tx_search results
-            const time = new Date().toISOString();
+            // Get time from the block at this height instead of using current time
+            let time = new Date().toISOString(); // Default fallback
+            
+            if (this.fetcherService && height !== '0') {
+                try {
+                    // Initialize fetcherService if not already initialized
+                    if (!this.fetcherService) {
+                        this.initializeServices();
+                    }
+                    
+                    // Fetch block data to get the actual timestamp
+                    const blockData = await this.fetcherService.fetchBlockByHeight(height, network);
+                    
+                    if (blockData && blockData.result && blockData.result.block && blockData.result.block.header && blockData.result.block.header.time) {
+                        time = blockData.result.block.header.time;
+                    } else {
+                        logger.warn(`[TxStorage] Could not extract time from block at height ${height}, using current time as fallback`);
+                    }
+                } catch (blockError) {
+                    logger.error(`[TxStorage] Error fetching block for timestamp at height ${height}: ${this.formatError(blockError)}`);
+                    // Continue with default time
+                }
+            }
             
             return {
                 txHash,
@@ -529,5 +558,63 @@ export class TxStorage implements ITxStorage {
         }
         
         return { messageType, messageCount };
+    }
+
+    /**
+     * Gets latest transactions with pagination
+     * @param network Network type
+     * @param page Page number (1-based, default: 1)
+     * @param limit Number of transactions per page (default: 50)
+     * @returns Paginated transactions response
+     */
+    public async getLatestTransactions(
+        network: Network,
+        page: number = 1,
+        limit: number = 50
+    ): Promise<PaginatedTxsResponse> {
+        try {
+            // Ensure page and limit are valid
+            page = Math.max(1, page); // Minimum page is 1
+            limit = Math.min(100, Math.max(1, limit)); // limit between 1 and 100
+            
+            // Get total count for pagination
+            const total = await BlockchainTransaction.countDocuments({ network });
+            
+            // Calculate total pages
+            const pages = Math.ceil(total / limit);
+            
+            // Calculate skip value for pagination
+            const skip = (page - 1) * limit;
+            
+            // Get transactions
+            const transactions = await BlockchainTransaction.find({ network })
+                .sort({ height: -1, time: -1 }) // Sort by height and time descending (latest first)
+                .skip(skip)
+                .limit(limit)
+                .select('txHash height status type time messageCount'); // Select only required fields
+            
+            // Map transactions to SimpleTx type
+            const simpleTxs: SimpleTx[] = transactions.map(tx => ({
+                txHash: tx.txHash,
+                height: tx.height,
+                status: tx.status as TxStatus,
+                type: tx.type,
+                time: tx.time,
+                messageCount: tx.messageCount
+            }));
+            
+            return {
+                transactions: simpleTxs,
+                pagination: {
+                    total,
+                    page,
+                    limit,
+                    pages
+                }
+            };
+        } catch (error) {
+            logger.error(`[TxStorage] Error getting latest transactions: ${this.formatError(error)}`);
+            throw error;
+        }
     }
 }

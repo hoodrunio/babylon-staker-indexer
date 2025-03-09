@@ -147,6 +147,69 @@ export class BlockProcessorController {
   };
 
   /**
+   * Get latest transactions with pagination
+   */
+  public getLatestTransactions = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { network } = req.query;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      if (!network) {
+        res.status(400).json({
+          success: false,
+          error: 'Network parameter is required'
+        });
+        return;
+      }
+
+      // Validate network
+      const supportedNetworks = this.blockProcessor.getSupportedNetworks();
+      if (!supportedNetworks.includes(network as Network)) {
+        res.status(400).json({
+          success: false,
+          error: `Network ${network} is not supported. Supported networks: ${supportedNetworks.join(', ')}`
+        });
+        return;
+      }
+      
+      // Validate page and limit
+      if (isNaN(page) || page <= 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Page must be a positive number'
+        });
+        return;
+      }
+      
+      if (isNaN(limit) || limit <= 0 || limit > 100) {
+        res.status(400).json({
+          success: false,
+          error: 'Limit must be a positive number between 1 and 100'
+        });
+        return;
+      }
+      
+      // Get latest transactions with pagination
+      const result = await this.txStorage.getLatestTransactions(network as Network, page, limit);
+      
+      res.status(200).json({
+        success: true,
+        data: {
+          transactions: result.transactions,
+          pagination: result.pagination
+        }
+      });
+    } catch (error) {
+      logger.error(`[BlockProcessorController] Error getting latest transactions: ${error instanceof Error ? error.message : String(error)}`);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get latest transactions'
+      });
+    }
+  };
+
+  /**
    * Get block by height
    */
   public getBlockByHeight = async (req: Request, res: Response): Promise<void> => {
@@ -310,6 +373,69 @@ export class BlockProcessorController {
   };
 
   /**
+   * Get latest blocks with pagination
+   */
+  public getLatestBlocks = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { network } = req.query;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      if (!network) {
+        res.status(400).json({
+          success: false,
+          error: 'Network parameter is required'
+        });
+        return;
+      }
+
+      // Validate network
+      const supportedNetworks = this.blockProcessor.getSupportedNetworks();
+      if (!supportedNetworks.includes(network as Network)) {
+        res.status(400).json({
+          success: false,
+          error: `Network ${network} is not supported. Supported networks: ${supportedNetworks.join(', ')}`
+        });
+        return;
+      }
+      
+      // Validate page and limit
+      if (isNaN(page) || page <= 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Page must be a positive number'
+        });
+        return;
+      }
+      
+      if (isNaN(limit) || limit <= 0 || limit > 100) {
+        res.status(400).json({
+          success: false,
+          error: 'Limit must be a positive number between 1 and 100'
+        });
+        return;
+      }
+      
+      // Get latest blocks with pagination
+      const result = await this.blockStorage.getLatestBlocks(network as Network, page, limit);
+      
+      res.status(200).json({
+        success: true,
+        data: {
+          blocks: result.blocks,
+          pagination: result.pagination
+        }
+      });
+    } catch (error) {
+      logger.error(`[BlockProcessorController] Error getting latest blocks: ${error instanceof Error ? error.message : String(error)}`);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get latest blocks'
+      });
+    }
+  };
+
+  /**
    * Get block by hash
    */
   public getBlockByHash = async (req: Request, res: Response): Promise<void> => {
@@ -342,11 +468,11 @@ export class BlockProcessorController {
         });
         return;
       }
-
+      
       // Get block with optional raw format
       const useRawFormat = raw === 'true';
       const block = await this.blockStorage.getBlockByHash(hash, network as Network, useRawFormat);
-
+      
       if (!block) {
         res.status(404).json({
           success: false,
