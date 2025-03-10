@@ -150,28 +150,16 @@ export class BlockClient extends BaseClient {
         try {
             logger.debug(`[BlockClient] Getting block at height ${height} for ${this.network}`);
             
-            const url = new URL(`${this.baseRpcUrl}/block`);
-            url.searchParams.append('height', height.toString());
-            
-            // Daha uzun bir timeout ile deneyelim
-            const response = await this.fetchWithTimeout(url.toString(), 15000);
-            
-            // Yanıt durumunu kontrol et
-            if (!response.ok) {
-                logger.error(`[BlockClient] HTTP error ${response.status} for block at height ${height} for ${this.network}`);
-                throw new Error(`HTTP error ${response.status} for block at height ${height}`);
-            }
-            
-            // JSON yanıtını parse et
-            const data = await response.json() as any;
+            // Axios ile retry mekanizması kullanılarak istek yap
+            const response = await this.client.get(`${this.baseRpcUrl}/block?height=${height}`);
             
             // Veri yapısını kontrol et
-            if (!data || !data.result || !data.result.block) {
-                logger.error(`[BlockClient] Invalid response for block at height ${height} for ${this.network}: ${JSON.stringify(data)}`);
+            if (!response.data || !response.data.result || !response.data.result.block) {
+                logger.error(`[BlockClient] Invalid response for block at height ${height} for ${this.network}: ${JSON.stringify(response.data)}`);
                 throw new Error(`Invalid response for block at height ${height}`);
             }
             
-            return data;
+            return response.data;
         } catch (error) {
             // Hata detaylarını logla
             if (error instanceof Error) {
@@ -183,22 +171,7 @@ export class BlockClient extends BaseClient {
                 logger.error(`[BlockClient] Unknown error getting block at height ${height} for ${this.network}`);
             }
             
-            // Alternatif bir yöntem deneyelim - Axios ile
-            try {
-                logger.debug(`[BlockClient] Retrying with axios for block at height ${height} for ${this.network}`);
-                
-                const axiosResponse = await this.client.get(`${this.baseRpcUrl}/block?height=${height}`);
-                
-                if (!axiosResponse.data || !axiosResponse.data.result || !axiosResponse.data.result.block) {
-                    logger.error(`[BlockClient] Invalid axios response for block at height ${height} for ${this.network}`);
-                    throw new Error(`Invalid axios response for block at height ${height}`);
-                }
-                
-                return axiosResponse.data;
-            } catch (axiosError) {
-                logger.error(`[BlockClient] Axios retry also failed for block at height ${height} for ${this.network}`);
-                throw error; // Orijinal hatayı fırlat
-            }
+            throw error;
         }
     }
     

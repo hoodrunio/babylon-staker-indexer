@@ -62,7 +62,7 @@ export abstract class BaseClient {
         // Add retry config to each request
         this.client.interceptors.request.use((config: RetryConfig) => {
             config.retry = true;
-            config.currentRetryCount = 0;
+            config.currentRetryCount = config.currentRetryCount ?? 0;
             return config;
         });
 
@@ -100,8 +100,13 @@ export abstract class BaseClient {
                 // Belirtilen süre kadar bekle
                 await new Promise(resolve => setTimeout(resolve, delayTime));
                 
-                // İsteği yeniden dene
-                return this.client(config);
+                // İsteği yeniden dene - axios instance'ı direkt olarak kullanmak yerine, yeni bir istek oluşturalım
+                try {
+                    const retryConfig = { ...config };
+                    return this.client(retryConfig);
+                } catch (retryError) {
+                    return Promise.reject(retryError);
+                }
             }
         );
     }
