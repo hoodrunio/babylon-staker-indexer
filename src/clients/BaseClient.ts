@@ -8,8 +8,8 @@ export interface RetryConfig extends InternalAxiosRequestConfig {
 }
 
 /**
- * Farklı API istemcileri için temel sınıf.
- * HTTP istekleri, yeniden deneme mantığı ve ağ yapılandırmasını sağlar.
+ * Base class for different API clients.
+ * Provides HTTP requests, retry logic, and network configuration.
  */
 export abstract class BaseClient {
     protected readonly client: AxiosInstance;
@@ -56,7 +56,7 @@ export abstract class BaseClient {
     }
 
     /**
-     * Retry interceptor'ını yapılandırır
+     * Configures the retry interceptor
      */
     private setupRetryInterceptor(): void {
         // Add retry config to each request
@@ -71,36 +71,67 @@ export abstract class BaseClient {
             (response) => response,
             async (error) => {
                 const config = error.config as RetryConfig;
-                
-                // Retry yapılandırması yoksa veya istek zaten yeniden denenmişse, hatayı fırlat
+
+                // If there is no retry configuration or the request has already been retried, throw the error
                 if (!config || !config.retry) {
                     return Promise.reject(error);
                 }
-                
-                // Retry sayacını başlat
+
+                // Add check for transaction not found error
+                if (error.response && error.response.data && config.url) {
+                    // Tx not found error check
+                    if (config.url.includes('/cosmos/tx/v1beta1/txs/') &&
+                        error.response.data.message &&
+                        error.response.data.message.includes('tx not found')) {
+
+                        logger.warn(`[${this.constructor.name}] Transaction not found for ${config.url}, need to try another endpoint`);
+
+                        // Throw transaction not found error with custom error message
+                        error.isNotFoundError = true;
+                        error.needsEndpointRotation = true;
+                        return Promise.reject(error);
+                    }
+
+                    // Block not found error check
+                    if (config.url.includes('/block?height=') &&
+                        error.response.data.error &&
+                        error.response.data.error.data &&
+                        error.response.data.error.data.includes('height') &&
+                        error.response.data.error.data.includes('is not available')) {
+
+                        logger.warn(`[${this.constructor.name}] Block height is not available for ${config.url}, need to try another endpoint`);
+
+                        // Throw block not found error with custom error message
+                        error.isNotFoundError = true;
+                        error.needsEndpointRotation = true;
+                        return Promise.reject(error);
+                    }
+                }
+
+                // Initialize retry counter
                 config.currentRetryCount = config.currentRetryCount ?? 0;
-                
-                // Maksimum retry sayısına ulaşıldıysa, hatayı fırlat
+
+                // If the maximum number of retries has been reached, throw the error
                 if (config.currentRetryCount >= this.MAX_RETRIES) {
                     logger.error(`[${this.constructor.name}] Maximum retries (${this.MAX_RETRIES}) reached for ${config.url}`);
                     return Promise.reject(error);
                 }
-                
-                // Retry sayacını artır
+
+                // Increment retry counter
                 config.currentRetryCount += 1;
-                
-                // Exponential backoff ile bekleme süresi hesapla
+
+                // Calculate waiting time with exponential backoff
                 const delayTime = Math.min(
                     this.MAX_RETRY_DELAY,
                     this.RETRY_DELAY * Math.pow(2, config.currentRetryCount - 1)
                 );
-                
+
                 logger.warn(`[${this.constructor.name}] Retry attempt ${config.currentRetryCount}/${this.MAX_RETRIES} for ${config.url} after ${delayTime}ms`);
-                
-                // Belirtilen süre kadar bekle
+
+                // Wait for the specified amount of time
                 await new Promise(resolve => setTimeout(resolve, delayTime));
-                
-                // İsteği yeniden dene - axios instance'ı direkt olarak kullanmak yerine, yeni bir istek oluşturalım
+
+                // Retry the request - instead of using the axios instance directly, let's create a new request
                 try {
                     const retryConfig = { ...config };
                     return this.client(retryConfig);
@@ -112,46 +143,46 @@ export abstract class BaseClient {
     }
 
     /**
-     * Herhangi bir asenkron operasyon için yeniden deneme sağlayan yardımcı metot
-     * @param operation Yeniden denenecek asenkron işlem
-     * @param fallback Tüm denemeler başarısız olursa dönülecek değer
-     * @param operationName İşlemin adı (loglama için)
+     * Helper method that provides retry for any asynchronous operation
+     * @param operation Asynchronous operation to retry
+     * @param fallback Value to return if all attempts fail
+     * @param operationName Name of the operation (for logging)
      */
     protected async retryOperation<T>(
-        operation: () => Promise<T>, 
-        fallback: T, 
+        operation: () => Promise<T>,
+        fallback: T,
         operationName: string
     ): Promise<T> {
         let lastError: any = null;
-        
+
         for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
             try {
                 return await operation();
             } catch (error) {
                 lastError = error;
-                
+
                 if (attempt === this.MAX_RETRIES) {
                     logger.error(`[${this.constructor.name}] ${operationName} failed after ${this.MAX_RETRIES} attempts:`, error);
                     break;
                 }
-                
+
                 const delayTime = Math.min(
                     this.MAX_RETRY_DELAY,
                     this.RETRY_DELAY * Math.pow(2, attempt - 1)
                 );
-                
+
                 logger.warn(`[${this.constructor.name}] ${operationName} failed on attempt ${attempt}/${this.MAX_RETRIES}, retrying after ${delayTime}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delayTime));
             }
         }
-        
+
         return fallback;
     }
 
     /**
-     * Verilen URL'ye zaman aşımı korumalı bir fetch isteği yapar
-     * @param url İstek yapılacak URL
-     * @param timeout Zaman aşımı süresi (ms)
+     * Makes a fetch request to the given URL with timeout protection
+     * @param url URL to make the request to
+     * @param timeout Timeout duration (ms)
      */
     protected async fetchWithTimeout(url: string, timeout: number = 10000): Promise<Response> {
         const controller = new AbortController();
@@ -170,30 +201,30 @@ export abstract class BaseClient {
     }
 
     /**
-     * İstemcinin kullandığı ağı döndürür
+     * Returns the network the client is using
      */
     public getNetwork(): Network {
         return this.network;
     }
 
     /**
-     * Websocket endpoint URL'sini döndürür
+     * Returns the websocket endpoint URL
      */
     public getWsEndpoint(): string {
         return this.wsEndpoint;
     }
 
     /**
-     * API base URL'sini döndürür
+     * Returns the API base URL
      */
     public getBaseUrl(): string {
         return this.baseUrl;
     }
 
     /**
-     * RPC base URL'sini döndürür
+     * Returns the RPC base URL
      */
     public getRpcUrl(): string {
         return this.baseRpcUrl;
     }
-} 
+}

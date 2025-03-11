@@ -6,7 +6,7 @@ import { FinalityClient } from './FinalityClient';
 import { StakingClient } from './StakingClient';
 import { logger } from '../utils/logger';
 
-// URL yönetimi için yeni interface ve sınıflar
+// New interfaces and classes for URL management
 export interface EndpointConfig {
     nodeUrls: string[];
     rpcUrls: string[];
@@ -83,14 +83,14 @@ export class UrlManager {
 }
 
 /**
- * BabylonClient, Babylon blockchain ile etkileşim için ana giriş noktasıdır.
- * Bu sınıf, SOLID prensiplerine uygun olarak ayrıştırılmış alt istemcileri kullanarak
- * mevcut API'yi korur ve geriye dönük uyumluluğu sağlar.
+ * BabylonClient is the main entry point for interacting with the Babylon blockchain.
+ * This class maintains the existing API and ensures backward compatibility
+ * by using separate sub-clients, adhering to SOLID principles.
  */
 export class BabylonClient {
     private static instances: Map<Network, BabylonClient> = new Map();
     
-    // Alt istemciler
+    // Sub-clients
     private readonly blockClient: BlockClient;
     private readonly transactionClient: TransactionClient;
     private readonly governanceClient: GovernanceClient;
@@ -103,11 +103,11 @@ export class BabylonClient {
     private constructor(network: Network) {
         this.network = network;
         
-        // URL konfigürasyonlarını .env'den okuyalım
+        // Load URL configurations from .env
         const endpointConfig = this.loadEndpointConfig(network);
         this.urlManager = new UrlManager(endpointConfig);
         
-        // Alt istemcileri oluştur
+        // Create sub-clients
         this.blockClient = this.createBlockClient();
         this.transactionClient = this.createTransactionClient();
         this.governanceClient = this.createGovernanceClient();
@@ -116,10 +116,10 @@ export class BabylonClient {
     }
 
     /**
-     * URL konfigürasyonlarını .env'den okur
+     * Reads URL configurations from .env
      */
     private loadEndpointConfig(network: Network): EndpointConfig {
-        // Environment variable'ları belirle
+        // Determine environment variables
         const nodeUrlEnvVar = network === Network.MAINNET 
             ? 'BABYLON_NODE_URLS' 
             : 'BABYLON_TESTNET_NODE_URLS';
@@ -132,7 +132,7 @@ export class BabylonClient {
             ? 'BABYLON_WS_URLS' 
             : 'BABYLON_TESTNET_WS_URLS';
         
-        // Geri uyumluluk için eski environment variable'ları da kontrol edelim
+        // Check legacy environment variables for backward compatibility
         const legacyNodeUrlEnvVar = network === Network.MAINNET 
             ? 'BABYLON_NODE_URL' 
             : 'BABYLON_TESTNET_NODE_URL';
@@ -145,12 +145,12 @@ export class BabylonClient {
             ? 'BABYLON_WS_URL' 
             : 'BABYLON_TESTNET_WS_URL';
             
-        // URL'leri oku ve virgülle ayrılmış değerleri diziye çevir
+        // Read URLs and convert comma-separated values to arrays
         let nodeUrls = process.env[nodeUrlEnvVar]?.split(',').map(url => url.trim()) || [];
         let rpcUrls = process.env[rpcUrlEnvVar]?.split(',').map(url => url.trim()) || [];
         let wsUrls = process.env[wsUrlEnvVar]?.split(',').map(url => url.trim()) || [];
         
-        // Geri uyumluluk: Eski tek URL environment variable'ları varsa, onları da ekleyelim
+        // Backward compatibility: If old single URL environment variables exist, add them as well
         if (process.env[legacyNodeUrlEnvVar]) {
             nodeUrls.push(process.env[legacyNodeUrlEnvVar]!);
         }
@@ -163,12 +163,12 @@ export class BabylonClient {
             wsUrls.push(process.env[legacyWsUrlEnvVar]!);
         }
         
-        // URL'leri temizle (boş olanları filtrele)
+        // Clean URLs (filter out empty ones)
         nodeUrls = nodeUrls.filter(url => url.length > 0);
         rpcUrls = rpcUrls.filter(url => url.length > 0);
         wsUrls = wsUrls.filter(url => url.length > 0);
         
-        // URL kontrolü
+        // URL check
         if (nodeUrls.length === 0 || rpcUrls.length === 0) {
             throw new Error(`Network ${network} is not configured. Please check your environment variables for ${nodeUrlEnvVar} and ${rpcUrlEnvVar}`);
         }
@@ -181,7 +181,7 @@ export class BabylonClient {
     }
     
     /**
-     * BlockClient örneği oluşturur
+     * Creates a BlockClient instance
      */
     private createBlockClient(): BlockClient {
         return new BlockClient(
@@ -193,7 +193,7 @@ export class BabylonClient {
     }
     
     /**
-     * TransactionClient örneği oluşturur
+     * Creates a TransactionClient instance
      */
     private createTransactionClient(): TransactionClient {
         return new TransactionClient(
@@ -205,7 +205,7 @@ export class BabylonClient {
     }
     
     /**
-     * GovernanceClient örneği oluşturur
+     * Creates a GovernanceClient instance
      */
     private createGovernanceClient(): GovernanceClient {
         return new GovernanceClient(
@@ -217,7 +217,7 @@ export class BabylonClient {
     }
     
     /**
-     * FinalityClient örneği oluşturur
+     * Creates a FinalityClient instance
      */
     private createFinalityClient(): FinalityClient {
         return new FinalityClient(
@@ -229,7 +229,7 @@ export class BabylonClient {
     }
     
     /**
-     * StakingClient örneği oluşturur
+     * Creates a StakingClient instance
      */
     private createStakingClient(): StakingClient {
         return new StakingClient(
@@ -241,17 +241,17 @@ export class BabylonClient {
     }
     
     /**
-     * Hata durumunda bağlantı noktalarını döndürerek yeni istemciler oluşturur
+     * Rotates connection endpoints in case of an error and creates new clients
      */
     private rotateClients(): void {
         logger.info(`[BabylonClient] Rotating connection endpoints for ${this.network}`);
         
-        // URL'leri döndür
+        // Rotate URLs
         this.urlManager.rotateNodeUrl();
         this.urlManager.rotateRpcUrl();
         this.urlManager.rotateWsUrl();
         
-        // Yeni istemcileri oluştur
+        // Create new clients
         try {
             const newBlockClient = this.createBlockClient();
             const newTransactionClient = this.createTransactionClient();
@@ -259,7 +259,7 @@ export class BabylonClient {
             const newFinalityClient = this.createFinalityClient();
             const newStakingClient = this.createStakingClient();
             
-            // Hepsi başarılı olursa, mevcut istemcileri güncelle
+            // If all are successful, update existing clients
             Object.defineProperty(this, 'blockClient', { value: newBlockClient });
             Object.defineProperty(this, 'transactionClient', { value: newTransactionClient });
             Object.defineProperty(this, 'governanceClient', { value: newGovernanceClient });
@@ -274,29 +274,52 @@ export class BabylonClient {
     }
     
     /**
-     * İstek hata alırsa istemcileri döndür ve yeniden dene
+     * Rotates clients and retries if the request fails
      */
     private async withFailover<T>(operation: () => Promise<T>): Promise<T> {
         const maxRetries = this.urlManager.getNodeUrls().length;
+        const notFoundErrors = new Set<string>(); // To track resources that were not found
         
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 return await operation();
-            } catch (error) {
+            } catch (error: any) {
+                // Check for NotFound error
+                if (error.isNotFoundError === true) {
+                    // Was this resource also not found at another endpoint before?
+                    const errorKey = error.config?.url || 'unknown';
+                    
+                    if (notFoundErrors.has(errorKey)) {
+                        // If this resource was also not found at another endpoint, do not retry further
+                        logger.warn(`[BabylonClient] Resource not found on multiple endpoints for ${errorKey}, stopping retries`);
+                        throw error;
+                    }
+                    
+                    // Mark that this resource was not found
+                    notFoundErrors.add(errorKey);
+                    
+                    // Should we rotate endpoints?
+                    if (error.needsEndpointRotation === true) {
+                        logger.info(`[BabylonClient] Resource not found, rotating to next endpoint for ${this.network}`);
+                        this.rotateClients();
+                        continue; // Retry with the new endpoint
+                    }
+                }
+
                 logger.warn(`[BabylonClient] Operation failed on attempt ${attempt + 1}/${maxRetries} for ${this.network}`);
                 
-                // Son deneme değilse, istemcileri döndür ve yeniden dene
+                // If it's not the last attempt, rotate clients and retry
                 if (attempt < maxRetries - 1) {
                     this.rotateClients();
                 } else {
-                    // Son denemeyse, hatayı fırlat
+                    // If it's the last attempt, throw the error
                     logger.error(`[BabylonClient] All failover attempts failed for ${this.network}`);
                     throw error;
                 }
             }
         }
         
-        // Bu noktaya asla ulaşılmamalı, ama TypeScript hata vermemesi için
+        // This point should never be reached, but it's here to prevent TypeScript errors
         throw new Error(`[BabylonClient] Unexpected error in failover logic for ${this.network}`);
     }
 
@@ -307,26 +330,26 @@ export class BabylonClient {
         return BabylonClient.instances.get(network)!;
     }
 
-    // Genel bilgi metodları
+    // General information methods
     public getNetwork(): Network {
         return this.network;
     }
 
     public getWsEndpoint(): string {
         try {
-            // Önce blockClient'dan almayı deneyelim
+            // First, try to get it from blockClient
             const wsEndpoint = this.blockClient.getWsEndpoint();
             if (wsEndpoint) {
                 return wsEndpoint;
             }
             
-            // BlockClient'dan alınamazsa, UrlManager'dan almayı deneyelim
+            // If it cannot be obtained from BlockClient, try to get it from UrlManager
             const wsUrl = this.urlManager.getWsUrl();
             if (wsUrl) {
                 return wsUrl;
             }
             
-            // Hiçbir yerde WebSocket URL'si bulunamazsa, null yerine boş string döndürelim
+            // If no WebSocket URL is found anywhere, return an empty string instead of null
             logger.warn(`[BabylonClient] No WebSocket URL found for ${this.network}`);
             return '';
         } catch (error) {
@@ -343,7 +366,7 @@ export class BabylonClient {
         return this.blockClient.getRpcUrl();
     }
 
-    // BlockClient metodları
+    // BlockClient methods
     public async getCurrentHeight(): Promise<number> {
         return this.withFailover(() => this.blockClient.getCurrentHeight());
     }
@@ -356,7 +379,7 @@ export class BabylonClient {
         return this.withFailover(() => this.blockClient.getBlockByHeight(height));
     }
     /**
-     * En son bloğu alır
+     * Retrieves the latest block
      */
     public async getLatestBlock(): Promise<{
         block: {
@@ -378,7 +401,7 @@ export class BabylonClient {
         return this.withFailover(() => this.blockClient.getTxSearch(height));
     }
 
-    // TransactionClient metodları
+    // TransactionClient methods
     public async getTransaction(txHash: string): Promise<any | null> {
         return this.withFailover(() => this.transactionClient.getTransaction(txHash));
     }
@@ -402,7 +425,7 @@ export class BabylonClient {
         return this.withFailover(() => this.transactionClient.getAllStakingTransactions(startHeight, endHeight));
     }
 
-    // GovernanceClient metodları
+    // GovernanceClient methods
     public async getProposals(): Promise<any[]> {
         return this.withFailover(() => this.governanceClient.getProposals());
     }
@@ -423,7 +446,7 @@ export class BabylonClient {
         return this.withFailover(() => this.governanceClient.getGovernanceParams());
     }
 
-    // FinalityClient metodları
+    // FinalityClient methods
     public async getCurrentEpoch(): Promise<CurrentEpochResponse> {
         return this.withFailover(() => this.finalityClient.getCurrentEpoch());
     }
@@ -448,16 +471,16 @@ export class BabylonClient {
         return this.withFailover(() => this.finalityClient.getIncentiveParams());
     }
 
-    // StakingClient metodları
+    // StakingClient methods
     public async getUnbondingPeriod(validatorAddress?: string): Promise<number> {
         return this.withFailover(() => this.stakingClient.getUnbondingPeriod(validatorAddress));
     }
 
     /**
-     * Hash değerine göre işlem detaylarını getirir
-     * @param txHash İşlem hash'i
+     * Retrieves transaction details by hash
+     * @param txHash Transaction hash
      */
     public async getTxByHash(txHash: string): Promise<any | null> {
         return this.withFailover(() => this.transactionClient.getTransaction(txHash));
     }
-} 
+}

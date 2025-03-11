@@ -2,14 +2,14 @@ import { BaseClient } from './BaseClient';
 import { logger } from '../utils/logger';
 
 /**
- * İşlem verilerini almak için kullanılan istemci
+ * Client for querying transaction data
  */
 export class TransactionClient extends BaseClient {
     /**
-     * @param network Ağ tipi
+     * @param network Network type
      * @param nodeUrl Node URL
      * @param rpcUrl RPC URL
-     * @param wsUrl WebSocket URL (opsiyonel)
+     * @param wsUrl WebSocket URL (optional)
      */
     public constructor(
         network: any,
@@ -21,31 +21,32 @@ export class TransactionClient extends BaseClient {
     }
 
     /**
-     * Belirli bir hash ile işlem bilgilerini alır
-     * @param txHash İşlem hash'i
+     * Retrieves transaction information with a given hash
+     * @param txHash Transaction hash
      */
     public async getTransaction(txHash: string): Promise<any | null> {
         try {
             logger.debug(`[TransactionClient] Getting transaction ${txHash} for ${this.network}`);
-            
+
             const response = await this.client.get(`/cosmos/tx/v1beta1/txs/${txHash}`);
-            
+
             if (!response || !response.data || !response.data.tx) {
                 return null;
             }
-            
+
             return response.data;
         } catch (error) {
+            // Forward to upper layers
             logger.error(`[TransactionClient] Error getting transaction ${txHash} for ${this.network}:`, error);
-            return null;
+            throw error; // Re-throw the error, to be handled by BabylonClient
         }
     }
 
     /**
-     * Belirli bir sorgu ile işlemleri arar
-     * @param query Arama sorgusu
-     * @param page Sayfa numarası
-     * @param limit Sayfa başına sonuç sayısı
+     * Searches for transactions with a specific query
+     * @param query Search query
+     * @param page Page number
+     * @param limit Results per page
      */
     public async searchTxs(query: string, page: number = 1, limit: number = 100): Promise<any> {
         try {
@@ -60,7 +61,7 @@ export class TransactionClient extends BaseClient {
             const url = `/cosmos/tx/v1beta1/txs?${params.toString()}`;
 
             const response = await this.client.get(url);
-            
+
             if (!response.data) {
                 logger.warn('[TransactionClient] No transactions found in response');
                 return null;
@@ -78,38 +79,38 @@ export class TransactionClient extends BaseClient {
     }
 
     /**
-     * Delegate işlemlerini belirli bir blok aralığında alır
-     * @param startHeight Başlangıç blok yüksekliği
-     * @param endHeight Bitiş blok yüksekliği
+     * Retrieves delegate transactions within a specific block range
+     * @param startHeight Starting block height
+     * @param endHeight Ending block height
      */
     public async getDelegateTransactions(startHeight: number, endHeight: number): Promise<any[]> {
         try {
             logger.debug(`[TransactionClient] Getting delegate transactions from block ${startHeight} to ${endHeight} for ${this.network}`);
-            
-            // Cosmos SDK v0.50.x'de AND operatörü düzgün çalışmadığı için sadece message.action parametresini kullanıyoruz
-            // ve height filtrelemesini JavaScript tarafında yapıyoruz
+
+            // Since AND operator doesn't work properly in Cosmos SDK v0.50.x, we only use the message.action parameter
+            // and perform height filtering on the JavaScript side
             const searchParams = new URLSearchParams();
-            
-            // Sadece message.action filtresini kullan
+
+            // Use only message.action filter
             searchParams.append('query', "message.action='/babylon.epoching.v1.MsgWrappedDelegate'");
-            searchParams.append('pagination.limit', '1000'); // Daha fazla sonuç için limiti artırıyoruz
+            searchParams.append('pagination.limit', '1000'); // Increase limit for more results
             searchParams.append('pagination.count_total', 'true');
-            
+
             const url = '/cosmos/tx/v1beta1/txs';
             const fullUrl = `${url}?${searchParams.toString()}`;
 
             logger.debug(`[TransactionClient] Constructed URL for delegate transactions: ${fullUrl}`);
-            
+
             const response = await this.client.get(fullUrl);
-            
+
             if (!response || !response.data) {
                 throw new Error('Invalid response from Babylon node');
             }
-            
+
             // Process and normalize the transactions
             const transactions = response.data.txs || [];
-            
-            // JavaScript tarafında height filtrelemesi yapıyoruz
+
+            // Perform height filtering on the JavaScript side
             return transactions
                 .filter((tx: any) => {
                     const height = parseInt(tx.height);
@@ -117,14 +118,14 @@ export class TransactionClient extends BaseClient {
                 })
                 .map((tx: any) => {
                     // Extract the delegate message from the transaction
-                    const delegateMsg = tx.body.messages.find((msg: any) => 
+                    const delegateMsg = tx.body.messages.find((msg: any) =>
                         msg['@type'] === '/babylon.epoching.v1.MsgWrappedDelegate'
                     );
-                    
+
                     if (!delegateMsg) {
                         return null;
                     }
-                    
+
                     return {
                         hash: tx.txhash,
                         height: parseInt(tx.height),
@@ -142,40 +143,40 @@ export class TransactionClient extends BaseClient {
             throw error;
         }
     }
-    
+
     /**
-     * Unbonding işlemlerini belirli bir blok aralığında alır
-     * @param startHeight Başlangıç blok yüksekliği
-     * @param endHeight Bitiş blok yüksekliği
+     * Retrieves unbonding transactions within a specific block range
+     * @param startHeight Starting block height
+     * @param endHeight Ending block height
      */
     public async getUnbondingTransactions(startHeight: number, endHeight: number): Promise<any[]> {
         try {
             logger.debug(`[TransactionClient] Getting unbonding transactions from block ${startHeight} to ${endHeight} for ${this.network}`);
-            
-            // Cosmos SDK v0.50.x'de AND operatörü düzgün çalışmadığı için sadece message.action parametresini kullanıyoruz
-            // ve height filtrelemesini JavaScript tarafında yapıyoruz
+
+            // Since AND operator doesn't work properly in Cosmos SDK v0.50.x, we only use the message.action parameter
+            // and perform height filtering on the JavaScript side
             const searchParams = new URLSearchParams();
-            
-            // Sadece message.action filtresini kullan
+
+            // Use only message.action filter
             searchParams.append('query', "message.action='/babylon.epoching.v1.MsgWrappedUndelegate'");
-            searchParams.append('pagination.limit', '1000'); // Daha fazla sonuç için limiti artırıyoruz
+            searchParams.append('pagination.limit', '1000'); // Increase limit for more results
             searchParams.append('pagination.count_total', 'true');
-            
+
             const url = '/cosmos/tx/v1beta1/txs';
             const fullUrl = `${url}?${searchParams.toString()}`;
 
             logger.debug(`[TransactionClient] Constructed URL for unbonding transactions: ${fullUrl}`);
-            
+
             const response = await this.client.get(fullUrl);
-            
+
             if (!response || !response.data) {
                 throw new Error('Invalid response from Babylon node');
             }
-            
+
             // Process and normalize the transactions
             const transactions = response.data.txs || [];
-            
-            // JavaScript tarafında height filtrelemesi yapıyoruz
+
+            // Perform height filtering on the JavaScript side
             return transactions
                 .filter((tx: any) => {
                     const height = parseInt(tx.height);
@@ -183,14 +184,14 @@ export class TransactionClient extends BaseClient {
                 })
                 .map((tx: any) => {
                     // Extract the undelegate message from the transaction
-                    const undelegateMsg = tx.body.messages.find((msg: any) => 
+                    const undelegateMsg = tx.body.messages.find((msg: any) =>
                         msg['@type'] === '/babylon.epoching.v1.MsgWrappedUndelegate'
                     );
-                    
+
                     if (!undelegateMsg) {
                         return null;
                     }
-                    
+
                     return {
                         hash: tx.txhash,
                         height: parseInt(tx.height),
@@ -210,9 +211,9 @@ export class TransactionClient extends BaseClient {
     }
 
     /**
-     * Hem delegate hem de unbonding işlemlerini tek bir sorgu ile alır
-     * @param startHeight Başlangıç blok yüksekliği
-     * @param endHeight Bitiş blok yüksekliği
+     * Retrieves both delegate and unbonding transactions with a single query
+     * @param startHeight Starting block height
+     * @param endHeight Ending block height
      */
     public async getAllStakingTransactions(startHeight: number, endHeight: number): Promise<{
         delegateTransactions: any[];
@@ -220,56 +221,56 @@ export class TransactionClient extends BaseClient {
     }> {
         try {
             logger.debug(`[TransactionClient] Getting all staking transactions from block ${startHeight} to ${endHeight} for ${this.network}`);
-            
-            // İşlem tipi için daha genel bir sorgu oluştur - sadece "staking" veya "epoching" ile ilgili işlemleri sorgulayabiliriz
-            // Örneğin: message.module='staking' veya message.module='epoching'
-            // Sonra client tarafında filtreleme yapacağız
+
+            // Create a more general query for the transaction type - we can query only transactions related to "staking" or "epoching"
+            // For example: message.module='staking' or message.module='epoching'
+            // Then we will filter on the client side
             const searchParams = new URLSearchParams();
-            
-            // Daha genel bir sorgu kullan ya da OR sorgusu benzeri bir yaklaşım
-            // Bu örnek için babylon.epoching modülündeki tüm işlemleri sorguluyoruz
+
+            // Use a more general query or an OR query-like approach
+            // For this example, we query all transactions in the babylon.epoching module
             searchParams.append('query', "message.module='epoching'");
-            searchParams.append('pagination.limit', '1000'); // Daha fazla sonuç için limiti artırıyoruz
+            searchParams.append('pagination.limit', '1000'); // Increase limit for more results
             searchParams.append('pagination.count_total', 'true');
-            
+
             const url = '/cosmos/tx/v1beta1/txs';
             const fullUrl = `${url}?${searchParams.toString()}`;
 
             logger.debug(`[TransactionClient] Constructed URL for all staking transactions: ${fullUrl}`);
-            
+
             const response = await this.client.get(fullUrl);
-            
+
             if (!response || !response.data) {
                 throw new Error('Invalid response from Babylon node');
             }
-            
-            // Tüm işlemleri al
+
+            // Get all transactions
             const transactions = response.data.txs || [];
-            
-            // JavaScript tarafında height filtrelemesi yapıyoruz
+
+            // Perform height filtering on the JavaScript side
             const filteredTransactions = transactions.filter((tx: any) => {
                 const height = parseInt(tx.height);
                 return height >= startHeight && height <= endHeight;
             });
-            
-            // Delegate ve unbonding işlemlerini ayır
+
+            // Separate delegate and unbonding transactions
             const delegateTransactions = filteredTransactions
                 .filter((tx: any) => {
-                    const hasDelegate = tx.body.messages.some((msg: any) => 
+                    const hasDelegate = tx.body.messages.some((msg: any) =>
                         msg['@type'] === '/babylon.epoching.v1.MsgWrappedDelegate'
                     );
                     return hasDelegate;
                 })
                 .map((tx: any) => {
-                    // Delegate mesajını bul
-                    const delegateMsg = tx.body.messages.find((msg: any) => 
+                    // Find the delegate message
+                    const delegateMsg = tx.body.messages.find((msg: any) =>
                         msg['@type'] === '/babylon.epoching.v1.MsgWrappedDelegate'
                     );
-                    
+
                     if (!delegateMsg) {
                         return null;
                     }
-                    
+
                     return {
                         hash: tx.txhash,
                         height: parseInt(tx.height),
@@ -283,24 +284,24 @@ export class TransactionClient extends BaseClient {
                     };
                 })
                 .filter(Boolean);
-                
+
             const unbondingTransactions = filteredTransactions
                 .filter((tx: any) => {
-                    const hasUndelegate = tx.body.messages.some((msg: any) => 
+                    const hasUndelegate = tx.body.messages.some((msg: any) =>
                         msg['@type'] === '/babylon.epoching.v1.MsgWrappedUndelegate'
                     );
                     return hasUndelegate;
                 })
                 .map((tx: any) => {
-                    // Undelegate mesajını bul
-                    const undelegateMsg = tx.body.messages.find((msg: any) => 
+                    // Find the undelegate message
+                    const undelegateMsg = tx.body.messages.find((msg: any) =>
                         msg['@type'] === '/babylon.epoching.v1.MsgWrappedUndelegate'
                     );
-                    
+
                     if (!undelegateMsg) {
                         return null;
                     }
-                    
+
                     return {
                         hash: tx.txhash,
                         height: parseInt(tx.height),
@@ -313,8 +314,8 @@ export class TransactionClient extends BaseClient {
                         }
                     };
                 })
-                .filter(Boolean); // Null değerleri temizle
-                
+                .filter(Boolean); // Clear null values
+
             return {
                 delegateTransactions,
                 unbondingTransactions
@@ -324,4 +325,4 @@ export class TransactionClient extends BaseClient {
             throw error;
         }
     }
-} 
+}
