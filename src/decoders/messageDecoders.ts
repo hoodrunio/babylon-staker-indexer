@@ -149,7 +149,7 @@ class MessageRegistry {
       if (decoded.msg) {
         try {
           const jsonMsg = JSON.parse(new TextDecoder().decode(decoded.msg));
-          return { ...decoded, decodedMsg: jsonMsg };
+          return { ...decoded, msg: jsonMsg };
         } catch {
           // If JSON parsing fails, return the original content
         }
@@ -161,7 +161,7 @@ class MessageRegistry {
       if (decoded.msg) {
         try {
           const jsonMsg = JSON.parse(new TextDecoder().decode(decoded.msg));
-          return { ...decoded, decodedMsg: jsonMsg };
+          return { ...decoded, msg: jsonMsg };
         } catch {
           // If JSON parsing fails, return the original content
         }
@@ -174,7 +174,7 @@ class MessageRegistry {
       if (decoded.msg) {
         try {
           const jsonMsg = JSON.parse(new TextDecoder().decode(decoded.msg));
-          return { ...decoded, decodedMsg: jsonMsg };
+          return { ...decoded, msg: jsonMsg };
         } catch {
           // If JSON parsing fails, return the original content
         }
