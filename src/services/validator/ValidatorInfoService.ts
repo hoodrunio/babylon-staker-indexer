@@ -7,6 +7,8 @@ import { FinalityProviderService } from '../finality/FinalityProviderService';
 import { logger } from '../../utils/logger';
 import { bech32 } from 'bech32';
 import { getKeybaseLogo } from '../../utils/keybase';
+import mongoose from 'mongoose';
+
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
     private readonly babylonClients: Map<Network, BabylonClient>;
@@ -465,6 +467,26 @@ export class ValidatorInfoService {
             return bech32.encode('bbn', decoded.words);
         } catch (error) {
             logger.error('[ValidatorInfo] Error converting valoper to account address:', error);
+            throw error;
+        }
+    }
+
+    public async getValidatorById(id: string, network?: Network): Promise<any> {
+        try {
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                throw new Error('Invalid validator ID format');
+            }
+            
+            const query: any = { _id: id };
+            
+            // Add network filter if provided
+            if (network) {
+                query.network = network;
+            }
+            
+            return await ValidatorInfo.findOne(query);
+        } catch (error) {
+            logger.error('[ValidatorInfo] Error getting validator by ID:', error);
             throw error;
         }
     }

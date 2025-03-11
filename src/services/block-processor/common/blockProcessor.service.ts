@@ -2,18 +2,24 @@
  * Block processing service
  */
 
-import { BaseBlock, BlockProcessorError, SignatureInfo, WebsocketBlockEvent } from '../types/common';
+import { BaseBlock, BlockProcessorError, WebsocketBlockEvent } from '../types/common';
 import { IBlockProcessorService, IBlockStorage } from '../types/interfaces';
 import { Network } from '../../../types/finality';
 import { BabylonClient } from '../../../clients/BabylonClient';
 import { logger } from '../../../utils/logger';
-import { ValidatorInfoService } from '../../validator/ValidatorInfoService';
-import { Types } from 'mongoose';
+import { BlockService } from '../block/service/BlockService';
+import { IBlockService } from '../block/service/IBlockService';
+import { ValidatorInfoAdapter } from '../block/service/ValidatorInfoAdapter';
+import { IValidatorInfoAdapter } from '../block/service/IValidatorInfoAdapter';
+import { BlockFetcherAdapter } from '../block/service/BlockFetcherAdapter';
+import { IBlockFetcherAdapter } from '../block/service/IBlockFetcherAdapter';
 
 export class BlockProcessorService implements IBlockProcessorService {
   private network: Network;
   private babylonClient: BabylonClient;
-  private validatorInfoService: ValidatorInfoService;
+  private blockService: IBlockService = BlockService.getInstance();
+  private validatorInfoAdapter: IValidatorInfoAdapter = ValidatorInfoAdapter.getInstance();
+  private blockFetcherAdapter: IBlockFetcherAdapter = BlockFetcherAdapter.getInstance();
 
   constructor(
     private readonly blockStorage: IBlockStorage, 
@@ -22,7 +28,28 @@ export class BlockProcessorService implements IBlockProcessorService {
   ) {
     this.network = network;
     this.babylonClient = babylonClient || BabylonClient.getInstance(network);
-    this.validatorInfoService = ValidatorInfoService.getInstance();
+    this.initializeServices();
+  }
+
+  /**
+   * Initialize required services
+   */
+  private initializeServices(): void {
+    try {
+      // Services are already initialized in property declarations
+      // This method is kept for potential future initialization needs
+      logger.debug('[BlockProcessorService] Services initialized successfully');
+    } catch (error) {
+      logger.error(`[BlockProcessorService] Error initializing services: ${this.formatError(error)}`);
+      throw new BlockProcessorError(`Failed to initialize services: ${this.formatError(error)}`);
+    }
+  }
+
+  /**
+   * Format error message consistently
+   */
+  private formatError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   /**
@@ -104,62 +131,77 @@ export class BlockProcessorService implements IBlockProcessorService {
    * Get proposer validator info
    */
   private async getProposerValidator(proposerAddress: string): Promise<any> {
-    const proposerValidator = await this.validatorInfoService.getValidatorByHexAddress(
-      proposerAddress, 
-      this.network
-    );
-    
-    if (!proposerValidator) {
-      throw new BlockProcessorError(`Proposer validator not found: ${proposerAddress}`);
+    try {
+      const proposerValidator = await this.validatorInfoAdapter.getValidatorByHexAddress(
+        proposerAddress, 
+        this.network
+      );
+      
+      if (!proposerValidator) {
+        throw new BlockProcessorError(`Proposer validator not found: ${proposerAddress}`);
+      }
+      
+      return proposerValidator;
+    } catch (error) {
+      logger.error(`[BlockProcessorService] Error getting proposer validator: ${this.formatError(error)}`);
+      throw new BlockProcessorError(`Failed to get proposer validator: ${this.formatError(error)}`);
     }
-    
-    return proposerValidator;
   }
 
   /**
    * Process signatures and return valid ones
    */
-  private async processSignatures(signatures: any[]): Promise<SignatureInfo[]> {
-    const signaturesPromises = signatures.map(async (sig: any) => {
-      if (!sig.validator_address) {
-        return null; // Skip invalid signatures
-      }
+  private async processSignatures(signatures: any[]): Promise<any[]> {
+    try {
+      const signaturesPromises = signatures.map(async (sig: any) => {
+        if (!sig.validator_address) {
+          return null; // Skip invalid signatures
+        }
+        
+        const validator = await this.validatorInfoAdapter.getValidatorByHexAddress(
+          sig.validator_address, 
+          this.network
+        );
+        
+        if (!validator) {
+          return null; // Skip if validator not found
+        }
+        
+        // Convert to SignatureInfo type
+        return {
+          validator: validator._id,
+          timestamp: sig.timestamp || ''
+        };
+      });
       
-      const validator = await this.validatorInfoService.getValidatorByHexAddress(
-        sig.validator_address, 
-        this.network
-      );
-      
-      if (!validator) {
-        return null; // Skip if validator not found
-      }
-      
-      // Convert to SignatureInfo type
-      return {
-        validator: validator._id,
-        timestamp: sig.timestamp || ''
-      };
-    });
-    
-    // Resolve promises and filter out nulls
-    const results = await Promise.all(signaturesPromises);
-    return results.filter((sig): sig is SignatureInfo => sig !== null);
+      // Resolve promises and filter out nulls
+      const results = await Promise.all(signaturesPromises);
+      return results.filter((sig) => sig !== null);
+    } catch (error) {
+      logger.error(`[BlockProcessorService] Error processing signatures: ${this.formatError(error)}`);
+      throw new BlockProcessorError(`Failed to process signatures: ${this.formatError(error)}`);
+    }
   }
 
   /**
    * Add hash info to block data
    */
   private async enrichBlockWithHash(blockData: any, height: number): Promise<void> {
-    const response = await this.babylonClient.getBlockByHeight(height);
-    
-    if (response) {
-      // Add hash value
-      const hash = response.result.block_id.hash;
-      blockData.block_id = {
-        hash: hash
-      };
-    } else {
-      throw new BlockProcessorError(`Could not get block hash info: ${height}`);
+    try {
+      const fetchedBlock = await this.blockFetcherAdapter.fetchBlockByHeight(height, this.network);
+      
+      if (fetchedBlock && fetchedBlock.result && fetchedBlock.result.block_id) {
+        // Add hash value
+        const hash = fetchedBlock.result.block_id.hash;
+        blockData.block_id = {
+          hash: hash
+        };
+      } else {
+        throw new BlockProcessorError(`Could not get block hash info: ${height}`);
+      }
+    } catch (error) {
+      logger.error(`[BlockProcessorService] Error enriching block with hash: ${this.formatError(error)}`);
+      throw new BlockProcessorError(`Failed to enrich block with hash: ${this.formatError(error)}`);
     }
   }
 
@@ -211,9 +253,9 @@ export class BlockProcessorService implements IBlockProcessorService {
   private createBaseBlock(
     header: any, 
     blockhash: string, 
-    proposerId: Types.ObjectId, 
+    proposerId: any, 
     blockData: any, 
-    signatures: SignatureInfo[],
+    signatures: any[],
     totalGasWanted: string,
     totalGasUsed: string
   ): BaseBlock {
@@ -279,5 +321,4 @@ export class BlockProcessorService implements IBlockProcessorService {
       throw new BlockProcessorError('Block header not found');
     }
   }
-
 } 
