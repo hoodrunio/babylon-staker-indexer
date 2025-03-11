@@ -155,6 +155,7 @@ export class BlockProcessorController {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 50;
       
+      // Hızlı validasyon kontrolleri
       if (!network) {
         res.status(400).json({
           success: false,
@@ -163,7 +164,7 @@ export class BlockProcessorController {
         return;
       }
 
-      // Validate network
+      // Validate network - Desteklenen ağları önbellekte tutabiliriz
       const supportedNetworks = this.blockProcessor.getSupportedNetworks();
       if (!supportedNetworks.includes(network as Network)) {
         res.status(400).json({
@@ -173,7 +174,7 @@ export class BlockProcessorController {
         return;
       }
       
-      // Validate page and limit
+      // Validate page and limit - Basit validasyonlar
       if (isNaN(page) || page <= 0) {
         res.status(400).json({
           success: false,
@@ -190,14 +191,25 @@ export class BlockProcessorController {
         return;
       }
       
+      // İstek başlatıldığında zaman damgası
+      const startTime = Date.now();
+      
       // Get latest transactions with pagination
       const result = await this.txStorage.getLatestTransactions(network as Network, page, limit);
       
+      // İşlem süresi hesaplama
+      const processingTime = Date.now() - startTime;
+      logger.debug(`[BlockProcessorController] getLatestTransactions completed in ${processingTime}ms`);
+      
+      // HTTP yanıtını ayarla
       res.status(200).json({
         success: true,
         data: {
           transactions: result.transactions,
           pagination: result.pagination
+        },
+        meta: {
+          processingTime: `${processingTime}ms`
         }
       });
     } catch (error) {

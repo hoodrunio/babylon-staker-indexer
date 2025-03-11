@@ -46,6 +46,7 @@ export interface ITransaction extends Document {
   createdAt: Date;
   updatedAt: Date;
   reason?: string;
+  firstMessageType?: string;
 }
 
 const TransactionSchema = new Schema({
@@ -98,6 +99,11 @@ const TransactionSchema = new Schema({
   reason: {
     type: String,
     required: false
+  },
+  firstMessageType: {
+    type: String,
+    required: false,
+    index: true
   }
 }, { 
   timestamps: true,
@@ -109,6 +115,8 @@ TransactionSchema.index({ height: 1, network: 1 });
 TransactionSchema.index({ txHash: 1, network: 1 }, { unique: true });
 TransactionSchema.index({ type: 1, time: 1 });
 TransactionSchema.index({ 'meta.typeUrl': 1 });
+// Aggregation pipeline için optimize edilmiş indeks
+TransactionSchema.index({ network: 1, height: -1, time: -1 });
 
 // Model oluştur ve dışa aktar
 export const BlockchainTransaction = mongoose.model<ITransaction>('BlockchainTransaction', TransactionSchema); 

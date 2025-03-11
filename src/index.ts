@@ -6,6 +6,7 @@ import { FinalitySignatureService } from './services/finality/FinalitySignatureS
 import { WebsocketService } from './services/WebsocketService';
 import { BTCDelegationService } from './services/btc-delegations/BTCDelegationService';
 import cors from 'cors';
+import compression from 'compression';
 import { logger } from './utils/logger';
 import { GovernanceIndexerService } from './services/governance/GovernanceIndexerService';
 import { BabylonClient } from './clients/BabylonClient';
@@ -30,6 +31,9 @@ async function startServer() {
         credentials: true,
         maxAge: 86400
     }));
+
+    // Compression middleware - HTTP yanıtlarını sıkıştırır
+    app.use(compression());
 
     // Middleware
     app.use(express.json());

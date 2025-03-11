@@ -63,6 +63,7 @@ export interface SimpleTx {
   height: string;
   status: TxStatus;
   type: string;
+  firstMessageType?: string;
   time: string;
   messageCount: number;
 }

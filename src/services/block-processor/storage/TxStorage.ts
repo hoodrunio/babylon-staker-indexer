@@ -9,6 +9,7 @@ import { logger } from '../../../utils/logger';
 import { BlockchainTransaction, ITransaction } from '../../../database/models/blockchain/Transaction';
 import { Network } from '../../../types/finality';
 import { FetcherService } from '../common/fetcher.service';
+import { PipelineStage } from 'mongoose';
 
 /**
  * Service for storing transaction data
@@ -16,6 +17,9 @@ import { FetcherService } from '../common/fetcher.service';
 export class TxStorage implements ITxStorage {
     private static instance: TxStorage | null = null;
     private fetcherService: FetcherService | null = null;
+    // Cache mekanizması için değişkenler
+    private transactionCache: Map<string, { data: PaginatedTxsResponse, timestamp: number }> = new Map();
+    private readonly CACHE_TTL = 10 * 1000; // 30 saniye cache süresi
     
     private constructor() {
         // Private constructor to enforce singleton pattern
@@ -51,10 +55,105 @@ export class TxStorage implements ITxStorage {
     }
 
     /**
+     * Migrates existing transactions to add firstMessageType field
+     * This is a one-time operation to update existing records
+     */
+    public async migrateExistingTransactions(network: Network): Promise<void> {
+        try {
+            logger.info(`[TxStorage] Starting migration of existing transactions for ${network} to add firstMessageType field`);
+            
+            // Get count of transactions without firstMessageType
+            const countToMigrate = await BlockchainTransaction.countDocuments({ 
+                network, 
+                firstMessageType: { $exists: false } 
+            });
+            
+            if (countToMigrate === 0) {
+                logger.info(`[TxStorage] No transactions need migration for ${network}`);
+                return;
+            }
+            
+            logger.info(`[TxStorage] Found ${countToMigrate} transactions to migrate for ${network}`);
+            
+            // Process in batches to avoid memory issues
+            const batchSize = 100;
+            let processed = 0;
+            
+            while (processed < countToMigrate) {
+                // Get batch of transactions
+                const transactions = await BlockchainTransaction.find({ 
+                    network, 
+                    firstMessageType: { $exists: false } 
+                })
+                .limit(batchSize);
+                
+                // Process each transaction
+                for (const tx of transactions) {
+                    let firstMessageType = 'unknown';
+                    
+                    if (tx.meta && tx.meta.length > 0) {
+                        const firstMeta = tx.meta[0];
+                        if (firstMeta.content) {
+                            if (firstMeta.content.msg) {
+                                // Try to get first key from msg object
+                                const msgKeys = Object.keys(firstMeta.content.msg);
+                                if (msgKeys.length > 0) {
+                                    firstMessageType = msgKeys[0];
+                                }
+                            } else if (firstMeta.content['@type']) {
+                                // If no msg but has @type, use that
+                                firstMessageType = firstMeta.content['@type'];
+                            }
+                        }
+                    }
+                    
+                    // Update transaction
+                    await BlockchainTransaction.updateOne(
+                        { _id: tx._id },
+                        { $set: { firstMessageType } }
+                    );
+                }
+                
+                processed += transactions.length;
+                logger.info(`[TxStorage] Migrated ${processed}/${countToMigrate} transactions for ${network}`);
+                
+                // If we processed less than batchSize, we're done
+                if (transactions.length < batchSize) {
+                    break;
+                }
+            }
+            
+            logger.info(`[TxStorage] Migration completed for ${network}. Migrated ${processed} transactions.`);
+        } catch (error) {
+            logger.error(`[TxStorage] Error migrating transactions: ${this.formatError(error)}`);
+            throw error;
+        }
+    }
+
+    /**
      * Saves transaction to database
      */
     public async saveTx(tx: BaseTx, network: Network): Promise<void> {
         try {
+            // Extract firstMessageType from meta data
+            let firstMessageType = 'unknown';
+            
+            if (tx.meta && tx.meta.length > 0) {
+                const firstMeta = tx.meta[0];
+                if (firstMeta.content) {
+                    if (firstMeta.content.msg) {
+                        // Try to get first key from msg object
+                        const msgKeys = Object.keys(firstMeta.content.msg);
+                        if (msgKeys.length > 0) {
+                            firstMessageType = msgKeys[0];
+                        }
+                    } else if (firstMeta.content['@type']) {
+                        // If no msg but has @type, use that
+                        firstMessageType = firstMeta.content['@type'];
+                    }
+                }
+            }
+            
             // Save to database
             await BlockchainTransaction.findOneAndUpdate(
                 {
@@ -63,7 +162,8 @@ export class TxStorage implements ITxStorage {
                 },
                 {
                     ...tx,
-                    network: network
+                    network: network,
+                    firstMessageType: firstMessageType
                 },
                 {
                     upsert: true,
@@ -607,33 +707,94 @@ export class TxStorage implements ITxStorage {
             page = Math.max(1, page); // Minimum page is 1
             limit = Math.min(100, Math.max(1, limit)); // limit between 1 and 100
             
-            // Get total count for pagination
-            const total = await BlockchainTransaction.countDocuments({ network });
+            // Cache key oluştur
+            const cacheKey = `${network}-${page}-${limit}`;
             
-            // Calculate total pages
-            const pages = Math.ceil(total / limit);
+            // Cache'den kontrol et
+            const cachedData = this.transactionCache.get(cacheKey);
+            const now = Date.now();
+            
+            // Eğer cache'de varsa ve süresi geçmediyse, cache'den döndür
+            if (cachedData && (now - cachedData.timestamp) < this.CACHE_TTL) {
+                logger.debug(`[TxStorage] Returning cached latest transactions for ${network}, page ${page}, limit ${limit}`);
+                return cachedData.data;
+            }
+            
+            // İşlem başlangıç zamanı
+            const startTime = Date.now();
             
             // Calculate skip value for pagination
             const skip = (page - 1) * limit;
             
-            // Get transactions
-            const transactions = await BlockchainTransaction.find({ network })
-                .sort({ height: -1, time: -1 }) // Sort by height and time descending (latest first)
-                .skip(skip)
-                .limit(limit)
-                .select('txHash height status type time messageCount'); // Select only required fields
+            // MongoDB aggregation pipeline kullanarak tek sorguda hem toplam sayıyı hem de işlemleri al
+            // PipelineStage tipini kullanarak doğru tip tanımlaması yapıyoruz
+            const pipeline: PipelineStage[] = [
+                // Sadece belirli ağdaki işlemleri filtrele
+                { $match: { network } },
+                
+                // Facet kullanarak tek sorguda hem toplam sayıyı hem de işlemleri al
+                { 
+                    $facet: {
+                        // Toplam sayıyı hesapla
+                        totalCount: [
+                            { $count: 'count' }
+                        ],
+                        
+                        // İşlemleri getir
+                        transactions: [
+                            // Yükseklik ve zamana göre azalan sırada sırala
+                            { $sort: { height: -1, time: -1 } },
+                            
+                            // Sayfalama için atla
+                            { $skip: skip },
+                            
+                            // Sayfalama için sınırla
+                            { $limit: limit },
+                            
+                            // Sadece gerekli alanları seç
+                            { 
+                                $project: {
+                                    _id: 0,
+                                    txHash: 1,
+                                    height: 1,
+                                    status: 1,
+                                    type: 1,
+                                    time: 1,
+                                    messageCount: 1,
+                                    firstMessageType: 1
+                                } 
+                            }
+                        ]
+                    }
+                }
+            ];
             
-            // Map transactions to SimpleTx type
-            const simpleTxs: SimpleTx[] = transactions.map(tx => ({
+            // Pipeline'ı çalıştır
+            const results = await BlockchainTransaction.aggregate(pipeline);
+            const result = results[0];
+            
+            // Toplam sayıyı al (boş dizi olabilir)
+            const total = result.totalCount.length > 0 ? result.totalCount[0].count : 0;
+            
+            // Toplam sayfa sayısını hesapla
+            const pages = Math.ceil(total / limit);
+            
+            // İşlemleri SimpleTx tipine dönüştür
+            const simpleTxs: SimpleTx[] = result.transactions.map((tx: any) => ({
                 txHash: tx.txHash,
                 height: tx.height,
                 status: tx.status as TxStatus,
                 type: tx.type,
+                firstMessageType: tx.firstMessageType || 'unknown',
                 time: tx.time,
                 messageCount: tx.messageCount
             }));
             
-            return {
+            // İşlem süresi
+            const processingTime = Date.now() - startTime;
+            logger.debug(`[TxStorage] getLatestTransactions pipeline completed in ${processingTime}ms`);
+            
+            const paginatedResponse = {
                 transactions: simpleTxs,
                 pagination: {
                     total,
@@ -642,6 +803,11 @@ export class TxStorage implements ITxStorage {
                     pages
                 }
             };
+            
+            // Sonucu cache'e kaydet
+            this.transactionCache.set(cacheKey, { data: paginatedResponse, timestamp: now });
+            
+            return paginatedResponse;
         } catch (error) {
             logger.error(`[TxStorage] Error getting latest transactions: ${this.formatError(error)}`);
             throw error;
