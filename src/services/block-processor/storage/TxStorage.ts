@@ -19,7 +19,10 @@ export class TxStorage implements ITxStorage {
     private fetcherService: FetcherService | null = null;
     // Cache mekanizması için değişkenler
     private transactionCache: Map<string, { data: PaginatedTxsResponse, timestamp: number }> = new Map();
-    private readonly CACHE_TTL = 10 * 1000; // 30 saniye cache süresi
+    private readonly CACHE_TTL = 10 * 1000; // 10 saniye cache süresi
+    // Range tabanlı pagination için son sayfa bilgilerini saklama
+    private paginationCache: Map<string, { lastItem: any, timestamp: number }> = new Map();
+    private readonly PAGINATION_CACHE_TTL = 60 * 1000; // 60 saniye pagination cache süresi
     
     private constructor() {
         // Private constructor to enforce singleton pattern
@@ -723,64 +726,150 @@ export class TxStorage implements ITxStorage {
             // İşlem başlangıç zamanı
             const startTime = Date.now();
             
-            // Calculate skip value for pagination
-            const skip = (page - 1) * limit;
-            
-            // MongoDB aggregation pipeline kullanarak tek sorguda hem toplam sayıyı hem de işlemleri al
-            // PipelineStage tipini kullanarak doğru tip tanımlaması yapıyoruz
-            const pipeline: PipelineStage[] = [
-                // Sadece belirli ağdaki işlemleri filtrele
-                { $match: { network } },
-                
-                // Facet kullanarak tek sorguda hem toplam sayıyı hem de işlemleri al
-                { 
-                    $facet: {
-                        // Toplam sayıyı hesapla
-                        totalCount: [
-                            { $count: 'count' }
-                        ],
-                        
-                        // İşlemleri getir
-                        transactions: [
-                            // Yükseklik ve zamana göre azalan sırada sırala
-                            { $sort: { height: -1, time: -1 } },
-                            
-                            // Sayfalama için atla
-                            { $skip: skip },
-                            
-                            // Sayfalama için sınırla
-                            { $limit: limit },
-                            
-                            // Sadece gerekli alanları seç
-                            { 
-                                $project: {
-                                    _id: 0,
-                                    txHash: 1,
-                                    height: 1,
-                                    status: 1,
-                                    type: 1,
-                                    time: 1,
-                                    messageCount: 1,
-                                    firstMessageType: 1
-                                } 
-                            }
-                        ]
-                    }
-                }
-            ];
-            
-            // Pipeline'ı çalıştır
-            const results = await BlockchainTransaction.aggregate(pipeline);
-            const result = results[0];
-            
-            // Toplam sayıyı al (boş dizi olabilir)
-            const total = result.totalCount.length > 0 ? result.totalCount[0].count : 0;
+            // Toplam sayıyı al - bu her zaman gerekli
+            const total = await BlockchainTransaction.countDocuments({ network });
             
             // Toplam sayfa sayısını hesapla
             const pages = Math.ceil(total / limit);
             
+            // Range tabanlı pagination için sorgu parametrelerini hazırla
+            let transactions: any[] = [];
+            
+            if (page === 1) {
+                // İlk sayfa için basit sorgu
+                transactions = await BlockchainTransaction.find(
+                    { network },
+                    { 
+                        _id: 0,
+                        txHash: 1, 
+                        height: 1, 
+                        status: 1, 
+                        type: 1, 
+                        time: 1, 
+                        messageCount: 1, 
+                        firstMessageType: 1 
+                    }
+                )
+                .sort({ height: -1, time: -1 })
+                .limit(limit)
+                .lean();
+                
+                // İlk sayfanın son öğesini önbelleğe al (sonraki sayfalar için)
+                if (transactions.length > 0) {
+                    const lastItem = transactions[transactions.length - 1];
+                    this.paginationCache.set(`${network}-page1-${limit}`, { 
+                        lastItem, 
+                        timestamp: now 
+                    });
+                }
+            } else {
+                // Sonraki sayfalar için range tabanlı sorgu
+                // Önceki sayfanın son öğesini bul
+                let previousPageLastItem: any = null;
+                
+                // Önce önbellekte önceki sayfanın son öğesini ara
+                const previousPageKey = `${network}-page${page-1}-${limit}`;
+                const cachedPagination = this.paginationCache.get(previousPageKey);
+                
+                if (cachedPagination && (now - cachedPagination.timestamp) < this.PAGINATION_CACHE_TTL) {
+                    // Önbellekte varsa kullan
+                    previousPageLastItem = cachedPagination.lastItem;
+                    logger.debug(`[TxStorage] Using cached pagination marker for ${previousPageKey}`);
+                } else {
+                    // Önbellekte yoksa, önceki sayfayı sorgulamak zorundayız
+                    // Bu, range tabanlı pagination'in bir dezavantajıdır, ancak önbellek ile minimize edilebilir
+                    const previousPageItems = await BlockchainTransaction.find(
+                        { network },
+                        { 
+                            _id: 0,
+                            txHash: 1, 
+                            height: 1, 
+                            status: 1, 
+                            type: 1, 
+                            time: 1, 
+                            messageCount: 1, 
+                            firstMessageType: 1 
+                        }
+                    )
+                    .sort({ height: -1, time: -1 })
+                    .skip((page - 2) * limit) // Önceki sayfanın başlangıcı
+                    .limit(limit)
+                    .lean();
+                    
+                    if (previousPageItems.length > 0) {
+                        previousPageLastItem = previousPageItems[previousPageItems.length - 1];
+                        // Önbelleğe al
+                        this.paginationCache.set(previousPageKey, { 
+                            lastItem: previousPageLastItem, 
+                            timestamp: now 
+                        });
+                    }
+                }
+                
+                // Eğer önceki sayfanın son öğesi bulunduysa, range tabanlı sorgu yap
+                if (previousPageLastItem) {
+                    // Range tabanlı sorgu - önceki sayfanın son öğesinden sonraki öğeleri getir
+                    transactions = await BlockchainTransaction.find(
+                        { 
+                            network,
+                            $or: [
+                                // Önce height'e göre sırala
+                                { height: { $lt: previousPageLastItem.height } },
+                                // Aynı height varsa, time'a göre sırala
+                                { 
+                                    height: previousPageLastItem.height,
+                                    time: { $lt: previousPageLastItem.time }
+                                }
+                            ]
+                        },
+                        { 
+                            _id: 0,
+                            txHash: 1, 
+                            height: 1, 
+                            status: 1, 
+                            type: 1, 
+                            time: 1, 
+                            messageCount: 1, 
+                            firstMessageType: 1 
+                        }
+                    )
+                    .sort({ height: -1, time: -1 })
+                    .limit(limit)
+                    .lean();
+                } else {
+                    // Önceki sayfa bulunamadıysa, geleneksel skip/limit kullan
+                    logger.warn(`[TxStorage] Could not find previous page marker for ${network}, page ${page}. Falling back to skip/limit.`);
+                    transactions = await BlockchainTransaction.find(
+                        { network },
+                        { 
+                            _id: 0,
+                            txHash: 1, 
+                            height: 1, 
+                            status: 1, 
+                            type: 1, 
+                            time: 1, 
+                            messageCount: 1, 
+                            firstMessageType: 1 
+                        }
+                    )
+                    .sort({ height: -1, time: -1 })
+                    .skip((page - 1) * limit)
+                    .limit(limit)
+                    .lean();
+                }
+                
+                // Bu sayfanın son öğesini önbelleğe al (sonraki sayfalar için)
+                if (transactions.length > 0) {
+                    const lastItem = transactions[transactions.length - 1];
+                    this.paginationCache.set(`${network}-page${page}-${limit}`, { 
+                        lastItem, 
+                        timestamp: now 
+                    });
+                }
+            }
+            
             // İşlemleri SimpleTx tipine dönüştür
-            const simpleTxs: SimpleTx[] = result.transactions.map((tx: any) => ({
+            const simpleTxs: SimpleTx[] = transactions.map(tx => ({
                 txHash: tx.txHash,
                 height: tx.height,
                 status: tx.status as TxStatus,
@@ -792,7 +881,7 @@ export class TxStorage implements ITxStorage {
             
             // İşlem süresi
             const processingTime = Date.now() - startTime;
-            logger.debug(`[TxStorage] getLatestTransactions pipeline completed in ${processingTime}ms`);
+            logger.debug(`[TxStorage] getLatestTransactions range-based pagination completed in ${processingTime}ms`);
             
             const paginatedResponse = {
                 transactions: simpleTxs,
