@@ -55,6 +55,7 @@ export interface BaseTx {
   time: string;
   meta?: TxMessage[];
   totalCount?: number;
+  reason?: string;
 }
 
 export interface SimpleTx {

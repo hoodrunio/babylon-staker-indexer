@@ -41,7 +41,8 @@ export class TransactionProcessorService implements ITransactionProcessorService
         status, 
         decodedTx, 
         mainMessageType, 
-        meta
+        meta,
+        tx_result
       );
 
       // Save to database
@@ -160,9 +161,10 @@ export class TransactionProcessorService implements ITransactionProcessorService
     status: TxStatus, 
     decodedTx: any, 
     messageType: string, 
-    meta: TxMessage[]
+    meta: TxMessage[],
+    txResult?: any
   ): BaseTx {
-    return {
+    const baseTx: BaseTx = {
       txHash: hash,
       height: height.toString(),
       status,
@@ -172,6 +174,13 @@ export class TransactionProcessorService implements ITransactionProcessorService
       time: new Date().toISOString(), // TX time usually comes from block, but not available here
       meta
     };
+    
+    // Add reason for failed transactions
+    if (status === TxStatus.FAILED && txResult?.log) {
+      baseTx.reason = txResult.log;
+    }
+    
+    return baseTx;
   }
 
   /**

@@ -45,6 +45,7 @@ export interface ITransaction extends Document {
   network: string;
   createdAt: Date;
   updatedAt: Date;
+  reason?: string;
 }
 
 const TransactionSchema = new Schema({
@@ -93,6 +94,10 @@ const TransactionSchema = new Schema({
     required: true,
     enum: ['MAINNET', 'TESTNET'],
     index: true
+  },
+  reason: {
+    type: String,
+    required: false
   }
 }, { 
   timestamps: true,

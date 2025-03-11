@@ -326,7 +326,7 @@ export class TxStorage implements ITxStorage {
      * Maps ITransaction model to BaseTx
      */
     private mapToBaseTx(tx: ITransaction): BaseTx {
-        return {
+        const baseTx: BaseTx = {
             txHash: tx.txHash,
             height: tx.height,
             status: tx.status as TxStatus,
@@ -336,13 +336,20 @@ export class TxStorage implements ITxStorage {
             time: tx.time,
             meta: tx.meta as TxMessage[]
         };
+        
+        // Add reason for failed transactions
+        if (tx.status === TxStatus.FAILED && tx.reason) {
+            baseTx.reason = tx.reason;
+        }
+        
+        return baseTx;
     }
 
     /**
      * Maps ITransaction model to BaseTx for block view (without meta data)
      */
     private mapToBlockTx(tx: ITransaction): BaseTx {
-        return {
+        const baseTx: BaseTx = {
             txHash: tx.txHash,
             height: tx.height,
             status: tx.status as TxStatus,
@@ -352,6 +359,13 @@ export class TxStorage implements ITxStorage {
             time: tx.time,
         //  meta: tx.meta as TxMessage[]
         };
+        
+        // Add reason for failed transactions
+        if (tx.status === TxStatus.FAILED && tx.reason) {
+            baseTx.reason = tx.reason;
+        }
+        
+        return baseTx;
     }
 
     /**
@@ -394,7 +408,8 @@ export class TxStorage implements ITxStorage {
             // Use timestamp if available, otherwise current time
             const time = rawTx.timestamp || new Date().toISOString();
             
-            return {
+            // Create base transaction object
+            const baseTx: BaseTx = {
                 txHash,
                 height,
                 status,
@@ -404,6 +419,13 @@ export class TxStorage implements ITxStorage {
                 time,
                 meta
             };
+            
+            // Add reason for failed transactions
+            if (status === TxStatus.FAILED && rawTx.tx_response.raw_log) {
+                baseTx.reason = rawTx.tx_response.raw_log;
+            }
+            
+            return baseTx;
         } catch (error) {
             logger.error(`[TxStorage] Error converting raw tx to BaseTx: ${this.formatError(error)}`);
             throw new Error(`Failed to convert raw transaction: ${this.formatError(error)}`);
@@ -467,7 +489,8 @@ export class TxStorage implements ITxStorage {
                 }
             }
             
-            return {
+            // Create base transaction object
+            const baseTx: BaseTx = {
                 txHash,
                 height,
                 status,
@@ -477,6 +500,13 @@ export class TxStorage implements ITxStorage {
                 time,
                 meta // Empty array for minimal response
             };
+            
+            // Add reason for failed transactions
+            if (status === TxStatus.FAILED && rawTx.tx_result?.log) {
+                baseTx.reason = rawTx.tx_result.log;
+            }
+            
+            return baseTx;
         } catch (error) {
             logger.error(`[TxStorage] Error converting tx_search result to BaseTx: ${this.formatError(error)}`);
             throw new Error(`Failed to convert tx_search result: ${this.formatError(error)}`);
