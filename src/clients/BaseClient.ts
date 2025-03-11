@@ -2,6 +2,11 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { Network } from '../types/finality';
 import { logger } from '../utils/logger';
 
+// Özel hata tipleri için interface ekleyelim
+export interface CustomError extends Error {
+    originalError?: any;
+}
+
 export interface RetryConfig extends InternalAxiosRequestConfig {
     retry?: boolean;
     currentRetryCount?: number;
@@ -17,9 +22,9 @@ export abstract class BaseClient {
     protected readonly baseUrl: string;
     protected readonly baseRpcUrl: string;
     protected readonly wsEndpoint: string;
-    protected readonly MAX_RETRIES = 5;
+    protected readonly MAX_RETRIES = 3;
     protected readonly RETRY_DELAY = 2000; // 2 seconds
-    protected readonly MAX_RETRY_DELAY = 10000; // 10 seconds
+    protected readonly MAX_RETRY_DELAY = 5000; // 5 seconds
 
     public constructor(
         network: Network,
@@ -75,6 +80,48 @@ export abstract class BaseClient {
                 // If no retry config or request already retried, reject the error
                 if (!config || !config.retry) {
                     return Promise.reject(error);
+                }
+
+                // Check for specific error conditions where we shouldn't retry with the same URL
+                // For transactions not found error
+                if (error.response?.data?.message && 
+                    typeof error.response.data.message === 'string' &&
+                    error.response.data.message.includes('tx not found')) {
+                    
+                    // Create a special error for transaction not found
+                    const txNotFoundError: CustomError = new Error('SPECIAL_ERROR_TX_NOT_FOUND');
+                    txNotFoundError.name = 'TxNotFoundError';
+                    txNotFoundError.originalError = error;
+                    return Promise.reject(txNotFoundError);
+                }
+                
+                // For blocks with height not available error
+                if (error.response?.data?.error?.data && 
+                    typeof error.response.data.error.data === 'string' &&
+                    error.response.data.error.data.includes('height') && 
+                    error.response.data.error.data.includes('is not available')) {
+                    
+                    // Create a special error for height not available
+                    const heightNotAvailableError: CustomError = new Error('SPECIAL_ERROR_HEIGHT_NOT_AVAILABLE');
+                    heightNotAvailableError.name = 'HeightNotAvailableError';
+                    heightNotAvailableError.originalError = error;
+                    return Promise.reject(heightNotAvailableError);
+                }
+                
+                // Geçersiz Hex formatı hataları için (odd length hex string, invalid byte)
+                if (error.response?.data?.message && 
+                    typeof error.response.data.message === 'string' &&
+                    (error.response.data.message.includes('odd length hex string') ||
+                     error.response.data.message.includes('invalid byte'))) {
+                        
+                    // Bu tür hatalar için hiç retry yapmayalım, doğrudan hatayı fırlatalım
+                    logger.warn(`[${this.constructor.name}] Invalid hex format error, not retrying: ${error.response.data.message}`);
+                    
+                    // Özel bir hata oluştur
+                    const invalidHexError: CustomError = new Error('INVALID_HEX_FORMAT');
+                    invalidHexError.name = 'InvalidHexFormatError';
+                    invalidHexError.originalError = error;
+                    return Promise.reject(invalidHexError);
                 }
 
                 // Initialize retry counter

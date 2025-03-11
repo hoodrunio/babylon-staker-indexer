@@ -5,6 +5,7 @@ import { GovernanceClient } from './GovernanceClient';
 import { FinalityClient } from './FinalityClient';
 import { StakingClient } from './StakingClient';
 import { logger } from '../utils/logger';
+import { CustomError } from './BaseClient';
 
 // New interface and classes for URL management
 export interface EndpointConfig {
@@ -278,12 +279,43 @@ export class BabylonClient {
      */
     private async withFailover<T>(operation: () => Promise<T>): Promise<T> {
         const maxRetries = this.urlManager.getNodeUrls().length;
+        let specialError: CustomError | null = null;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 return await operation();
             } catch (error) {
                 logger.warn(`[BabylonClient] Operation failed on attempt ${attempt + 1}/${maxRetries} for ${this.network}`);
+
+                // Özel hata türlerini kontrol et
+                if (error instanceof Error) {
+                    // İşlem bulunamadı hatası
+                    if (error.name === 'TxNotFoundError') {
+                        if (specialError) {
+                            // Önceki denemede de aynı hata varsa, sonlandır
+                            logger.info(`[BabylonClient] Transaction not found error persists across multiple nodes, stopping retries.`);
+                            throw error;
+                        }
+                        // İlk kez bu hatayı alıyorsak, kaydedip farklı bir URL ile deneyelim
+                        specialError = error as CustomError;
+                    }
+                    // Blok yüksekliği mevcut değil hatası
+                    else if (error.name === 'HeightNotAvailableError') {
+                        if (specialError) {
+                            // Önceki denemede de aynı hata varsa, sonlandır
+                            logger.info(`[BabylonClient] Height not available error persists across multiple nodes, stopping retries.`);
+                            throw error;
+                        }
+                        // İlk kez bu hatayı alıyorsak, kaydedip farklı bir URL ile deneyelim
+                        specialError = error as CustomError;
+                    }
+                    // Geçersiz Hex formatı hatası
+                    else if (error.name === 'InvalidHexFormatError') {
+                        // Hex formatı hatalarında hiç rotasyon yapmadan direkt hatayı fırlat
+                        logger.info(`[BabylonClient] Invalid hex format error detected, no retry necessary.`);
+                        throw error;
+                    }
+                }
 
                 // If not the last attempt, rotate clients and retry
                 if (attempt < maxRetries - 1) {

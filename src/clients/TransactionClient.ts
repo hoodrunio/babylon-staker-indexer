@@ -1,4 +1,4 @@
-import { BaseClient } from './BaseClient';
+import { BaseClient, CustomError } from './BaseClient';
 import { logger } from '../utils/logger';
 
 /**
@@ -35,9 +35,37 @@ export class TransactionClient extends BaseClient {
             }
             
             return response.data;
-        } catch (error) {
+        } catch (error: any) {
+            // "tx not found" hatası için özel durum
+            if (error.response?.data?.message && 
+                error.response.data.message.includes('tx not found')) {
+                
+                logger.warn(`[TransactionClient] Transaction ${txHash} not found for ${this.network}`);
+                
+                // Özel bir hata oluştur
+                const txNotFoundError: CustomError = new Error('SPECIAL_ERROR_TX_NOT_FOUND');
+                txNotFoundError.name = 'TxNotFoundError';
+                txNotFoundError.originalError = error;
+                throw txNotFoundError;
+            }
+            
+            // Geçersiz hex formatı hatasını kontrol et
+            if (error.response?.data?.message && 
+                typeof error.response.data.message === 'string' &&
+                (error.response.data.message.includes('odd length hex string') ||
+                 error.response.data.message.includes('invalid byte'))) {
+                
+                logger.warn(`[TransactionClient] Invalid hex format in transaction hash ${txHash} for ${this.network}`);
+                
+                // Özel bir hata oluştur
+                const invalidHexError: CustomError = new Error('INVALID_HEX_FORMAT');
+                invalidHexError.name = 'InvalidHexFormatError';
+                invalidHexError.originalError = error;
+                throw invalidHexError;
+            }
+            
             logger.error(`[TransactionClient] Error getting transaction ${txHash} for ${this.network}:`, error);
-            return null;
+            throw error;
         }
     }
 

@@ -1,4 +1,4 @@
-import { BaseClient } from './BaseClient';
+import { BaseClient, CustomError } from './BaseClient';
 import { logger } from '../utils/logger';
 import axios from 'axios';
 
@@ -160,6 +160,15 @@ export class BlockClient extends BaseClient {
             return response.data;
         } catch (error) {
             if (error instanceof Error) {
+                // HTTP 500 hatalarını yakalamak için
+                if (error.message && error.message.includes('is not available')) {
+                    // Özel bir hata oluştur
+                    const blockNotFoundError: CustomError = new Error('SPECIAL_ERROR_HEIGHT_NOT_AVAILABLE');
+                    blockNotFoundError.name = 'HeightNotAvailableError';
+                    blockNotFoundError.originalError = error;
+                    throw blockNotFoundError;
+                }
+                
                 logger.error(`[BlockClient] Error getting block at height ${height} for ${this.network}: ${error.message}`);
                 if (error.stack) {
                     logger.debug(`[BlockClient] Error stack: ${error.stack}`);
