@@ -18,7 +18,7 @@ export interface BlockResult {
 }
 
 /**
- * Client for querying block data
+ * Client used to retrieve block data
  */
 export class BlockClient extends BaseClient {
     /**
@@ -61,7 +61,7 @@ export class BlockClient extends BaseClient {
     }
 
     /**
-     * Retrieves block results at a given height
+     * Retrieves block results for the specified height
      * @param height Block height
      */
     async getBlockResults(height: number): Promise<BlockResult | null> {
@@ -143,17 +143,15 @@ export class BlockClient extends BaseClient {
     }
 
     /**
-     * Gets a block at a specific height
+     * Gets a block by the specified height
      * @param height Block height
      */
     public async getBlockByHeight(height: number): Promise<any> {
         try {
             logger.debug(`[BlockClient] Getting block at height ${height} for ${this.network}`);
 
-            // Request with retry mechanism using Axios
             const response = await this.client.get(`${this.baseRpcUrl}/block?height=${height}`);
 
-            // Check the data structure
             if (!response.data || !response.data.result || !response.data.result.block) {
                 logger.error(`[BlockClient] Invalid response for block at height ${height} for ${this.network}: ${JSON.stringify(response.data)}`);
                 throw new Error(`Invalid response for block at height ${height}`);
@@ -161,7 +159,6 @@ export class BlockClient extends BaseClient {
 
             return response.data;
         } catch (error) {
-            // Log error details
             if (error instanceof Error) {
                 logger.error(`[BlockClient] Error getting block at height ${height} for ${this.network}: ${error.message}`);
                 if (error.stack) {
@@ -171,13 +168,12 @@ export class BlockClient extends BaseClient {
                 logger.error(`[BlockClient] Unknown error getting block at height ${height} for ${this.network}`);
             }
 
-            // Forward the error to upper layers, to be handled by BabylonClient
             throw error;
         }
     }
 
     /**
-     * Searches for transactions at a given height
+     * Searches for transactions at the given height
      * @param height Block height to search for transactions
      */
     public async getTxSearch(height: number): Promise<any> {
@@ -191,25 +187,20 @@ export class BlockClient extends BaseClient {
 
             logger.debug(`[BlockClient] Fetching transactions from: ${url.toString()}`);
 
-            // Try with a longer timeout
             const response = await this.fetchWithTimeout(url.toString(), 15000);
 
-            // Check response status
             if (!response.ok) {
                 logger.error(`[BlockClient] HTTP error ${response.status} for tx_search at height ${height} for ${this.network}`);
                 throw new Error(`HTTP error ${response.status} for tx_search at height ${height}`);
             }
 
-            // Parse JSON response
             const data = await response.json() as any;
 
-            // Check the data structure
             if (!data || !data.result) {
                 logger.error(`[BlockClient] Invalid response for tx_search at height ${height} for ${this.network}: ${JSON.stringify(data)}`);
                 throw new Error(`Invalid response for tx_search at height ${height}`);
             }
 
-            // Return in tx_search.json format
             return {
                 jsonrpc: data.jsonrpc,
                 id: data.id,
@@ -219,7 +210,6 @@ export class BlockClient extends BaseClient {
                 }
             };
         } catch (error) {
-            // Log error details
             if (error instanceof Error) {
                 logger.error(`[BlockClient] Error getting transactions for height ${height} for ${this.network}: ${error.message}`);
                 if (error.stack) {
@@ -229,7 +219,6 @@ export class BlockClient extends BaseClient {
                 logger.error(`[BlockClient] Unknown error getting transactions for height ${height} for ${this.network}`);
             }
 
-            // Try an alternative method - with Axios
             try {
                 logger.debug(`[BlockClient] Retrying tx_search with axios for height ${height} for ${this.network}`);
 
@@ -246,7 +235,6 @@ export class BlockClient extends BaseClient {
                     throw new Error(`Invalid axios response for tx_search at height ${height}`);
                 }
 
-                // Return in tx_search.json format
                 return {
                     jsonrpc: axiosResponse.data.jsonrpc,
                     id: axiosResponse.data.id,
@@ -257,7 +245,7 @@ export class BlockClient extends BaseClient {
                 };
             } catch (axiosError) {
                 logger.error(`[BlockClient] Axios retry also failed for tx_search at height ${height} for ${this.network}`);
-                throw error; // Throw original error
+                throw error; // Re-throw the original error
             }
         }
     }

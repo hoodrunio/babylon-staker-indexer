@@ -2,14 +2,14 @@ import { BaseClient } from './BaseClient';
 import { logger } from '../utils/logger';
 
 /**
- * Staking verilerini almak için kullanılan istemci
+ * Client used to retrieve staking data
  */
 export class StakingClient extends BaseClient {
     /**
-     * @param network Ağ tipi
+     * @param network Network type
      * @param nodeUrl Node URL
      * @param rpcUrl RPC URL
-     * @param wsUrl WebSocket URL (opsiyonel)
+     * @param wsUrl WebSocket URL (optional)
      */
     public constructor(
         network: any,
@@ -21,8 +21,8 @@ export class StakingClient extends BaseClient {
     }
 
     /**
-     * Unbonding süresini alır
-     * @param validatorAddress Validator adresi (opsiyonel)
+     * Gets the unbonding period
+     * @param validatorAddress Validator address (optional)
      */
     public async getUnbondingPeriod(validatorAddress?: string): Promise<number> {
         try {
@@ -47,4 +47,4 @@ export class StakingClient extends BaseClient {
             return 21 * 24 * 60 * 60;
         }
     }
-} 
+}

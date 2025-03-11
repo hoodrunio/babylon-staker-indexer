@@ -2,14 +2,14 @@ import { BaseClient } from './BaseClient';
 import { logger } from '../utils/logger';
 
 /**
- * Yönetişim (governance) verilerini almak için kullanılan istemci
+ * Client used to retrieve governance data
  */
 export class GovernanceClient extends BaseClient {
     /**
-     * @param network Ağ tipi
+     * @param network Network type
      * @param nodeUrl Node URL
      * @param rpcUrl RPC URL
-     * @param wsUrl WebSocket URL (opsiyonel)
+     * @param wsUrl WebSocket URL (optional)
      */
     public constructor(
         network: any,
@@ -21,7 +21,7 @@ export class GovernanceClient extends BaseClient {
     }
 
     /**
-     * Tüm teklifleri (proposals) alır
+     * Gets all proposals
      */
     async getProposals(): Promise<any[]> {
         try {
@@ -54,8 +54,8 @@ export class GovernanceClient extends BaseClient {
     }
 
     /**
-     * Belirli bir teklif için oyları alır
-     * @param proposalId Teklif ID'si
+     * Gets the votes for a specific proposal
+     * @param proposalId Proposal ID
      */
     async getProposalVotes(proposalId: number): Promise<any[]> {
         try {
@@ -88,8 +88,8 @@ export class GovernanceClient extends BaseClient {
     }
 
     /**
-     * Belirli bir teklif için sayım sonuçlarını alır
-     * @param proposalId Teklif ID'si
+     * Gets the tally results for a specific proposal
+     * @param proposalId Proposal ID
      */
     async getProposalTally(proposalId: number): Promise<any> {
         try {
@@ -109,8 +109,8 @@ export class GovernanceClient extends BaseClient {
     }
 
     /**
-     * Belirli bir teklifin detaylarını alır
-     * @param proposalId Teklif ID'si
+     * Gets the details of a specific proposal
+     * @param proposalId Proposal ID
      */
     async getProposalDetails(proposalId: number): Promise<any> {
         try {
@@ -130,7 +130,7 @@ export class GovernanceClient extends BaseClient {
     }
 
     /**
-     * Yönetişim parametrelerini alır
+     * Gets the governance parameters
      */
     async getGovernanceParams(): Promise<any> {
         try {
@@ -148,4 +148,4 @@ export class GovernanceClient extends BaseClient {
             return null;
         }
     }
-} 
+}

@@ -72,46 +72,15 @@ export abstract class BaseClient {
             async (error) => {
                 const config = error.config as RetryConfig;
 
-                // If there is no retry configuration or the request has already been retried, throw the error
+                // If no retry config or request already retried, reject the error
                 if (!config || !config.retry) {
                     return Promise.reject(error);
-                }
-
-                // Add check for transaction not found error
-                if (error.response && error.response.data && config.url) {
-                    // Tx not found error check
-                    if (config.url.includes('/cosmos/tx/v1beta1/txs/') &&
-                        error.response.data.message &&
-                        error.response.data.message.includes('tx not found')) {
-
-                        logger.warn(`[${this.constructor.name}] Transaction not found for ${config.url}, need to try another endpoint`);
-
-                        // Throw transaction not found error with custom error message
-                        error.isNotFoundError = true;
-                        error.needsEndpointRotation = true;
-                        return Promise.reject(error);
-                    }
-
-                    // Block not found error check
-                    if (config.url.includes('/block?height=') &&
-                        error.response.data.error &&
-                        error.response.data.error.data &&
-                        error.response.data.error.data.includes('height') &&
-                        error.response.data.error.data.includes('is not available')) {
-
-                        logger.warn(`[${this.constructor.name}] Block height is not available for ${config.url}, need to try another endpoint`);
-
-                        // Throw block not found error with custom error message
-                        error.isNotFoundError = true;
-                        error.needsEndpointRotation = true;
-                        return Promise.reject(error);
-                    }
                 }
 
                 // Initialize retry counter
                 config.currentRetryCount = config.currentRetryCount ?? 0;
 
-                // If the maximum number of retries has been reached, throw the error
+                // If maximum retries reached, reject the error
                 if (config.currentRetryCount >= this.MAX_RETRIES) {
                     logger.error(`[${this.constructor.name}] Maximum retries (${this.MAX_RETRIES}) reached for ${config.url}`);
                     return Promise.reject(error);
@@ -120,7 +89,7 @@ export abstract class BaseClient {
                 // Increment retry counter
                 config.currentRetryCount += 1;
 
-                // Calculate waiting time with exponential backoff
+                // Calculate wait time with exponential backoff
                 const delayTime = Math.min(
                     this.MAX_RETRY_DELAY,
                     this.RETRY_DELAY * Math.pow(2, config.currentRetryCount - 1)
@@ -128,10 +97,10 @@ export abstract class BaseClient {
 
                 logger.warn(`[${this.constructor.name}] Retry attempt ${config.currentRetryCount}/${this.MAX_RETRIES} for ${config.url} after ${delayTime}ms`);
 
-                // Wait for the specified amount of time
+                // Wait for the specified time
                 await new Promise(resolve => setTimeout(resolve, delayTime));
 
-                // Retry the request - instead of using the axios instance directly, let's create a new request
+                // Retry the request - create a new request instead of using the axios instance directly
                 try {
                     const retryConfig = { ...config };
                     return this.client(retryConfig);
@@ -143,7 +112,7 @@ export abstract class BaseClient {
     }
 
     /**
-     * Helper method that provides retry for any asynchronous operation
+     * Helper method that provides retry functionality for any asynchronous operation
      * @param operation Asynchronous operation to retry
      * @param fallback Value to return if all attempts fail
      * @param operationName Name of the operation (for logging)
@@ -180,8 +149,8 @@ export abstract class BaseClient {
     }
 
     /**
-     * Makes a fetch request to the given URL with timeout protection
-     * @param url URL to make the request to
+     * Makes a timeout-protected fetch request to the given URL
+     * @param url URL to request
      * @param timeout Timeout duration (ms)
      */
     protected async fetchWithTimeout(url: string, timeout: number = 10000): Promise<Response> {
@@ -201,14 +170,14 @@ export abstract class BaseClient {
     }
 
     /**
-     * Returns the network the client is using
+     * Returns the network used by the client
      */
     public getNetwork(): Network {
         return this.network;
     }
 
     /**
-     * Returns the websocket endpoint URL
+     * Returns the WebSocket endpoint URL
      */
     public getWsEndpoint(): string {
         return this.wsEndpoint;

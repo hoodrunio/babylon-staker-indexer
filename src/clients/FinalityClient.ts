@@ -3,16 +3,16 @@ import { logger } from '../utils/logger';
 import { FinalityParams, FinalityProvider, Vote, CurrentEpochResponse } from '../types/finality';
 
 /**
- * Finality verilerini almak için kullanılan istemci
+ * Client used to retrieve finality data
  */
 export class FinalityClient extends BaseClient {
     private currentEpochInfo: CurrentEpochResponse | null = null;
 
     /**
-     * @param network Ağ tipi
+     * @param network Network type
      * @param nodeUrl Node URL
      * @param rpcUrl RPC URL
-     * @param wsUrl WebSocket URL (opsiyonel)
+     * @param wsUrl WebSocket URL (optional)
      */
     public constructor(
         network: any,
@@ -24,7 +24,7 @@ export class FinalityClient extends BaseClient {
     }
 
     /**
-     * Mevcut epoch bilgilerini alır
+     * Gets the current epoch information
      */
     async getCurrentEpoch(): Promise<CurrentEpochResponse> {
         return this.retryOperation(
@@ -49,7 +49,7 @@ export class FinalityClient extends BaseClient {
     }
 
     /**
-     * Finality parametrelerini alır
+     * Gets the finality parameters
      */
     async getFinalityParams(): Promise<FinalityParams> {
         try {
@@ -62,8 +62,8 @@ export class FinalityClient extends BaseClient {
     }
 
     /**
-     * Belirli bir yükseklikteki aktif finality sağlayıcıları alır
-     * @param height Blok yüksekliği
+     * Gets the active finality providers at a specific height
+     * @param height Block height
      */
     async getActiveFinalityProvidersAtHeight(height: number): Promise<FinalityProvider[]> {
         try {
@@ -85,8 +85,8 @@ export class FinalityClient extends BaseClient {
     }
 
     /**
-     * Belirli bir yükseklikteki oyları alır
-     * @param height Blok yüksekliği
+     * Gets the votes at a specific height
+     * @param height Block height
      */
     async getVotesAtHeight(height: number): Promise<Vote[]> {
         return this.retryOperation(
@@ -139,8 +139,8 @@ export class FinalityClient extends BaseClient {
     }
 
     /**
-     * Modül parametrelerini alır
-     * @param module Modül adı
+     * Gets the module parameters
+     * @param module Module name
      */
     async getModuleParams(module: string): Promise<any> {
         try {
@@ -153,7 +153,7 @@ export class FinalityClient extends BaseClient {
     }
 
     /**
-     * Teşvik (incentive) parametrelerini alır
+     * Gets the incentive parameters
      */
     async getIncentiveParams(): Promise<any> {
         try {
@@ -164,4 +164,4 @@ export class FinalityClient extends BaseClient {
             throw error;
         }
     }
-} 
+}

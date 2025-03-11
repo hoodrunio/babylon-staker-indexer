@@ -6,7 +6,7 @@ import { FinalityClient } from './FinalityClient';
 import { StakingClient } from './StakingClient';
 import { logger } from '../utils/logger';
 
-// New interfaces and classes for URL management
+// New interface and classes for URL management
 export interface EndpointConfig {
     nodeUrls: string[];
     rpcUrls: string[];
@@ -17,62 +17,62 @@ export class UrlManager {
     private nodeUrlIndex = 0;
     private rpcUrlIndex = 0;
     private wsUrlIndex = 0;
-    
+
     private readonly nodeUrls: string[];
     private readonly rpcUrls: string[];
     private readonly wsUrls: string[];
-    
+
     constructor(config: EndpointConfig) {
         this.nodeUrls = config.nodeUrls;
         this.rpcUrls = config.rpcUrls;
         this.wsUrls = config.wsUrls || [];
-        
+
         if (this.nodeUrls.length === 0) {
             throw new Error('At least one node URL must be provided');
         }
-        
+
         if (this.rpcUrls.length === 0) {
             throw new Error('At least one RPC URL must be provided');
         }
     }
-    
+
     public getNodeUrl(): string {
         return this.nodeUrls[this.nodeUrlIndex];
     }
-    
+
     public getRpcUrl(): string {
         return this.rpcUrls[this.rpcUrlIndex];
     }
-    
+
     public getWsUrl(): string | undefined {
         if (this.wsUrls.length === 0) {
             return undefined;
         }
         return this.wsUrls[this.wsUrlIndex];
     }
-    
+
     public getNodeUrls(): string[] {
         return [...this.nodeUrls];
     }
-    
+
     public getRpcUrls(): string[] {
         return [...this.rpcUrls];
     }
-    
+
     public getWsUrls(): string[] {
         return [...this.wsUrls];
     }
-    
+
     public rotateNodeUrl(): string {
         this.nodeUrlIndex = (this.nodeUrlIndex + 1) % this.nodeUrls.length;
         return this.getNodeUrl();
     }
-    
+
     public rotateRpcUrl(): string {
         this.rpcUrlIndex = (this.rpcUrlIndex + 1) % this.rpcUrls.length;
         return this.getRpcUrl();
     }
-    
+
     public rotateWsUrl(): string | undefined {
         if (this.wsUrls.length === 0) {
             return undefined;
@@ -84,29 +84,29 @@ export class UrlManager {
 
 /**
  * BabylonClient is the main entry point for interacting with the Babylon blockchain.
- * This class maintains the existing API and ensures backward compatibility
- * by using separate sub-clients, adhering to SOLID principles.
+ * This class maintains the existing API and ensures backward compatibility by using
+ * decoupled sub-clients, adhering to SOLID principles.
  */
 export class BabylonClient {
     private static instances: Map<Network, BabylonClient> = new Map();
-    
+
     // Sub-clients
     private readonly blockClient: BlockClient;
     private readonly transactionClient: TransactionClient;
     private readonly governanceClient: GovernanceClient;
     private readonly finalityClient: FinalityClient;
     private readonly stakingClient: StakingClient;
-    
+
     private readonly network: Network;
     private readonly urlManager: UrlManager;
 
     private constructor(network: Network) {
         this.network = network;
-        
+
         // Load URL configurations from .env
         const endpointConfig = this.loadEndpointConfig(network);
         this.urlManager = new UrlManager(endpointConfig);
-        
+
         // Create sub-clients
         this.blockClient = this.createBlockClient();
         this.transactionClient = this.createTransactionClient();
@@ -116,70 +116,70 @@ export class BabylonClient {
     }
 
     /**
-     * Reads URL configurations from .env
+     * Loads URL configurations from .env
      */
     private loadEndpointConfig(network: Network): EndpointConfig {
         // Determine environment variables
-        const nodeUrlEnvVar = network === Network.MAINNET 
-            ? 'BABYLON_NODE_URLS' 
+        const nodeUrlEnvVar = network === Network.MAINNET
+            ? 'BABYLON_NODE_URLS'
             : 'BABYLON_TESTNET_NODE_URLS';
-            
-        const rpcUrlEnvVar = network === Network.MAINNET 
-            ? 'BABYLON_RPC_URLS' 
+
+        const rpcUrlEnvVar = network === Network.MAINNET
+            ? 'BABYLON_RPC_URLS'
             : 'BABYLON_TESTNET_RPC_URLS';
-            
-        const wsUrlEnvVar = network === Network.MAINNET 
-            ? 'BABYLON_WS_URLS' 
+
+        const wsUrlEnvVar = network === Network.MAINNET
+            ? 'BABYLON_WS_URLS'
             : 'BABYLON_TESTNET_WS_URLS';
-        
-        // Check legacy environment variables for backward compatibility
-        const legacyNodeUrlEnvVar = network === Network.MAINNET 
-            ? 'BABYLON_NODE_URL' 
+
+        // Check for legacy environment variables for backward compatibility
+        const legacyNodeUrlEnvVar = network === Network.MAINNET
+            ? 'BABYLON_NODE_URL'
             : 'BABYLON_TESTNET_NODE_URL';
-            
-        const legacyRpcUrlEnvVar = network === Network.MAINNET 
-            ? 'BABYLON_RPC_URL' 
+
+        const legacyRpcUrlEnvVar = network === Network.MAINNET
+            ? 'BABYLON_RPC_URL'
             : 'BABYLON_TESTNET_RPC_URL';
-            
-        const legacyWsUrlEnvVar = network === Network.MAINNET 
-            ? 'BABYLON_WS_URL' 
+
+        const legacyWsUrlEnvVar = network === Network.MAINNET
+            ? 'BABYLON_WS_URL'
             : 'BABYLON_TESTNET_WS_URL';
-            
+
         // Read URLs and convert comma-separated values to arrays
         let nodeUrls = process.env[nodeUrlEnvVar]?.split(',').map(url => url.trim()) || [];
         let rpcUrls = process.env[rpcUrlEnvVar]?.split(',').map(url => url.trim()) || [];
         let wsUrls = process.env[wsUrlEnvVar]?.split(',').map(url => url.trim()) || [];
-        
-        // Backward compatibility: If old single URL environment variables exist, add them as well
+
+        // Backward compatibility: Add legacy single URL environment variables if they exist
         if (process.env[legacyNodeUrlEnvVar]) {
             nodeUrls.push(process.env[legacyNodeUrlEnvVar]!);
         }
-        
+
         if (process.env[legacyRpcUrlEnvVar]) {
             rpcUrls.push(process.env[legacyRpcUrlEnvVar]!);
         }
-        
+
         if (process.env[legacyWsUrlEnvVar]) {
             wsUrls.push(process.env[legacyWsUrlEnvVar]!);
         }
-        
+
         // Clean URLs (filter out empty ones)
         nodeUrls = nodeUrls.filter(url => url.length > 0);
         rpcUrls = rpcUrls.filter(url => url.length > 0);
         wsUrls = wsUrls.filter(url => url.length > 0);
-        
+
         // URL check
         if (nodeUrls.length === 0 || rpcUrls.length === 0) {
             throw new Error(`Network ${network} is not configured. Please check your environment variables for ${nodeUrlEnvVar} and ${rpcUrlEnvVar}`);
         }
-        
+
         return {
             nodeUrls,
             rpcUrls,
             wsUrls: wsUrls.length > 0 ? wsUrls : undefined
         };
     }
-    
+
     /**
      * Creates a BlockClient instance
      */
@@ -191,7 +191,7 @@ export class BabylonClient {
             this.urlManager.getWsUrl()
         );
     }
-    
+
     /**
      * Creates a TransactionClient instance
      */
@@ -203,7 +203,7 @@ export class BabylonClient {
             this.urlManager.getWsUrl()
         );
     }
-    
+
     /**
      * Creates a GovernanceClient instance
      */
@@ -215,7 +215,7 @@ export class BabylonClient {
             this.urlManager.getWsUrl()
         );
     }
-    
+
     /**
      * Creates a FinalityClient instance
      */
@@ -227,7 +227,7 @@ export class BabylonClient {
             this.urlManager.getWsUrl()
         );
     }
-    
+
     /**
      * Creates a StakingClient instance
      */
@@ -239,18 +239,18 @@ export class BabylonClient {
             this.urlManager.getWsUrl()
         );
     }
-    
+
     /**
-     * Rotates connection endpoints in case of an error and creates new clients
+     * Rotates connection endpoints and creates new clients in case of failure
      */
     private rotateClients(): void {
         logger.info(`[BabylonClient] Rotating connection endpoints for ${this.network}`);
-        
+
         // Rotate URLs
         this.urlManager.rotateNodeUrl();
         this.urlManager.rotateRpcUrl();
         this.urlManager.rotateWsUrl();
-        
+
         // Create new clients
         try {
             const newBlockClient = this.createBlockClient();
@@ -258,57 +258,34 @@ export class BabylonClient {
             const newGovernanceClient = this.createGovernanceClient();
             const newFinalityClient = this.createFinalityClient();
             const newStakingClient = this.createStakingClient();
-            
-            // If all are successful, update existing clients
+
+            // If all succeed, update the existing clients
             Object.defineProperty(this, 'blockClient', { value: newBlockClient });
             Object.defineProperty(this, 'transactionClient', { value: newTransactionClient });
             Object.defineProperty(this, 'governanceClient', { value: newGovernanceClient });
             Object.defineProperty(this, 'finalityClient', { value: newFinalityClient });
             Object.defineProperty(this, 'stakingClient', { value: newStakingClient });
-            
+
             logger.info(`[BabylonClient] Successfully rotated to new endpoints for ${this.network}`);
         } catch (error) {
             logger.error(`[BabylonClient] Failed to rotate clients for ${this.network}:`, error);
             throw error;
         }
     }
-    
+
     /**
      * Rotates clients and retries if the request fails
      */
     private async withFailover<T>(operation: () => Promise<T>): Promise<T> {
         const maxRetries = this.urlManager.getNodeUrls().length;
-        const notFoundErrors = new Set<string>(); // To track resources that were not found
-        
+
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 return await operation();
-            } catch (error: any) {
-                // Check for NotFound error
-                if (error.isNotFoundError === true) {
-                    // Was this resource also not found at another endpoint before?
-                    const errorKey = error.config?.url || 'unknown';
-                    
-                    if (notFoundErrors.has(errorKey)) {
-                        // If this resource was also not found at another endpoint, do not retry further
-                        logger.warn(`[BabylonClient] Resource not found on multiple endpoints for ${errorKey}, stopping retries`);
-                        throw error;
-                    }
-                    
-                    // Mark that this resource was not found
-                    notFoundErrors.add(errorKey);
-                    
-                    // Should we rotate endpoints?
-                    if (error.needsEndpointRotation === true) {
-                        logger.info(`[BabylonClient] Resource not found, rotating to next endpoint for ${this.network}`);
-                        this.rotateClients();
-                        continue; // Retry with the new endpoint
-                    }
-                }
-
+            } catch (error) {
                 logger.warn(`[BabylonClient] Operation failed on attempt ${attempt + 1}/${maxRetries} for ${this.network}`);
-                
-                // If it's not the last attempt, rotate clients and retry
+
+                // If not the last attempt, rotate clients and retry
                 if (attempt < maxRetries - 1) {
                     this.rotateClients();
                 } else {
@@ -318,8 +295,8 @@ export class BabylonClient {
                 }
             }
         }
-        
-        // This point should never be reached, but it's here to prevent TypeScript errors
+
+        // This point should never be reached, but it's here to satisfy TypeScript
         throw new Error(`[BabylonClient] Unexpected error in failover logic for ${this.network}`);
     }
 
@@ -337,18 +314,18 @@ export class BabylonClient {
 
     public getWsEndpoint(): string {
         try {
-            // First, try to get it from blockClient
+            // Try to get it from blockClient first
             const wsEndpoint = this.blockClient.getWsEndpoint();
             if (wsEndpoint) {
                 return wsEndpoint;
             }
-            
-            // If it cannot be obtained from BlockClient, try to get it from UrlManager
+
+            // If not available from BlockClient, try UrlManager
             const wsUrl = this.urlManager.getWsUrl();
             if (wsUrl) {
                 return wsUrl;
             }
-            
+
             // If no WebSocket URL is found anywhere, return an empty string instead of null
             logger.warn(`[BabylonClient] No WebSocket URL found for ${this.network}`);
             return '';
@@ -379,7 +356,7 @@ export class BabylonClient {
         return this.withFailover(() => this.blockClient.getBlockByHeight(height));
     }
     /**
-     * Retrieves the latest block
+     * Gets the latest block
      */
     public async getLatestBlock(): Promise<{
         block: {
@@ -477,7 +454,7 @@ export class BabylonClient {
     }
 
     /**
-     * Retrieves transaction details by hash
+     * Gets transaction details by hash
      * @param txHash Transaction hash
      */
     public async getTxByHash(txHash: string): Promise<any | null> {
