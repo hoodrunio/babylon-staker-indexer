@@ -9,7 +9,7 @@ class ParamsService {
 
   private static getClient(network?: Network): BabylonClient {
     try {
-      return BabylonClient.getInstance(network || Network.MAINNET);
+      return BabylonClient.getInstance(network || Network.TESTNET);
     } catch (error) {
       if (!network) {
         // If no specific network was requested, try testnet as fallback
@@ -42,6 +42,7 @@ class ParamsService {
       }
 
       // If not in cache, fetch from API
+      // Babylon Bitcoin protocol specific parameters
       const [
         btccheckpointParams,
         btclightclientParams,
@@ -58,14 +59,36 @@ class ParamsService {
         client.getIncentiveParams()
       ]);
 
+      // Cosmos SDK parameters
+      const [
+        slashingParams,
+        stakingParams,
+        mintingParams,
+        governanceParams,
+        distributionParams
+      ] = await Promise.all([
+        client.getSlashingParams(),
+        client.getStakingParams(),
+        client.getMintParams(),
+        client.getGovParams(),
+        client.getDistributionParams()
+      ]);
+
       const params = {
         network: actualNetwork,
+        // Babylon Bitcoin protocol specific parameters
         btccheckpoint: btccheckpointParams,
         btclightclient: btclightclientParams,
         btcstaking: btcstakingParams,
         epoching: epochingParams,
         finality: finalityParams,
-        incentive: incentiveParams
+        incentive: incentiveParams,
+        // Cosmos SDK parameters
+        slashing: slashingParams,
+        staking: stakingParams,
+        mint: mintingParams,
+        gov: governanceParams,
+        distribution: distributionParams
       };
 
       // Cache the results

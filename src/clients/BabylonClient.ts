@@ -4,6 +4,7 @@ import { TransactionClient } from './TransactionClient';
 import { GovernanceClient } from './GovernanceClient';
 import { FinalityClient } from './FinalityClient';
 import { StakingClient } from './StakingClient';
+import { CosmosClient } from './CosmosClient';
 import { logger } from '../utils/logger';
 import { CustomError } from './BaseClient';
 
@@ -97,6 +98,7 @@ export class BabylonClient {
     private readonly governanceClient: GovernanceClient;
     private readonly finalityClient: FinalityClient;
     private readonly stakingClient: StakingClient;
+    private readonly cosmosClient: CosmosClient;
 
     private readonly network: Network;
     private readonly urlManager: UrlManager;
@@ -114,6 +116,7 @@ export class BabylonClient {
         this.governanceClient = this.createGovernanceClient();
         this.finalityClient = this.createFinalityClient();
         this.stakingClient = this.createStakingClient();
+        this.cosmosClient = this.createCosmosClient();
     }
 
     /**
@@ -242,6 +245,18 @@ export class BabylonClient {
     }
 
     /**
+     * Creates a CosmosClient instance
+     */
+    private createCosmosClient(): CosmosClient {
+        return new CosmosClient(
+            this.network,
+            this.urlManager.getNodeUrl(),
+            this.urlManager.getRpcUrl(),
+            this.urlManager.getWsUrl()
+        );
+    }
+
+    /**
      * Rotates connection endpoints and creates new clients in case of failure
      */
     private rotateClients(): void {
@@ -259,6 +274,7 @@ export class BabylonClient {
             const newGovernanceClient = this.createGovernanceClient();
             const newFinalityClient = this.createFinalityClient();
             const newStakingClient = this.createStakingClient();
+            const newCosmosClient = this.createCosmosClient();
 
             // If all succeed, update the existing clients
             Object.defineProperty(this, 'blockClient', { value: newBlockClient });
@@ -266,6 +282,7 @@ export class BabylonClient {
             Object.defineProperty(this, 'governanceClient', { value: newGovernanceClient });
             Object.defineProperty(this, 'finalityClient', { value: newFinalityClient });
             Object.defineProperty(this, 'stakingClient', { value: newStakingClient });
+            Object.defineProperty(this, 'cosmosClient', { value: newCosmosClient });
 
             logger.info(`[BabylonClient] Successfully rotated to new endpoints for ${this.network}`);
         } catch (error) {
@@ -491,5 +508,30 @@ export class BabylonClient {
      */
     public async getTxByHash(txHash: string): Promise<any | null> {
         return this.withFailover(() => this.transactionClient.getTransaction(txHash));
+    }
+
+    // CosmosClient methods
+    public async getCosmosModuleParams(module: string): Promise<any> {
+        return this.withFailover(() => this.cosmosClient.getModuleParams(module));
+    }
+
+    public async getSlashingParams(): Promise<any> {
+        return this.withFailover(() => this.cosmosClient.getSlashingParams());
+    }
+
+    public async getStakingParams(): Promise<any> {
+        return this.withFailover(() => this.cosmosClient.getStakingParams());
+    }
+
+    public async getMintParams(): Promise<any> {
+        return this.withFailover(() => this.cosmosClient.getMintParams());
+    }
+
+    public async getGovParams(): Promise<any> {
+        return this.withFailover(() => this.cosmosClient.getGovParams());
+    }
+
+    public async getDistributionParams(): Promise<any> {
+        return this.withFailover(() => this.cosmosClient.getDistributionParams());
     }
 }
