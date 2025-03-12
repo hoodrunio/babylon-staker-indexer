@@ -19,11 +19,11 @@ interface TransactionQuery {
 
 export class BTCTransactionController {
     /**
-     * Temizleme fonksiyonu - tırnak işaretlerini ve boşlukları kaldırır
+     * Cleaning function - removes quotes and spaces
      */
     private static cleanQueryParam(param: string | undefined): string | undefined {
         if (!param) return undefined;
-        // Başındaki ve sonundaki tırnak işaretlerini ve boşlukları kaldır
+        // Remove leading and trailing quotes and spaces
         return param.replace(/^["'\s]+|["'\s]+$/g, '');
     }
 
@@ -39,7 +39,7 @@ export class BTCTransactionController {
             const sortField = req.query.sort_field as string || 'createdAt';
             const sortOrder = req.query.sort_order as string === 'asc' ? 1 : -1;
             
-            // Cursor tabanlı pagination için son görülen değer
+            // Last seen value for cursor-based pagination
             const lastId = req.query.last_id as string;
             const lastValue = req.query.last_value as string;
 
@@ -48,7 +48,7 @@ export class BTCTransactionController {
                 networkType: network.toLowerCase()
             };
 
-            // Apply filters if provided - tırnak işaretlerini temizleyerek
+            // Apply filters if provided - cleaning quotes
             if (req.query.staker_address) {
                 query.stakerAddress = BTCTransactionController.cleanQueryParam(req.query.staker_address as string);
             }
@@ -125,13 +125,13 @@ export class BTCTransactionController {
                     matchStage.totalSat.$lte = query.maxAmount;
                 }
             }
-            
-            // Range tabanlı pagination için ek koşul
+
+            // Additional condition for range-based pagination
             if (lastId && lastValue) {
-                // Sıralama yönüne göre range koşulunu belirle
+                // Determine the range condition based on the sort direction
                 const rangeOperator = sortOrder === 1 ? '$gt' : '$lt';
                 
-                // Ya sortField değerine göre ya da eşitse _id'ye göre sırala
+                // Sort by sortField or, if equal, by _id
                 matchStage.$or = [
                     { [sortField]: { [rangeOperator]: lastValue } },
                     { 
@@ -143,26 +143,36 @@ export class BTCTransactionController {
 
             logger.info(`Fetching BTC transactions with query: ${JSON.stringify(matchStage)}`);
 
-            // Toplam sayıyı almak için ayrı bir sorgu
+            // Separate query to get the total count
             const countPipeline: PipelineStage[] = [
                 { $match: matchStage },
                 { $count: "total" }
             ];
             
-            // Ana veri sorgusu - range tabanlı pagination ile
+            // Main data query - supports both skip/limit and range-based pagination
             const dataPipeline: PipelineStage[] = [
                 { $match: matchStage },
-                { $sort: { [sortField]: sortOrder === 1 ? 1 : -1, _id: sortOrder === 1 ? 1 : -1 } },
-                { $limit: limit }
+                { $sort: { [sortField]: sortOrder === 1 ? 1 : -1, _id: sortOrder === 1 ? 1 : -1 } }
             ];
 
-            // Sorguları paralel çalıştır
+            // Add skip/limit if cursor-based pagination is not used
+            if (!lastId && !lastValue) {
+                dataPipeline.push(
+                    { $skip: skip },
+                    { $limit: limit }
+                );
+            } else {
+                // Add only limit for cursor-based pagination
+                dataPipeline.push({ $limit: limit });
+            }
+
+            // Execute queries in parallel
             const [countResult, transactions] = await Promise.all([
                 NewBTCDelegation.aggregate(countPipeline),
                 NewBTCDelegation.aggregate(dataPipeline)
             ]);
             
-            // Sonuçları çıkar
+            // Extract results
             const total = countResult.length > 0 ? countResult[0].total : 0;
 
             logger.info(`Found ${transactions.length} BTC transactions out of ${total} total`);
@@ -187,7 +197,7 @@ export class BTCTransactionController {
 
             const totalPages = Math.ceil(total / limit);
             
-            // Bir sonraki sayfa için cursor değerlerini belirle
+            // Determine cursor values for the next page
             let nextCursor = null;
             if (transactions.length === limit && transactions.length > 0) {
                 const lastItem = transactions[transactions.length - 1];
