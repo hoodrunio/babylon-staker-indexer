@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { BlockProcessorController } from '../../controllers/block-processor.controller';
+import { BlockProcessorController } from '../../controllers/blockchain/block-processor.controller';
 import { cacheMiddleware } from '../../middleware/cache.middleware';
 
 const router = Router();

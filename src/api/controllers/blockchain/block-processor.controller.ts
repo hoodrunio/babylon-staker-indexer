@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import { BlockProcessorModule } from '../../services/block-processor/BlockProcessorModule';
-import { Network } from '../../types/finality';
-import { logger } from '../../utils/logger';
-import { BlockStorage } from '../../services/block-processor/storage/BlockStorage';
-import { TxStorage } from '../../services/block-processor/storage/TxStorage';
+import { BlockProcessorModule } from '../../../services/block-processor/BlockProcessorModule';
+import { Network } from '../../../types/finality';
+import { logger } from '../../../utils/logger';
+import { BlockStorage } from '../../../services/block-processor/storage/BlockStorage';
+import { TxStorage } from '../../../services/block-processor/storage/TxStorage';
 
 /**
  * Block Processor Controller

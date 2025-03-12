@@ -4,7 +4,9 @@ import { BabylonClient } from '../../clients/BabylonClient';
 import { Mutex } from 'async-mutex';
 import { CacheService } from '../CacheService';
 import { logger } from '../../utils/logger';
+import dotenv from 'dotenv';
 
+dotenv.config();
 export class WebsocketHealthTracker {
     private static instance: WebsocketHealthTracker | null = null;
     private state: Map<Network, WebsocketState> = new Map();
@@ -13,6 +15,7 @@ export class WebsocketHealthTracker {
     private cacheService: CacheService;
     private readonly CACHE_KEY_PREFIX = 'last_processed_height:';
     private readonly CACHE_TTL = 7 * 24 * 60 * 60; // 7 days
+    private readonly isProduction = process.env.NODE_ENV === 'production';
     
     private constructor() {
         this.missedBlocksProcessor = MissedBlocksProcessor.getInstance();
@@ -60,7 +63,7 @@ export class WebsocketHealthTracker {
             const currentState = this.getOrCreateState(network);
             
             // Only process real gaps (if more than 1 block is skipped)
-            if (height > currentState.lastProcessedHeight + 1) {
+            if (height > currentState.lastProcessedHeight + 1 && this.isProduction) {
                 logger.debug(`[${network}] Gap detected: ${currentState.lastProcessedHeight} -> ${height}`);
                 
                 // Process missing blocks
@@ -116,7 +119,7 @@ export class WebsocketHealthTracker {
             const lastProcessedHeight = state.lastProcessedHeight;
 
             // Process if there are missing blocks
-            if (currentHeight > lastProcessedHeight) {
+            if (currentHeight > lastProcessedHeight && this.isProduction) {
                 logger.debug(`[${network}] Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
                 
                 await this.missedBlocksProcessor.processMissedBlocks(
