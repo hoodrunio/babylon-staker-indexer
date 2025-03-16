@@ -26,7 +26,7 @@ export class CosmosClient extends BaseClient {
      */
     async getModuleParams(module: string): Promise<any> {
         try {
-            // Cosmos SDK modülleri için endpoint formatı: /cosmos/{module}/v1beta1/params
+            // Endpoint format for Cosmos SDK modules: /cosmos/{module}/v1beta1/params
             const response = await this.client.get(`/cosmos/${module}/v1beta1/params`);
             
             if (!response.data) {
@@ -57,18 +57,18 @@ export class CosmosClient extends BaseClient {
 
     /**
      * Gets the minting parameters
-     * Özel endpoint: /cosmos/mint/v1beta1/inflation_rate, annual_provisions, genesis_time
+     * Special endpoint: /cosmos/mint/v1beta1/inflation_rate, annual_provisions, genesis_time
      */
     async getMintParams(): Promise<any> {
         try {
-            // Mint modülü için tüm parametreleri al
+            // Get all parameters for the mint module
             const [inflationRate, annualProvisions, genesisTime] = await Promise.all([
                 this.client.get('/cosmos/mint/v1beta1/inflation_rate'),
                 this.client.get('/cosmos/mint/v1beta1/annual_provisions'),
                 this.client.get('/cosmos/mint/v1beta1/genesis_time')
             ]);
             
-            // Tüm mint parametrelerini birleştir
+            // Combine all mint parameters
             return {
                 inflation_rate: inflationRate.data?.inflation || null,
                 annual_provisions: annualProvisions.data?.annual_provisions || null,
@@ -93,7 +93,7 @@ export class CosmosClient extends BaseClient {
                 this.client.get('/cosmos/gov/v1/params/deposit')
             ]);
             
-            // Tüm governance parametrelerini birleştir
+            // Combine all governance parameters
             return {
                 voting: votingParams.data?.params || null,
                 tallying: tallyingParams.data?.params || null,
