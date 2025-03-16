@@ -30,7 +30,7 @@ export class CheckpointStatusFetcher {
             // Get all checkpoints that need status update
             const checkpoints = await BLSCheckpoint.find({
                 network,
-                status: { $ne: 'CKPT_STATUS_FINALIZED' } // Only get non-finalized checkpoints
+                status: { $ne: 'CKPT_STATUS_FINALIZED' } // Get only non-finalized checkpoints
             }).sort({ epoch_num: -1 });
 
             logger.info(`[CheckpointStatus] Found ${checkpoints.length} non-finalized checkpoints to check status for ${network}`);
@@ -75,7 +75,7 @@ export class CheckpointStatusFetcher {
                     try {
                         const { checkpoint, status, checkpointData } = update;
 
-                        // Skip if status hasn't changed
+                        // Skip if the status hasn't changed
                         if (status === checkpoint.status) {
                             logger.info(`[CheckpointStatus] Checkpoint ${checkpoint.epoch_num} status unchanged: ${checkpoint.status}`);
                             continue;
@@ -85,7 +85,7 @@ export class CheckpointStatusFetcher {
                         const lastLifecycle = checkpoint.lifecycle[checkpoint.lifecycle.length - 1];
                         const blockHeight = lastLifecycle ? lastLifecycle.block_height + 1 : 0;
 
-                        // Add new lifecycle entry
+                        // Add a new lifecycle entry
                         const newLifecycleEntry = {
                             state: status,
                             block_height: blockHeight,
@@ -94,7 +94,7 @@ export class CheckpointStatusFetcher {
 
                         const rawBlockHash = checkpointData.ckpt?.block_hash_hex.toUpperCase();
                         
-                        // Update checkpoint with new status
+                        // Update checkpoint with the new status
                         await BLSCheckpoint.findOneAndUpdate(
                             { 
                                 epoch_num: checkpoint.epoch_num,
@@ -116,7 +116,7 @@ export class CheckpointStatusFetcher {
                         updatedCount++;
                         logger.info(`[CheckpointStatus] Updated checkpoint ${checkpoint.epoch_num} status from ${checkpoint.status} to ${status}`);
                     } catch (error) {
-                        logger.error(`[CheckpointStatus] Error updating checkpoint in database:`, error);
+                        logger.error(`[CheckpointStatus] Error updating checkpoint in the database:`, error);
                     }
                 }
 
@@ -148,4 +148,4 @@ export class CheckpointStatusFetcher {
             throw error;
         }
     }
-} 
+}

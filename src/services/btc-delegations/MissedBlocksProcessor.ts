@@ -121,7 +121,7 @@ export class MissedBlocksProcessor {
         try {
             const txSearchResponse = await babylonClient.getTxSearch(height);
             
-            // Yeni veri yapısı kontrolü
+            // Check new data structure
             const txSearchResults = txSearchResponse?.result?.txs ? 
                 { txs: txSearchResponse.result.txs } : 
                 txSearchResponse as TxSearchResult;

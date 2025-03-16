@@ -160,9 +160,9 @@ export class BlockClient extends BaseClient {
             return response.data;
         } catch (error) {
             if (error instanceof Error) {
-                // HTTP 500 hatalarını yakalamak için
+                // Catch HTTP 500 errors
                 if (error.message && error.message.includes('is not available')) {
-                    // Özel bir hata oluştur
+                    // Create a custom error
                     const blockNotFoundError: CustomError = new Error('SPECIAL_ERROR_HEIGHT_NOT_AVAILABLE');
                     blockNotFoundError.name = 'HeightNotAvailableError';
                     blockNotFoundError.originalError = error;

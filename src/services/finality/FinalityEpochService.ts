@@ -15,7 +15,7 @@ export class FinalityEpochService {
         timestamp: number;
     } | null = null;
 
-    // Varsayılan ağ olarak kullanılacak ağ tipi (yapılandırılmış ağlardan biri)
+    // Default network type to be used (one of the configured networks)
     private defaultNetwork: Network;
     
     private readonly EPOCHS_TO_KEEP = 14; // Keep last 14 epochs
@@ -23,21 +23,21 @@ export class FinalityEpochService {
     private readonly STATS_UPDATE_INTERVAL = 60000; // 1 minute
 
     private constructor() {
-        // Önce yapılandırılmış ağları belirle
+        // First, determine the configured networks
         this.defaultNetwork = this.determineDefaultNetwork();
-        // Belirlenen varsayılan ağa göre BabylonClient al
+        // Get BabylonClient based on the determined default network
         this.babylonClient = BabylonClient.getInstance(this.defaultNetwork);
         this.finalityProviderService = FinalityProviderService.getInstance();
         logger.info(`[FinalityEpochService] Initialized with default network: ${this.defaultNetwork}`);
     }
 
     /**
-     * Sistemde yapılandırılmış ağlardan birini varsayılan olarak belirler.
-     * Önce testnet, sonra mainnet kontrol edilir.
+     * Sets one of the configured networks as default.
+     * Checks testnet first, then mainnet.
      */
     private determineDefaultNetwork(): Network {
         try {
-            // Önce testnet'i deneyelim
+            // Let's try testnet first
             try {
                 const testnetClient = BabylonClient.getInstance(Network.TESTNET);
                 const testnetBaseUrl = testnetClient.getBaseUrl();
@@ -49,7 +49,7 @@ export class FinalityEpochService {
                 logger.debug(`[FinalityEpochService] Testnet not available: ${err instanceof Error ? err.message : String(err)}`);
             }
             
-            // Testnet yoksa mainnet'i deneyelim
+            // If testnet is not available, try mainnet
             try {
                 const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
                 const mainnetBaseUrl = mainnetClient.getBaseUrl();
@@ -61,19 +61,19 @@ export class FinalityEpochService {
                 logger.debug(`[FinalityEpochService] Mainnet not available: ${err instanceof Error ? err.message : String(err)}`);
             }
             
-            // Varsayılan olarak testnet döndürelim (yapılandırılmış değilse bile, daha sonra kontrol edilecek)
+            // Return testnet as default (even if not configured, will be checked later)
             logger.warn('[FinalityEpochService] No configured networks found, defaulting to TESTNET');
             return Network.TESTNET;
         } catch (err) {
             logger.error(`[FinalityEpochService] Error determining default network: ${err instanceof Error ? err.message : String(err)}`);
-            // En son çare olarak testnet döndür
+            // As a last resort, return testnet
             return Network.TESTNET;
         }
     }
     
     /**
-     * Belirtilen ağın yapılandırılmış olup olmadığını kontrol eder.
-     * Ağ yapılandırılmamışsa, varsayılan ağı kullanır.
+     * Checks if the specified network is configured.
+     * If the network is not configured, uses the default network.
      */
     private ensureNetworkConfigured(network: Network): Network {
         try {
@@ -96,7 +96,7 @@ export class FinalityEpochService {
     }
 
     public async getCurrentEpochInfo(network?: Network): Promise<{ epochNumber: number; boundary: number }> {
-        // Belirtilen ağın yapılandırılmış olduğundan emin olalım, değilse varsayılanı kullanalım
+        // Make sure the specified network is configured, if not use the default
         const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
         
         if (this.currentEpochInfo) {
@@ -114,7 +114,7 @@ export class FinalityEpochService {
     }
 
     public async checkAndUpdateEpoch(currentHeight: number, network?: Network): Promise<void> {
-        // Belirtilen ağın yapılandırılmış olduğundan emin olalım, değilse varsayılanı kullanalım
+        // Make sure the specified network is configured, if not use the default
         const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
         
         try {
@@ -185,7 +185,7 @@ export class FinalityEpochService {
         getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
         network?: Network
     ): Promise<EpochStats> {
-        // Belirtilen ağın yapılandırılmış olduğundan emin olalım, değilse varsayılanı kullanalım
+        // Make sure the specified network is configured, if not use the default
         const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
         
         const lockKey = `epoch-stats-${useNetwork}`;
@@ -273,7 +273,7 @@ export class FinalityEpochService {
     }
 
     public async getCurrentEpochStats(network?: Network): Promise<EpochStats> {
-        // Belirtilen ağın yapılandırılmış olduğundan emin olalım, değilse varsayılanı kullanalım
+        // Make sure the specified network is configured, if not use the default
         const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
         
         if (!this.currentEpochStatsCache) {
@@ -297,7 +297,7 @@ export class FinalityEpochService {
         timestamp: number;
     }> {
         try {
-            // Belirtilen ağın yapılandırılmış olduğundan emin olalım, değilse varsayılanı kullanalım
+            // Make sure the specified network is configured, if not use the default
             const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
             
             const client = BabylonClient.getInstance(useNetwork);

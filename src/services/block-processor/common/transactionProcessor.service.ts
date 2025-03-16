@@ -4,7 +4,7 @@
 
 import { BaseTx, TxMessage, TxProcessorError, TxStatus, WebsocketTxEvent } from '../types/common';
 import { ITransactionProcessorService, ITxStorage } from '../types/interfaces';
-import { decodeTx } from '../../../decoders/transaction';
+import { decodeTx } from '../../decoders/transaction';
 import { Network } from '../../../types/finality';
 
 export class TransactionProcessorService implements ITransactionProcessorService {

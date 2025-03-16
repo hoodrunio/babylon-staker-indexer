@@ -1,6 +1,6 @@
 /**
  * Blockchain Models
- * Blok ve işlem modellerini dışa aktarır
+ * Exports block and transaction models
  */
 
 export * from './Block';

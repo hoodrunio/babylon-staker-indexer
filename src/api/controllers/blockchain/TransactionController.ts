@@ -18,11 +18,11 @@ interface TransactionQuery {
 
 export class TransactionController {
     /**
-     * Temizleme fonksiyonu - tırnak işaretlerini temizlemek için
+     * Cleaning function - to clean up quote characters
      */
     private static cleanQueryParam(param: string | undefined): string | undefined {
         if (!param) return undefined;
-        // Başındaki ve sonundaki tırnak işaretlerini ve boşlukları kaldır
+        // Remove leading and trailing quote characters and spaces
         return param.replace(/^["'\s]+|["'\s]+$/g, '');
     }
 
@@ -37,7 +37,7 @@ export class TransactionController {
             const sortField = req.query.sort_field as string || 'time';
             const sortOrder = req.query.sort_order as string === 'asc' ? 1 : -1;
             
-            // Cursor tabanlı pagination için son görülen değer
+            // Cursor based pagination - last seen value
             const lastId = req.query.last_id as string;
             const lastValue = req.query.last_value as string;
 
@@ -46,7 +46,7 @@ export class TransactionController {
                 network: network
             };
 
-            // Apply filters if provided - tırnak işaretlerini temizleyerek
+            // Apply filters if provided - clean quotes
             if (req.query.tx_hash) {
                 query.txHash = TransactionController.cleanQueryParam(req.query.tx_hash as string);
             }
@@ -108,12 +108,12 @@ export class TransactionController {
                 }
             }
 
-            // Range tabanlı pagination için ek koşul
+            // Range based pagination - additional condition
             if (lastId && lastValue) {
-                // Sıralama yönüne göre range koşulunu belirle
+                // Determine range condition based on sort direction
                 const rangeOperator = sortOrder === 1 ? '$gt' : '$lt';
                 
-                // Ya sortField değerine göre ya da eşitse _id'ye göre sırala
+                // Sort by sortField or by _id if equal
                 matchStage.$or = [
                     { [sortField]: { [rangeOperator]: lastValue } },
                     { 
@@ -125,26 +125,26 @@ export class TransactionController {
 
             logger.info(`Fetching blockchain transactions with query: ${JSON.stringify(matchStage)}`);
 
-            // Toplam sayıyı almak için ayrı bir sorgu
+            // Total count - separate query
             const countPipeline: PipelineStage[] = [
                 { $match: matchStage },
                 { $count: "total" }
             ];
             
-            // Ana veri sorgusu - range tabanlı pagination ile
+            // Main data query - range based pagination
             const dataPipeline: PipelineStage[] = [
                 { $match: matchStage },
                 { $sort: { [sortField]: sortOrder === 1 ? 1 : -1, _id: sortOrder === 1 ? 1 : -1 } },
                 { $limit: limit }
             ];
 
-            // Sorguları paralel çalıştır
+            // Run queries in parallel
             const [countResult, transactions] = await Promise.all([
                 BlockchainTransaction.aggregate(countPipeline),
                 BlockchainTransaction.aggregate(dataPipeline)
             ]);
             
-            // Sonuçları çıkar
+            // Extract results
             const total = countResult.length > 0 ? countResult[0].total : 0;
 
             logger.info(`Found ${transactions.length} blockchain transactions out of ${total} total`);
@@ -162,7 +162,7 @@ export class TransactionController {
 
             const totalPages = Math.ceil(total / limit);
 
-            // Bir sonraki sayfa için cursor değerlerini belirle
+            // Determine cursor values for next page
             let nextCursor = null;
             if (transactions.length === limit && transactions.length > 0) {
                 const lastItem = transactions[transactions.length - 1];
@@ -183,7 +183,7 @@ export class TransactionController {
                 }
             };
 
-            // Cursor bilgisini ekstra metadata olarak ekle
+            // Add cursor information as extra metadata
             (response as any).cursor = nextCursor;
 
             res.json(response);

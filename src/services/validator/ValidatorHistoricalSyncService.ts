@@ -1,7 +1,6 @@
 import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { ValidatorSignatureService } from './ValidatorSignatureService';
-import axios from 'axios';
 import { logger } from '../../utils/logger';
 
 export class ValidatorHistoricalSyncService {
@@ -38,7 +37,7 @@ export class ValidatorHistoricalSyncService {
         try {
             this.syncInProgress.set(network, true);
 
-            // Get current block height - BabylonClient'ın failover mekanizmasını kullan
+            // Get current block height - Use BabylonClient's failover mechanism
             const currentHeight = await client.getCurrentHeight();
             
             // Get last processed block
@@ -92,7 +91,7 @@ export class ValidatorHistoricalSyncService {
 
     private async processBlock(height: number, network: Network, client: BabylonClient): Promise<void> {
         try {
-            // BabylonClient'ın getBlockByHeight metodunu kullan - failover özelliğinden yararlan
+            // Use BabylonClient's getBlockByHeight method - utilize failover feature
             const blockData = await client.getBlockByHeight(height);
             
             if (!blockData || !blockData.result || !blockData.result.block) {
@@ -130,7 +129,7 @@ export class ValidatorHistoricalSyncService {
         while (left <= right) {
             const mid = Math.floor((left + right) / 2);
             try {
-                // BabylonClient'ın getBlockByHeight metodunu kullan - failover özelliğinden yararlan
+                // Use BabylonClient's getBlockByHeight method - utilize failover feature
                 await client.getBlockByHeight(mid);
                 earliestAvailable = mid;
                 right = mid - 1;
@@ -138,7 +137,7 @@ export class ValidatorHistoricalSyncService {
                 if (this.isPruningError(error)) {
                     left = mid + 1;
                 } else {
-                    // Eğer hata pruning nedenli değilse, şu anki mid değerini döndür
+                    // If the error is not due to pruning, return the current mid value
                     logger.error(`[ValidatorHistoricalSyncService] Unexpected error searching for available block: ${error instanceof Error ? error.message : String(error)}`);
                     return earliestAvailable; 
                 }

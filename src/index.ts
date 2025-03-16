@@ -32,7 +32,7 @@ async function startServer() {
         maxAge: 86400
     }));
 
-    // Compression middleware - HTTP yanıtlarını sıkıştırır
+    // Compression middleware - Compresses HTTP responses
     app.use(compression());
 
     // Middleware

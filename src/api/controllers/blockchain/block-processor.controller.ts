@@ -155,7 +155,7 @@ export class BlockProcessorController {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 50;
       
-      // Hızlı validasyon kontrolleri
+      // Quick validation checks
       if (!network) {
         res.status(400).json({
           success: false,
@@ -164,7 +164,7 @@ export class BlockProcessorController {
         return;
       }
 
-      // Validate network - Desteklenen ağları önbellekte tutabiliriz
+      // Validate network - We can keep supported networks in cache
       const supportedNetworks = this.blockProcessor.getSupportedNetworks();
       if (!supportedNetworks.includes(network as Network)) {
         res.status(400).json({
@@ -174,7 +174,7 @@ export class BlockProcessorController {
         return;
       }
       
-      // Validate page and limit - Basit validasyonlar
+      // Validate page and limit - Simple validations
       if (isNaN(page) || page <= 0) {
         res.status(400).json({
           success: false,
@@ -191,17 +191,17 @@ export class BlockProcessorController {
         return;
       }
       
-      // İstek başlatıldığında zaman damgası
+      // Timestamp when request started
       const startTime = Date.now();
       
       // Get latest transactions with pagination
       const result = await this.txStorage.getLatestTransactions(network as Network, page, limit);
       
-      // İşlem süresi hesaplama
+      // Calculate processing duration
       const processingTime = Date.now() - startTime;
       logger.debug(`[BlockProcessorController] getLatestTransactions completed in ${processingTime}ms`);
       
-      // HTTP yanıtını ayarla
+      // Set HTTP response
       res.status(200).json({
         success: true,
         data: {

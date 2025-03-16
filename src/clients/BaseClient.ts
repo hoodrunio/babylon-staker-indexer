@@ -2,7 +2,7 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { Network } from '../types/finality';
 import { logger } from '../utils/logger';
 
-// Özel hata tipleri için interface ekleyelim
+// Let's add an interface for custom error types
 export interface CustomError extends Error {
     originalError?: any;
 }
@@ -108,16 +108,18 @@ export abstract class BaseClient {
                     return Promise.reject(heightNotAvailableError);
                 }
                 
-                // Geçersiz Hex formatı hataları için (odd length hex string, invalid byte)
+                // For invalid Hex format errors (odd length hex string, invalid byte)
+                // For these types of errors, do not retry at all, just throw the error
+                // Create a special error
                 if (error.response?.data?.message && 
                     typeof error.response.data.message === 'string' &&
                     (error.response.data.message.includes('odd length hex string') ||
                      error.response.data.message.includes('invalid byte'))) {
                         
-                    // Bu tür hatalar için hiç retry yapmayalım, doğrudan hatayı fırlatalım
+                    // For these types of errors, let's not retry at all, directly throw the error
                     logger.warn(`[${this.constructor.name}] Invalid hex format error, not retrying: ${error.response.data.message}`);
                     
-                    // Özel bir hata oluştur
+                    // Create a special error
                     const invalidHexError: CustomError = new Error('INVALID_HEX_FORMAT');
                     invalidHexError.name = 'InvalidHexFormatError';
                     invalidHexError.originalError = error;

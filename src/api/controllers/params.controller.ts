@@ -3,7 +3,7 @@ import ParamsService from '../../services/params.service';
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 
-// Params tipini tanımlayalım
+// Let's define the Params type
 interface ParamsResponse {
   network: Network;
   btccheckpoint?: any;
@@ -17,7 +17,7 @@ interface ParamsResponse {
   mint?: any;
   gov?: any;
   distribution?: any;
-  [key: string]: any; // Diğer modüller için index signature
+  [key: string]: any; // Index signature for other modules
 }
 
 class ParamsController {

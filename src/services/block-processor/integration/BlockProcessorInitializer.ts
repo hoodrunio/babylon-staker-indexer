@@ -1,6 +1,6 @@
 /**
  * Block Processor Initialization Service
- * Blok işleme sistemini başlatan ve yöneten servis
+ * Service that initializes and manages the block processing system
  */
 
 import { BlockProcessorService } from '../common/blockProcessor.service';
@@ -17,7 +17,7 @@ import { HistoricalSyncService } from '../sync/historicalSync.service';
 import { FetcherService } from '../common/fetcher.service';
 
 /**
- * BlockProcessor sistemini başlatan ve yöneten sınıf
+ * Class that initializes and manages the BlockProcessor system
  */
 export class BlockProcessorInitializer {
     private static instance: BlockProcessorInitializer | null = null;
@@ -46,36 +46,36 @@ export class BlockProcessorInitializer {
     }
     
     /**
-     * BlockProcessor sistemini initialize eder
+     * Initializes the BlockProcessor system
      * @returns Initialized BlockTransactionHandler
      */
     public initialize(): BlockTransactionHandler {
         try {
             logger.info('[BlockProcessorInitializer] Initializing Block Processor system...');
             
-            // Storage sınıflarını oluştur
+            // Storage classes
             this.blockStorage = BlockStorage.getInstance();
             this.txStorage = TxStorage.getInstance();
             
-            // RPC client'ı al
+            // Get RPC client
             this.rpcClient = BabylonClient.getInstance();
             
-            // FetcherService'i al
+            // Get FetcherService
             this.fetcherService = FetcherService.getInstance();
             
-            // Processor servisleri oluştur
+            // Create processor services
             this.blockProcessor = new BlockProcessorService(this.blockStorage, this.defaultNetwork);
             
-            // FetcherService'i kullanarak tx detaylarını getir
+            // Get transaction details using FetcherService
             const fetchTxDetails = async (txHash: string, network?: Network) => {
-                // Kullanılan network'ü belirle
+                // Determine the network to use
                 const targetNetwork = network || this.defaultNetwork;
                 return this.fetcherService?.fetchTxDetails(txHash, targetNetwork) || null;
             };
             
             this.txProcessor = new TransactionProcessorService(this.txStorage, fetchTxDetails, this.defaultNetwork);
             
-            // BlockTransactionHandler'ı initialize et
+            // Initialize BlockTransactionHandler
             this.blockTransactionHandler = BlockTransactionHandler.getInstance();
             this.blockTransactionHandler.initialize(
                 this.blockStorage,
@@ -85,7 +85,7 @@ export class BlockProcessorInitializer {
                 this.rpcClient
             );
             
-            // HistoricalSyncService'i al
+            // Get HistoricalSyncService
             this.historicalSyncService = HistoricalSyncService.getInstance();
             
             logger.info('[BlockProcessorInitializer] Block Processor system initialized successfully');
@@ -98,8 +98,8 @@ export class BlockProcessorInitializer {
     }
     
     /**
-     * WebSocketMessageService için message processor'ları oluşturur
-     * @returns Message processor dizisi
+     * Creates message processors for WebSocketMessageService
+     * @returns Array of message processors
      */
     public createMessageProcessors(): IMessageProcessor[] {
         if (!this.blockTransactionHandler) {
@@ -114,10 +114,9 @@ export class BlockProcessorInitializer {
     }
     
     /**
-     * Belirli bir ağ için tarihsel verileri senkronize eder
-     * @param network Ağ bilgisi (MAINNET, TESTNET)
-     * @param fromHeight Başlangıç blok yüksekliği (opsiyonel)
-     * @param blockCount Senkronize edilecek blok sayısı (opsiyonel)
+     * Synchronizes historical data for a specific network
+     * @param network Network to synchronize
+     * @param blockCount Number of blocks to synchronize (optional)
      */
     public async startHistoricalSync(
         network: Network,
@@ -129,7 +128,7 @@ export class BlockProcessorInitializer {
                 this.initialize();
             }
             
-            // Processor'ların network değerini güncelle
+            // Update network value of processors
             if (this.blockProcessor) {
                 this.blockProcessor.setNetwork(network);
             }
@@ -140,12 +139,12 @@ export class BlockProcessorInitializer {
             
             logger.info(`[BlockProcessorInitializer] Starting historical sync for ${network}...`);
             
-            // HistoricalSyncService'i kullanarak senkronizasyon yap
+            // Perform synchronization using HistoricalSyncService
             if (!this.historicalSyncService) {
                 this.historicalSyncService = HistoricalSyncService.getInstance();
             }
             
-            // HistoricalSyncService'in startSync metodunu çağır
+            // Call startSync method of HistoricalSyncService
             await this.historicalSyncService.startSync(network, fromHeight, blockCount);
             
             logger.info(`[BlockProcessorInitializer] Historical sync completed for ${network}`);
@@ -156,7 +155,7 @@ export class BlockProcessorInitializer {
     }
     
     /**
-     * BlockTransactionHandler instance'ını döndürür
+     * Returns BlockTransactionHandler instance
      * @returns BlockTransactionHandler instance
      */
     public getBlockTransactionHandler(): BlockTransactionHandler | null {
@@ -164,7 +163,7 @@ export class BlockProcessorInitializer {
     }
     
     /**
-     * FetcherService instance'ını döndürür
+     * Returns FetcherService instance
      */
     public getFetcherService(): FetcherService | null {
         if (!this.fetcherService) {
@@ -174,7 +173,7 @@ export class BlockProcessorInitializer {
     }
     
     /**
-     * Default network değerini ayarlar
+     * Sets default network value
      */
     public setDefaultNetwork(network: Network): void {
         this.defaultNetwork = network;
