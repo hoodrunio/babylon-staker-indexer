@@ -21,3 +21,4 @@ decoded.json
 test.json
 txtest.json
 src/scripts/test-block-by-height.ts
+tx.json
