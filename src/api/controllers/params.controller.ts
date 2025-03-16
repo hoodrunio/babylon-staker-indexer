@@ -3,7 +3,7 @@ import ParamsService from '../../services/params.service';
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 
-// Let's define the Params type
+// define the Params type
 interface ParamsResponse {
   network: Network;
   btccheckpoint?: any;

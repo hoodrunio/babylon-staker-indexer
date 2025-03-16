@@ -2,7 +2,7 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { Network } from '../types/finality';
 import { logger } from '../utils/logger';
 
-// Let's add an interface for custom error types
+// add an interface for custom error types
 export interface CustomError extends Error {
     originalError?: any;
 }
@@ -116,7 +116,7 @@ export abstract class BaseClient {
                     (error.response.data.message.includes('odd length hex string') ||
                      error.response.data.message.includes('invalid byte'))) {
                         
-                    // For these types of errors, let's not retry at all, directly throw the error
+                    // For these types of errors, not retry at all, directly throw the error
                     logger.warn(`[${this.constructor.name}] Invalid hex format error, not retrying: ${error.response.data.message}`);
                     
                     // Create a special error

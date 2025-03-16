@@ -37,7 +37,7 @@ export class FinalityEpochService {
      */
     private determineDefaultNetwork(): Network {
         try {
-            // Let's try testnet first
+            // try testnet first
             try {
                 const testnetClient = BabylonClient.getInstance(Network.TESTNET);
                 const testnetBaseUrl = testnetClient.getBaseUrl();
