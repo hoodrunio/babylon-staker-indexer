@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logger } from './logger';
 
 export class BitcoinRPC {
   private url: string;
@@ -47,7 +48,7 @@ export class BitcoinRPC {
     } catch (error: any) {
       if (error.response?.status === 429 && retryCount < this.RETRY_DELAYS.length) {
         const delay = this.RETRY_DELAYS[retryCount];
-        console.log(`Rate limited. Retrying after ${delay}ms...`);
+        logger.info(`Rate limited. Retrying after ${delay}ms...`);
         await this.sleep(delay);
         return this.makeRequest(method, params, retryCount + 1);
       }

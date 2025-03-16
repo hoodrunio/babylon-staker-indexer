@@ -2,45 +2,165 @@ import express from 'express';
 import dotenv from 'dotenv';
 import router from './api/routes';
 import { BabylonIndexer } from './services/BabylonIndexer';
+import { FinalitySignatureService } from './services/finality/FinalitySignatureService';
+import { WebsocketService } from './services/WebsocketService';
+import { BTCDelegationService } from './services/btc-delegations/BTCDelegationService';
+import cors from 'cors';
+import compression from 'compression';
+import { logger } from './utils/logger';
+import { GovernanceIndexerService } from './services/governance/GovernanceIndexerService';
+import { BabylonClient } from './clients/BabylonClient';
+import { BlockProcessorModule } from './services/block-processor/BlockProcessorModule';
+import { Network } from './types/finality';
 
 // Load environment variables
 dotenv.config();
 
-const app = express();
-app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
-const port = process.env.PORT || 3000;
+async function startServer() {
+    logger.info('Starting services...');
 
-// Middleware
-app.use(express.json());
+    const app = express();
+    app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
+    const port = process.env.PORT || 3000;
 
-// Routes - Add /api prefix
-app.use('/api', router);
+    // CORS settings
+    app.use(cors({
+        origin: '*',
+        methods: ['GET', 'POST', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        credentials: true,
+        maxAge: 86400
+    }));
 
-// Basic route for testing
-app.get('/', (req, res) => {
-  res.json({ message: 'Babylon Indexer API' });
-});
+    // Compression middleware - HTTP yanıtlarını sıkıştırır
+    app.use(compression());
 
-// Error handling
-app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something broke!' });
-});
+    // Middleware
+    app.use(express.json());
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+    // Special CORS middleware for SSE endpoints
+    app.use('/api/finality/signatures/:fpBtcPkHex/stream', (req, res, next) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        next();
+    });
 
-// Initialize indexer
-const indexer = new BabylonIndexer();
+    // Routes - Add /api prefix
+    app.use('/api', router);
 
-// Start indexing if INDEXER_ENABLED is true
-if (process.env.INDEXER_ENABLED === 'true') {
-  const startHeight = parseInt(process.env.START_HEIGHT || '0');
-  const endHeight = parseInt(process.env.END_HEIGHT || '0');
-  
-  if (startHeight && endHeight) {
-    indexer.scanBlocks(startHeight, endHeight).catch(console.error);
-  }
-} 
+    // Basic route for testing
+    app.get('/', (req, res) => {
+        res.json({ message: 'Babylon Indexer API' });
+    });
+
+    // Error handling
+    app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        logger.error(err.stack);
+        res.status(500).json({ error: 'Something broke!' });
+    });
+
+    // Start server
+    app.listen(port, () => {
+        logger.info(`Server running at http://localhost:${port}`);
+    });
+
+    // Initialize and start the FinalitySignatureService
+    const finalityService = FinalitySignatureService.getInstance();
+    await finalityService.start();
+
+    // Initialize BTCDelegationService (this will start initial sync)
+    logger.info('Initializing BTCDelegationService...');
+    BTCDelegationService.getInstance();
+    
+    // Initialize BlockProcessorModule
+    logger.info('Initializing BlockProcessorModule...');
+    const blockProcessorModule = BlockProcessorModule.getInstance();
+    blockProcessorModule.initialize();
+    
+    // Start historical sync if BLOCK_SYNC_ENABLED is true
+    if (process.env.BLOCK_SYNC_ENABLED === 'true') {
+        const network = process.env.NETWORK === 'mainnet' ? Network.MAINNET : Network.TESTNET;
+        const fromHeight = parseInt(process.env.BLOCK_SYNC_FROM_HEIGHT || '0');
+        const blockCount = parseInt(process.env.BLOCK_SYNC_COUNT || '100');
+        
+        if (fromHeight > 0) {
+            logger.info(`Starting historical block sync from height ${fromHeight}...`);
+            blockProcessorModule.startHistoricalSync(network, fromHeight).catch(logger.error);
+        } else {
+            logger.info(`Starting latest ${blockCount} blocks sync...`);
+            blockProcessorModule.startHistoricalSync(network, undefined, blockCount).catch(logger.error);
+        }
+    }
+
+    // Initialize and start the WebSocket service
+    const websocketService = WebsocketService.getInstance();
+    websocketService.startListening();
+
+    // Initialize indexer
+    const indexer = new BabylonIndexer();
+
+    // Start indexing if INDEXER_ENABLED is true
+    if (process.env.INDEXER_ENABLED === 'true') {
+        const startHeight = parseInt(process.env.START_HEIGHT || '0');
+        const endHeight = parseInt(process.env.END_HEIGHT || '0');
+
+        if (startHeight && endHeight) {
+            indexer.scanBlocks(startHeight, endHeight).catch(logger.error);
+        }
+    }
+
+    // Initialize Babylon client
+    const babylonClient = BabylonClient.getInstance();
+
+    // Initialize governance indexer
+    const governanceIndexer = new GovernanceIndexerService(babylonClient);
+    governanceIndexer.start();
+
+    // Special shutdown process for PM2
+    const shutdown = async (signal: string) => {
+        logger.info(`${signal} signal received. Starting graceful shutdown...`);
+        try {
+            // Stop all services
+            websocketService.stop();
+            finalityService.stop();
+
+            // Wait a bit for cleanup
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            logger.info('All services stopped. Waiting for final cleanup...');
+
+            // Allow PM2 to use its own logging mechanism
+            if (process.env.PM2_USAGE) {
+                // Allow PM2 to use its own logging mechanism
+                process.send?.('shutdown');
+                // Wait a little longer
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            } else {
+                // Close Winston logger if running outside PM2
+                await new Promise<void>((resolve) => {
+                    logger.on('finish', resolve);
+                    logger.end();
+                });
+            }
+
+            process.exit(0);
+        } catch (error) {
+            console.error('Error during shutdown:', error);
+            process.exit(1);
+        }
+    };
+
+    // Listen for PM2 shutdown message
+    process.on('message', (msg) => {
+        if (msg === 'shutdown') {
+            shutdown('PM2');
+        }
+    });
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+startServer().catch(logger.error);

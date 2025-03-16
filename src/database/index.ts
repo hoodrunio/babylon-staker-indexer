@@ -8,7 +8,8 @@ import {
   IndexerStateService,
   StatsService
 } from './services';
-import { FinalityProvider, FinalityProviderStats, StakerStats, TimeRange } from '../types';
+import { FinalityProviderStats, StakerStats, TimeRange } from '../types';
+import { logger } from '../utils/logger';
 
 dotenv.config();
 
@@ -47,21 +48,39 @@ export class Database {
     }
 
     try {
-      console.log('Connecting to MongoDB...');
-      console.log('MongoDB URI:', process.env.MONGODB_URI);
+      const mongoUri = process.env.MONGODB_URI;
+      if (!mongoUri) {
+        throw new Error('MONGODB_URI is not defined in environment variables');
+      }
+
+      logger.info('Connecting to MongoDB...');
       
-      await mongoose.connect(process.env.MONGODB_URI!);
+      await mongoose.connect(mongoUri);
       this.isConnected = true;
       this.db = mongoose.connection;
       
-      console.log('Connected to MongoDB successfully');
-      console.log('Database name:', this.db.name);
-      if (this.db.db) {
-        console.log('Collections:', await this.db.db.collections());
-      }
+      logger.info('MongoDB connected successfully');
+      logger.info('Database name:', this.db.name);
+      /* if (this.db.db) {
+        logger.info('Collections:', await this.db.db.collections());
+      } */
+
+      // Connection events
+      mongoose.connection.on('error', err => {
+        logger.error('MongoDB connection error:', err);
+      });
+
+      mongoose.connection.on('disconnected', () => {
+        logger.warn('MongoDB disconnected');
+      });
+
+      mongoose.connection.on('reconnected', () => {
+        logger.info('MongoDB reconnected');
+      });
+
     } catch (error) {
-      console.error('MongoDB connection error:', error);
-      throw error;
+      logger.error('Error connecting to MongoDB:', error);
+      process.exit(1);
     }
   }
 
@@ -79,8 +98,16 @@ export class Database {
   }
 
   // FinalityProvider methods
-  async getFPStats(address: string, timeRange?: any): Promise<any> {
-    return this.finalityProviderService.getFPStats(address, timeRange);
+  async getFPStats(
+    address: string, 
+    timeRange?: TimeRange,
+    skip?: number,
+    limit?: number,
+    search?: string,
+    sortBy?: string,
+    sortOrder?: 'asc' | 'desc'
+  ): Promise<FinalityProviderStats> {
+    return this.finalityProviderService.getFPStats(address, timeRange, skip, limit, search, sortBy, sortOrder);
   }
 
   async getAllFPs(): Promise<any[]> {
@@ -95,9 +122,13 @@ export class Database {
   async getStakerStats(
     address: string, 
     timeRange?: TimeRange,
-    includeTransactions: boolean = false
+    includeTransactions: boolean = false,
+    skip?: number,
+    limit?: number,
+    sortBy: string = 'totalStake',
+    sortOrder: 'asc' | 'desc' = 'desc'
   ): Promise<StakerStats> {
-    return this.stakerService.getStakerStats(address, timeRange, includeTransactions);
+    return this.stakerService.getStakerStats(address, timeRange, includeTransactions, skip, limit, sortBy, sortOrder);
   }
 
   async getTopStakers(
@@ -105,9 +136,11 @@ export class Database {
     limit: number = 10,
     sortBy: string = 'totalStake',
     order: 'asc' | 'desc' = 'desc',
-    includeTransactions: boolean = false
+    includeTransactions: boolean = false,
+    transactionsSkip?: number,
+    transactionsLimit?: number
   ): Promise<StakerStats[]> {
-    return this.stakerService.getTopStakers(skip, limit, sortBy, order, includeTransactions);
+    return this.stakerService.getTopStakers(skip, limit, sortBy, order, includeTransactions, transactionsSkip, transactionsLimit);
   }
 
   async getStakersCount(): Promise<number> {
@@ -174,12 +207,28 @@ export class Database {
     limit: number = 10,
     sortBy: string = 'totalStake',
     order: 'asc' | 'desc' = 'desc',
-    includeStakers: boolean = false
+    includeStakers: boolean = false,
+    stakersSkip?: number,
+    stakersLimit?: number
   ): Promise<FinalityProviderStats[]> {
-    return this.finalityProviderService.getAllFPs(skip, limit, sortBy, order, includeStakers);
+    return this.finalityProviderService.getAllFPs(skip, limit, sortBy, order, includeStakers, stakersSkip, stakersLimit);
   }
 
   async getFinalityProvidersCount(): Promise<number> {
     return this.finalityProviderService.getFinalityProvidersCount();
+  }
+
+  async getFinalityProviderTotalStakers(
+    address: string,
+    timeRange?: TimeRange
+  ): Promise<number> {
+    return this.finalityProviderService.getFinalityProviderTotalStakers(address, timeRange);
+  }
+
+  async getStakerTotalTransactions(
+    address: string,
+    timeRange?: TimeRange
+  ): Promise<number> {
+    return this.stakerService.getStakerTotalTransactions(address, timeRange);
   }
 }

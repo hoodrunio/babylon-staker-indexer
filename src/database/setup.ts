@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { PhaseStats } from './models/phase-stats';
 import { getPhaseConfig } from '../config/phase-config';
+import { logger } from '../utils/logger';
+import { Block, BlockchainTransaction } from './models/blockchain';
 
 dotenv.config();
 
@@ -10,24 +12,26 @@ async function setupDatabase() {
   try {
     // Connect to MongoDB
     connection = await mongoose.connect(process.env.MONGODB_URI!);
-    console.log('Connected to MongoDB');
+    logger.info('Connected to MongoDB');
 
     // Drop the PhaseStats collection if it exists
     try {
       const db = mongoose.connection.db;
       if (db) {
         await db.dropCollection('phasestats');
-        console.log('Dropped existing phasestats collection');
+        logger.info('Dropped existing phasestats collection');
       }
     } catch (error) {
-      console.log('No existing phasestats collection to drop');
+      logger.info('No existing phasestats collection to drop');
     }
 
     // Create indexes for other collections
     await Promise.all([
       mongoose.model('Transaction').createIndexes(),
       mongoose.model('FinalityProvider').createIndexes(),
-      mongoose.model('Staker').createIndexes()
+      mongoose.model('Staker').createIndexes(),
+      Block.createIndexes(),
+      BlockchainTransaction.createIndexes()
     ]);
 
     // Initialize phase stats
@@ -58,10 +62,10 @@ async function setupDatabase() {
       if (db) {
         const collection = db.collection('phasestats');
         await collection.dropIndexes();
-        console.log('Dropped existing indexes on phasestats collection');
+        logger.info('Dropped existing indexes on phasestats collection');
       }
     } catch (error) {
-      console.log('Error dropping indexes:', error);
+      logger.info('Error dropping indexes:', error);
     }
 
     // Create new indexes for PhaseStats
@@ -74,9 +78,9 @@ async function setupDatabase() {
       { name: 'idx_status' }
     );
 
-    console.log('Database indexes and phase stats initialized successfully');
+    logger.info('Database indexes and phase stats initialized successfully');
   } catch (error) {
-    console.error('Error setting up database:', error);
+    logger.error('Error setting up database:', error);
     throw error;
   } finally {
     if (connection) {
@@ -87,8 +91,8 @@ async function setupDatabase() {
 
 if (require.main === module) {
   setupDatabase()
-    .then(() => console.log('Database setup completed'))
-    .catch(console.error);
+    .then(() => logger.info('Database setup completed'))
+    .catch(logger.error);
 }
 
 export default setupDatabase;

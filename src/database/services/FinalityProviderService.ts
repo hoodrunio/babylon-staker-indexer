@@ -1,6 +1,9 @@
 import { FinalityProvider } from '../models/FinalityProvider';
 import { Transaction } from '../models/Transaction';
-import { FinalityProviderStats, TimeRange, TopFinalityProviderStats } from '../../types';
+import { FinalityProviderStats, TimeRange, TopFinalityProviderStats, GroupedStakersResponse } from '../../types';
+import { PipelineStage } from 'mongoose';
+import { CacheService } from '../../services/CacheService';
+import { logger } from '../../utils/logger';
 
 interface QueryWithTimestamp {
   address: string;
@@ -11,18 +14,214 @@ interface QueryWithTimestamp {
 }
 
 export class FinalityProviderService {
-  async getFPStats(address: string, timeRange?: TimeRange): Promise<FinalityProviderStats> {
-    const query: QueryWithTimestamp = { address };
-    if (timeRange) {
-      query.timestamp = {
-        $gte: timeRange.firstTimestamp,
-        $lte: timeRange.lastTimestamp
-      };
+  private cache: CacheService;
+  private readonly CACHE_TTL = 300; // 5 minutes
+  private readonly CACHE_PREFIX = 'fp';
+
+  constructor() {
+    this.cache = CacheService.getInstance();
+  }
+
+  private generateCacheKey(method: string, params: Record<string, any>): string {
+    return this.cache.generateKey(`${this.CACHE_PREFIX}:${method}`, params);
+  }
+
+  async getFPStats(
+    address: string, 
+    timeRange?: TimeRange,
+    skip: number = 0,
+    limit: number = 50,
+    search?: string,
+    sortBy: string = 'stake',
+    sortOrder: 'asc' | 'desc' = 'desc'
+  ): Promise<FinalityProviderStats> {
+    const cacheKey = this.generateCacheKey('stats', {
+      address,
+      timeRange,
+      skip,
+      limit,
+      search,
+      sortBy,
+      sortOrder
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<FinalityProviderStats>(cacheKey);
+    if (cachedData) {
+      return cachedData;
     }
 
     const fp = await FinalityProvider.findOne({ address }).lean();
     if (!fp) {
       throw new Error(`Finality Provider not found: ${address}`);
+    }
+
+    let phaseStakes: FinalityProviderStats['phaseStakes'] = fp.phaseStakes?.map(phase => ({
+      phase: phase.phase,
+      totalStake: phase.totalStake,
+      transactionCount: phase.transactionCount,
+      stakerCount: phase.stakerCount,
+      stakers: []
+    })) || [];
+
+    if (timeRange) {
+      const transactions = await Transaction.find({
+        finalityProvider: address,
+        timestamp: {
+          $gte: timeRange.firstTimestamp,
+          $lte: timeRange.lastTimestamp
+        }
+      })
+      .sort({ timestamp: -1 })
+      .lean();
+
+      const phaseTransactions = new Map<number, any[]>();
+      transactions.forEach(tx => {
+        const phase = (tx as any).paramsVersion + 1 || 0;
+        if (!phaseTransactions.has(phase)) {
+          phaseTransactions.set(phase, []);
+        }
+        phaseTransactions.get(phase)!.push(tx);
+      });
+
+      phaseStakes = Array.from(phaseTransactions.entries()).map(([phase, txs]) => {
+        const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
+        const uniqueStakers = new Set(txs.map(tx => tx.stakerAddress));
+        const stakerStakes = new Map<string, {
+          stake: number;
+          timestamp: number;
+          txId: string;
+        }>();
+        
+        txs.forEach(tx => {
+          if (!stakerStakes.has(tx.stakerAddress)) {
+            stakerStakes.set(tx.stakerAddress, {
+              stake: 0,
+              timestamp: tx.timestamp,
+              txId: tx.txid
+            });
+          }
+          const staker = stakerStakes.get(tx.stakerAddress)!;
+          staker.stake += tx.stakeAmount;
+          // Update timestamp and txId only if this transaction is newer
+          if (tx.timestamp > staker.timestamp) {
+            staker.timestamp = tx.timestamp;
+            staker.txId = tx.txid;
+          }
+        });
+
+        let stakers = Array.from(stakerStakes.entries())
+          .map(([address, data]) => ({
+            address,
+            stake: data.stake,
+            timestamp: data.timestamp,
+            txId: data.txId
+          }));
+
+        // Apply search filter if provided
+        if (search) {
+          const searchLower = search.toLowerCase();
+          stakers = stakers.filter(staker => 
+            staker.address.toLowerCase().includes(searchLower) || 
+            staker.txId.toLowerCase().includes(searchLower)
+          );
+        }
+
+        // Apply sorting
+        stakers.sort((a, b) => {
+          const aValue = a[sortBy as keyof typeof a];
+          const bValue = b[sortBy as keyof typeof b];
+          
+          if (typeof aValue === 'string' && typeof bValue === 'string') {
+            return sortOrder === 'asc' ? 
+              aValue.localeCompare(bValue) : 
+              bValue.localeCompare(aValue);
+          }
+          
+          return sortOrder === 'asc' ? 
+            (aValue as number) - (bValue as number) : 
+            (bValue as number) - (aValue as number);
+        });
+
+        return {
+          phase,
+          totalStake,
+          transactionCount: txs.length,
+          stakerCount: uniqueStakers.size,
+          stakers: stakers.slice(skip, skip + limit)
+        };
+      });
+    } else {
+      // When no time range is specified, get stakers for each phase separately
+      const pipeline: PipelineStage[] = [
+        {
+          $match: {
+            finalityProvider: address,
+            ...(search && {
+              $or: [
+                { stakerAddress: { $regex: search, $options: 'i' } },
+                { txid: { $regex: search, $options: 'i' } }
+              ]
+            })
+          }
+        },
+        {
+          $group: {
+            _id: {
+              phase: { $add: ['$paramsVersion', 1] },
+              stakerAddress: '$stakerAddress'
+            },
+            stake: { $sum: '$stakeAmount' },
+            lastTransaction: { $last: '$$ROOT' }
+          }
+        },
+        {
+          $group: {
+            _id: '$_id.phase',
+            totalStake: { $sum: '$stake' },
+            stakerCount: { $sum: 1 },
+            stakers: {
+              $push: {
+                address: '$_id.stakerAddress',
+                stake: '$stake',
+                timestamp: '$lastTransaction.timestamp',
+                txId: '$lastTransaction.txid'
+              }
+            }
+          }
+        },
+        { $sort: { '_id': 1 } }
+      ];
+
+      const phaseStakersResult = await Transaction.aggregate(pipeline);
+
+      phaseStakes = phaseStakersResult.map(phaseData => {
+        let stakers = phaseData.stakers;
+
+        // Apply sorting
+        stakers.sort((a: any, b: any) => {
+          const aValue = a[sortBy];
+          const bValue = b[sortBy];
+          
+          if (typeof aValue === 'string' && typeof bValue === 'string') {
+            return sortOrder === 'asc' ? 
+              aValue.localeCompare(bValue) : 
+              bValue.localeCompare(aValue);
+          }
+          
+          return sortOrder === 'asc' ? 
+            aValue - bValue : 
+            bValue - aValue;
+        });
+
+        return {
+          phase: phaseData._id,
+          totalStake: phaseData.totalStake,
+          transactionCount: phaseData.stakerCount,
+          stakerCount: phaseData.stakerCount,
+          stakers: stakers.slice(skip, skip + limit)
+        };
+      });
     }
 
     const uniqueBlocks = await Transaction.distinct('blockHeight', {
@@ -35,74 +234,7 @@ export class FinalityProviderService {
       })
     });
 
-    const stakerTransactions = await Transaction.find(
-      { 
-        finalityProvider: address,
-        ...(timeRange && {
-          timestamp: {
-            $gte: timeRange.firstTimestamp,
-            $lte: timeRange.lastTimestamp
-          }
-        })
-      },
-      { stakerAddress: 1, timestamp: 1 }
-    ).lean();
-
-    const stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
-
-    let phaseStakes = fp.phaseStakes?.map(phase => ({
-      phase: phase.phase,
-      totalStake: phase.totalStake,
-      transactionCount: phase.transactionCount,
-      stakerCount: phase.stakerCount,
-      stakers: phase.stakers.map(staker => ({
-        address: staker.address,
-        stake: staker.stake
-      }))
-    }));
-
-    if (timeRange) {
-      const transactions = await Transaction.find({
-        finalityProvider: address,
-        timestamp: {
-          $gte: timeRange.firstTimestamp,
-          $lte: timeRange.lastTimestamp
-        }
-      }).lean();
-
-      const phaseTransactions = new Map<number, any[]>();
-      transactions.forEach(tx => {
-        const phase = (tx as any).phase || 0;
-        if (!phaseTransactions.has(phase)) {
-          phaseTransactions.set(phase, []);
-        }
-        phaseTransactions.get(phase)!.push(tx);
-      });
-
-      phaseStakes = Array.from(phaseTransactions.entries()).map(([phase, txs]) => {
-        const totalStake = txs.reduce((sum, tx) => sum + tx.stakeAmount, 0);
-        const uniqueStakers = new Set(txs.map(tx => tx.stakerAddress));
-        const stakerStakes = new Map<string, number>();
-        
-        txs.forEach(tx => {
-          const currentStake = stakerStakes.get(tx.stakerAddress) || 0;
-          stakerStakes.set(tx.stakerAddress, currentStake + tx.stakeAmount);
-        });
-
-        return {
-          phase,
-          totalStake,
-          transactionCount: txs.length,
-          stakerCount: uniqueStakers.size,
-          stakers: Array.from(stakerStakes.entries()).map(([address, stake]) => ({
-            address,
-            stake
-          }))
-        };
-      });
-    }
-
-    return {
+    const response: FinalityProviderStats = {
       address: fp.address,
       totalStake: fp.totalStake.toString(),
       createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
@@ -118,10 +250,14 @@ export class FinalityProviderService {
       },
       averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
       versionsUsed: fp.versionsUsed,
-      stakerAddresses,
       stats: {},
       phaseStakes
     };
+
+    // Save to cache
+    await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+    return response;
   }
 
   async getAllFPs(
@@ -129,70 +265,128 @@ export class FinalityProviderService {
     limit: number = 10,
     sortBy: string = 'totalStake',
     order: 'asc' | 'desc' = 'desc',
-    includeStakers: boolean = false
+    includeStakers: boolean = false,
+    stakersSkip: number = 0,
+    stakersLimit: number = 50
   ): Promise<FinalityProviderStats[]> {
-    console.log('Getting all FPs with params:', { skip, limit, sortBy, order, includeStakers });
-    
+    const cacheKey = this.generateCacheKey('all', {
+      skip,
+      limit,
+      sortBy,
+      order,
+      includeStakers,
+      stakersSkip,
+      stakersLimit
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<FinalityProviderStats[]>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
     try {
       const sortOrder = order === 'asc' ? 1 : -1;
-      const collection = FinalityProvider.collection;
+      
+      const pipeline: PipelineStage[] = [
+        {
+          $group: {
+            _id: '$finalityProvider',
+            totalStake: { $sum: '$stakeAmount' },
+            transactionCount: { $sum: 1 },
+            uniqueStakers: { $addToSet: '$stakerAddress' },
+            uniqueBlocks: { $addToSet: '$blockHeight' },
+            firstSeen: { $min: '$timestamp' },
+            lastSeen: { $max: '$timestamp' },
+            versionsUsed: { $addToSet: '$version' }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            address: '$_id',
+            totalStake: 1,
+            totalStakeBTC: { $divide: ['$totalStake', 100000000] },
+            transactionCount: 1,
+            uniqueStakers: { $size: '$uniqueStakers' },
+            uniqueBlocks: { $size: '$uniqueBlocks' },
+            timeRange: {
+              firstTimestamp: '$firstSeen',
+              lastTimestamp: '$lastSeen',
+              durationSeconds: { $subtract: ['$lastSeen', '$firstSeen'] }
+            },
+            averageStakeBTC: {
+              $divide: [
+                { $divide: ['$totalStake', '$transactionCount'] },
+                100000000
+              ]
+            },
+            versionsUsed: 1
+          }
+        },
+        { $sort: { [sortBy]: sortOrder } },
+        { $skip: skip },
+        { $limit: limit }
+      ];
 
-      const fps = await FinalityProvider.find()
-        .sort({ [sortBy]: sortOrder })
-        .skip(skip)
-        .limit(limit)
-        .lean();
-      
-      console.log('Found FPs:', fps.length);
-      
-      return Promise.all(fps.map(async (fp) => {
-        const uniqueBlocks = await Transaction.distinct('blockHeight', {
-          finalityProvider: fp.address
+      if (includeStakers) {
+        pipeline.push({
+          $lookup: {
+            from: 'transactions',
+            let: { fpAddress: '$address' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$finalityProvider', '$$fpAddress'] }
+                }
+              },
+              { $sort: { timestamp: -1 } },
+              { $skip: stakersSkip },
+              { $limit: stakersLimit },
+              {
+                $project: {
+                  _id: 0,
+                  stakerAddress: 1,
+                  stakeAmount: 1
+                }
+              }
+            ],
+            as: 'stakerAddresses'
+          }
         });
+      }
 
-        let stakerAddresses: string[] = [];
-        if (includeStakers) {
-          const stakerTransactions = await Transaction.find(
-            { finalityProvider: fp.address },
-            { stakerAddress: 1 }
-          ).lean();
-          stakerAddresses = [...new Set(stakerTransactions.map(tx => tx.stakerAddress))];
-        }
-
+      const fps = await Transaction.aggregate(pipeline);
+      
+      const response = await Promise.all(fps.map(async (fp) => {
+        const fpDoc = await FinalityProvider.findOne({ address: fp.address }).lean();
+        
         return {
-          address: fp.address,
-          totalStake: fp.totalStake.toString(),
-          createdAt: Math.floor(new Date(fp.createdAt || fp.firstSeen).getTime() / 1000),
-          updatedAt: Math.floor(new Date(fp.updatedAt || fp.lastSeen).getTime() / 1000),
-          totalStakeBTC: fp.totalStake / 100000000,
-          transactionCount: fp.transactionCount,
-          uniqueStakers: fp.uniqueStakers.length,
-          uniqueBlocks: uniqueBlocks.length,
-          timeRange: {
-            firstTimestamp: fp.firstSeen,
-            lastTimestamp: fp.lastSeen,
-            durationSeconds: fp.lastSeen - fp.firstSeen
-          },
-          averageStakeBTC: (fp.totalStake / fp.transactionCount) / 100000000,
-          versionsUsed: fp.versionsUsed,
-          ...(includeStakers && { stakerAddresses }),
-          stats: {},
-          phaseStakes: fp.phaseStakes?.map(phase => ({
+          ...fp,
+          phaseStakes: fpDoc?.phaseStakes?.map(phase => ({
             phase: phase.phase,
             totalStake: phase.totalStake,
             transactionCount: phase.transactionCount,
             stakerCount: phase.stakerCount,
             ...(includeStakers && {
-              stakers: phase.stakers.map(staker => ({
-                address: staker.address,
-                stake: staker.stake
-              }))
+              stakers: phase.stakers
+                .slice(stakersSkip, stakersSkip + stakersLimit)
+                .map(staker => ({
+                  address: staker.address,
+                  stake: staker.stake
+                }))
             })
-          }))
+          })) || [],
+          stats: {}
         };
       }));
+
+      // Save to cache
+      await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+      return response;
     } catch (error) {
-      console.error('Error in getAllFPs:', error);
+      logger.error('Error in getAllFPs:', error);
       throw error;
     }
   }
@@ -200,15 +394,23 @@ export class FinalityProviderService {
   async getFinalityProvidersCount(): Promise<number> {
     try {
       const count = await FinalityProvider.countDocuments({});
-      console.log('Total finality providers:', count);
+      logger.info('Total finality providers:', count);
       return count;
     } catch (error) {
-      console.error('Error in getFinalityProvidersCount:', error);
+      logger.error('Error in getFinalityProvidersCount:', error);
       throw error;
     }
   }
 
   async getTopFPs(limit: number = 10): Promise<TopFinalityProviderStats[]> {
+    const cacheKey = this.generateCacheKey('top', { limit });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<TopFinalityProviderStats[]>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
     const fps = await FinalityProvider.find()
       .sort({ totalStake: -1 })
       .limit(limit)
@@ -216,7 +418,7 @@ export class FinalityProviderService {
 
     const totalStake = fps.reduce((sum, fp) => sum + fp.totalStake, 0);
 
-    const results = await Promise.all(fps.map(async (fp, index) => {
+    const response = await Promise.all(fps.map(async (fp, index) => {
       const uniqueBlocks = await Transaction.distinct('blockHeight', {
         finalityProvider: fp.address
       });
@@ -256,12 +458,15 @@ export class FinalityProviderService {
       };
     }));
 
-    return results;
+    // Save to cache
+    await this.cache.set(cacheKey, response, this.CACHE_TTL);
+
+    return response;
   }
 
   async reindexFinalityProviders(): Promise<void> {
     try {
-      console.log('Starting finality provider reindexing...');
+      logger.info('Starting finality provider reindexing...');
       
       const transactions = await Transaction.find({}).sort({ timestamp: 1 });
       
@@ -347,10 +552,126 @@ export class FinalityProviderService {
         );
       }
       
-      console.log('Finality provider reindexing completed');
+      // Clear all FP-related cache after reindexing
+      await this.cache.clearPattern(`${this.CACHE_PREFIX}:*`);
+      
+      logger.info('Finality provider reindexing completed');
     } catch (error) {
-      console.error('Error reindexing finality providers:', error);
+      logger.error('Error reindexing finality providers:', error);
       throw error;
     }
+  }
+
+  async getFinalityProviderTotalStakers(
+    address: string,
+    timeRange?: TimeRange
+  ): Promise<number> {
+    const query: any = { finalityProvider: address };
+    
+    if (timeRange) {
+      query.timestamp = {
+        $gte: timeRange.firstTimestamp,
+        $lte: timeRange.lastTimestamp
+      };
+    }
+
+    const uniqueStakers = await Transaction.distinct('stakerAddress', query);
+    return uniqueStakers.length;
+  }
+
+  // Cache invalidation methods
+  private async invalidateFPCache(address: string): Promise<void> {
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:*:address:${address}*`);
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:all:*`);
+    await this.cache.clearPattern(`${this.CACHE_PREFIX}:top:*`);
+  }
+
+  async getGroupedStakers(
+    address: string,
+    skip: number = 0,
+    limit: number = 10,
+    sortOrder: 'asc' | 'desc' = 'desc',
+    sortBy: string = 'totalStake',
+    search?: string
+  ): Promise<GroupedStakersResponse> {
+    const cacheKey = this.generateCacheKey('groupedStakers', {
+      address,
+      skip,
+      limit,
+      sortOrder,
+      sortBy,
+      search
+    });
+
+    // Try to get from cache
+    const cachedData = await this.cache.get<GroupedStakersResponse>(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
+    const sortStage: PipelineStage = {
+      $sort: { [sortBy]: sortOrder === 'desc' ? -1 : 1 } as Record<string, 1 | -1>
+    };
+
+    const matchStage: PipelineStage = {
+      $match: {
+        finalityProvider: address,
+        ...(search && {
+          $or: [
+            { stakerAddress: { $regex: search, $options: 'i' } },
+            { txid: { $regex: search, $options: 'i' } }
+          ]
+        })
+      }
+    };
+
+    const pipeline: PipelineStage[] = [
+      matchStage,
+      {
+        $group: {
+          _id: {
+            staker: '$stakerAddress',
+            phase: { $add: ['$paramsVersion', 1] }
+          },
+          phaseStake: { $sum: '$stakeAmount' },
+          lastTxId: { $first: '$txid' },
+          lastStakedAt: { $max: '$timestamp' }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.staker',
+          totalStake: { $sum: '$phaseStake' },
+          lastTxId: { $first: '$lastTxId' },
+          lastStakedAt: { $max: '$lastStakedAt' },
+          phases: {
+            $push: {
+              phase: '$_id.phase',
+              stake: '$phaseStake'
+            }
+          }
+        }
+      },
+      sortStage,
+      {
+        $facet: {
+          metadata: [{ $count: 'total' }],
+          data: [
+            { $skip: skip },
+            { $limit: limit }
+          ]
+        }
+      }
+    ];
+
+    const result = await Transaction.aggregate(pipeline);
+    const response: GroupedStakersResponse = {
+      total: result[0].metadata[0]?.total || 0,
+      stakers: result[0].data || []
+    };
+
+    // Cache the results
+    await this.cache.set(cacheKey, response, this.CACHE_TTL);
+    return response;
   }
 }

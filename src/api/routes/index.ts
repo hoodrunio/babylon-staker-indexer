@@ -10,7 +10,11 @@ import {
   corsMiddleware 
 } from '../middleware';
 import dotenv from 'dotenv';
-
+import pointsRouter from './points';
+import finalityRouter from './finality';
+import v1Router from './v1';
+import { FinalityProviderService } from '../../database/services/FinalityProviderService';
+import { logger } from '../../utils/logger';
 dotenv.config();
 const router = express.Router();
 const indexer = new BabylonIndexer();
@@ -19,6 +23,13 @@ const indexer = new BabylonIndexer();
 router.use(corsMiddleware);
 router.use(compressionMiddleware);
 router.use(rateLimiter);
+
+// Legacy routes
+router.use('/points', pointsRouter);
+router.use('/finality', finalityRouter);
+
+// v1 API routes
+router.use('/v1', v1Router);
 
 // Swagger documentation route
 router.use('/api-docs', corsMiddleware, swaggerUi.serve);
@@ -43,13 +54,39 @@ router.get('/finality-providers', paginationMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc', skip = 0 } = req.pagination!;
     const includeStakers = req.query.include_stakers === 'true';
+    const stakersLimit = parseInt(req.query.stakers_limit as string) || 50;
+    const stakersPage = parseInt(req.query.stakers_page as string) || 1;
     
     const [fps, total] = await Promise.all([
-      indexer.getAllFinalityProviders(skip, limit, sortBy, order, includeStakers),
+      indexer.getAllFinalityProviders(
+        skip, 
+        limit, 
+        sortBy, 
+        order, 
+        includeStakers,
+        (stakersPage - 1) * stakersLimit,
+        stakersLimit
+      ),
       indexer.getFinalityProvidersCount()
     ]);
 
-    res.json(formatPaginatedResponse(fps, total, page, limit));
+    res.json({ 
+      data: fps,
+      timestamp: Date.now(),
+      meta: {
+        pagination: {
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          totalCount: total,
+          hasMore: page < Math.ceil(total / limit)
+        },
+        stakers: includeStakers ? {
+          page: stakersPage,
+          limit: stakersLimit
+        } : null
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -73,7 +110,9 @@ router.get('/finality-providers/top', paginationMiddleware, async (req, res) => 
 
 router.get('/finality-providers/:address', async (req, res) => {
   const { address } = req.params;
-  const { from, to } = req.query;
+  const { from, to, search, sort_by = 'stake', sort_order = 'desc' } = req.query;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 50;
   
   try {
     const timeRange = from && to ? {
@@ -82,12 +121,92 @@ router.get('/finality-providers/:address', async (req, res) => {
       durationSeconds: Number(to) - Number(from),
     } : undefined;
 
-    const stats = await indexer.getFinalityProviderStats(address, timeRange);
+    const skip = (page - 1) * limit;
+
+    // Validate sort_order
+    if (sort_order && !['asc', 'desc'].includes(sort_order as string)) {
+      throw new Error('Invalid sort_order. Must be either "asc" or "desc".');
+    }
+
+    // Validate sort_by
+    const allowedSortFields = ['stake', 'address', 'timestamp', 'txId'];
+    if (sort_by && !allowedSortFields.includes(sort_by as string)) {
+      throw new Error(`Invalid sort_by. Must be one of: ${allowedSortFields.join(', ')}`);
+    }
+
+    const [stats, totalCount] = await Promise.all([
+      indexer.getFinalityProviderStats(
+        address, 
+        timeRange, 
+        skip, 
+        limit,
+        search as string,
+        sort_by as string,
+        sort_order as 'asc' | 'desc'
+      ),
+      indexer.getFinalityProviderTotalStakers(address, timeRange)
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
     res.json({ 
       data: stats,
+      timestamp: Date.now(),
+      meta: {
+        pagination: {
+          page,
+          limit,
+          totalPages,
+          totalCount,
+          hasMore: page < totalPages
+        },
+        timeRange: timeRange ? {
+          from: timeRange.firstTimestamp,
+          to: timeRange.lastTimestamp,
+          duration: timeRange.durationSeconds
+        } : null
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+router.get('/finality-providers/:address/grouped-stakers', paginationMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc' } = req.pagination!;
+    const search = req.query.search as string;
+    const skip = (page - 1) * limit;
+    const address = req.params.address;
+
+    // Validate sort_by
+    const allowedSortFields = ['totalStake', 'lastStakedAt'];
+    if (sortBy && !allowedSortFields.includes(sortBy)) {
+      throw new Error(`Invalid sortBy. Must be one of: ${allowedSortFields.join(', ')}`);
+    }
+
+    const fpService = new FinalityProviderService();
+    const result = await fpService.getGroupedStakers(
+      address, 
+      skip, 
+      limit, 
+      order as 'asc' | 'desc',
+      sortBy,
+      search
+    );
+
+    return res.json({
+      data: result.stakers,
+      metadata: {
+        currentPage: page,
+        totalPages: Math.ceil(result.total / limit),
+        totalItems: result.total,
+        itemsPerPage: limit
+      },
       timestamp: Date.now()
     });
   } catch (error) {
+    logger.error('Error fetching grouped stakers:', error);
     res.status(500).json({ error: (error as Error).message });
   }
 });
@@ -97,13 +216,41 @@ router.get('/stakers', paginationMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10, sortBy = 'totalStake', order = 'desc', skip = 0 } = req.pagination!;
     const includeTransactions = req.query.include_transactions === 'true';
+    const transactionsLimit = parseInt(req.query.transactions_limit as string) || 50;
+    const transactionsPage = parseInt(req.query.transactions_page as string) || 1;
     
-    const [stakers, total] = await Promise.all([
-      indexer.getTopStakers(skip, limit, sortBy, order, includeTransactions),
-      indexer.getStakersCount()
+    const [stakers, total, globalStats] = await Promise.all([
+      indexer.getTopStakers(
+        skip, 
+        limit, 
+        sortBy, 
+        order, 
+        includeTransactions,
+        (transactionsPage - 1) * transactionsLimit,
+        transactionsLimit
+      ),
+      indexer.getStakersCount(),
+      indexer.getStakerGlobalStats()
     ]);
 
-    res.json(formatPaginatedResponse(stakers, total, page, limit));
+    res.json({ 
+      data: stakers,
+      timestamp: Date.now(),
+      meta: {
+        pagination: {
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          totalCount: total,
+          hasMore: page < Math.ceil(total / limit)
+        },
+        transactions: includeTransactions ? {
+          page: transactionsPage,
+          limit: transactionsLimit
+        } : null
+      },
+      globalStats
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -113,19 +260,19 @@ router.get('/stakers/:address', async (req, res) => {
   const { address } = req.params;
   const { from, to } = req.query;
   const includeTransactions = req.query.include_transactions === 'true';
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 50;
+  const sortBy = (req.query.sort_by as string) || 'timestamp';
+  const sortOrder = (req.query.sort_order as string || 'desc') as 'asc' | 'desc';
   
   try {
-    // Debug search first
-    await indexer.db.debugStakerSearch(address);
-
-    // TimeRange parametrelerini kontrol et
     const timeRange = from && to ? {
       firstTimestamp: parseInt(from as string),
       lastTimestamp: parseInt(to as string),
       durationSeconds: parseInt(to as string) - parseInt(from as string)
     } : undefined;
 
-    // TimeRange değerlerinin geçerli olduğunu kontrol et
+    // Check if TimeRange values are valid
     if (timeRange) {
       if (isNaN(timeRange.firstTimestamp) || isNaN(timeRange.lastTimestamp)) {
         throw new Error('Invalid time range parameters. Please provide valid timestamps.');
@@ -135,10 +282,58 @@ router.get('/stakers/:address', async (req, res) => {
       }
     }
 
-    const stats = await indexer.getStakerStats(address, timeRange, includeTransactions);
-    res.json({ data: stats });
+    // Validate sort_order
+    if (sortOrder && !['asc', 'desc'].includes(sortOrder)) {
+      throw new Error('Invalid sort_order. Must be either "asc" or "desc".');
+    }
+
+    // Validate sort_by
+    const allowedSortFields = ['timestamp', 'totalStake'];
+    if (sortBy && !allowedSortFields.includes(sortBy)) {
+      throw new Error(`Invalid sort_by. Must be one of: ${allowedSortFields.join(', ')}`);
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [stats, totalTransactions] = await Promise.all([
+      indexer.getStakerStats(
+        address, 
+        timeRange, 
+        includeTransactions,
+        skip,
+        limit,
+        sortBy,
+        sortOrder
+      ),
+      indexer.getStakerTotalTransactions(address, timeRange)
+    ]);
+
+    const totalPages = Math.ceil(totalTransactions / limit);
+
+    res.json({ 
+      data: stats,
+      timestamp: Date.now(),
+      meta: {
+        pagination: includeTransactions ? {
+          page,
+          limit,
+          totalPages,
+          totalCount: totalTransactions,
+          hasMore: page < totalPages
+        } : null,
+        timeRange: timeRange ? {
+          from: timeRange.firstTimestamp,
+          to: timeRange.lastTimestamp,
+          duration: timeRange.durationSeconds
+        } : null,
+        sorting: {
+          sortBy,
+          sortOrder
+        }
+      }
+    });
   } catch (error) {
-    console.error('Staker lookup error:', error);
+    logger.error('Staker lookup error:', error);
     res.status(404).json({ 
       error: (error as Error).message,
       details: 'If you believe this is an error, please check the address format and time range parameters.'
