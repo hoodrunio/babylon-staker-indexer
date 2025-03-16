@@ -132,10 +132,10 @@ export class FinalityProviderService {
             async () => {
                 const { nodeUrl } = this.getNetworkConfig(network);
                 
-                // 1. Önce son blok yüksekliğini al
+                // 1. First, get the latest block height
                 const currentHeight = await this.babylonClient.getCurrentHeight();
                 
-                // 2. Son bloktaki aktif FP'leri al
+                // 2. Get active FPs from the last block
                 const activeResponse = await fetch(`${nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
                 if (!activeResponse.ok) {
                     throw new Error(`HTTP error! status: ${activeResponse.status}`);
@@ -143,12 +143,12 @@ export class FinalityProviderService {
                 
                 const activeData = await activeResponse.json() as ActiveProviderResponse;
                 
-                // Aktif FP'lerin public key'lerini set'e al
+                // Get public keys of active FPs into a set
                 const activePkSet = new Set(
                     activeData.finality_providers.map((fp: FinalityProviderWithMeta) => fp.btc_pk_hex)
                 );
                 
-                // 3. Tüm FP'lerin detaylı bilgilerini al
+                // 3. Get detailed information of all FPs
                 const allProviders: FinalityProvider[] = [];
                 let nextKey = '';
                 
@@ -165,7 +165,7 @@ export class FinalityProviderService {
                     
                     const data = await response.json() as QueryFinalityProvidersResponse;
                     
-                    // Sadece aktif FP'lerin detaylarını filtrele
+                    // Filter only active FP details
                     const activeProviders = data.finality_providers?.filter(provider => 
                         activePkSet.has(provider.btc_pk)
                     ) || [];

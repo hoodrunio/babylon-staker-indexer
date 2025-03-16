@@ -17,9 +17,9 @@ export class GovernanceIndexerService {
         this.babylonClient = babylonClient;
         this.shouldSync = process.env.GOVERNANCE_SYNC === 'true';
         
-        // Ağları BabylonClient üzerinden kontrol edelim
+        // Check networks through BabylonClient
         try {
-            // Mainnet için BabylonClient oluşturarak URL'leri kontrol et
+            // Create BabylonClient for Mainnet and check URLs
             const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
             const mainnetBaseUrl = mainnetClient.getBaseUrl();
             const mainnetRpcUrl = mainnetClient.getRpcUrl();
@@ -33,7 +33,7 @@ export class GovernanceIndexerService {
         }
         
         try {
-            // Testnet için BabylonClient oluşturarak URL'leri kontrol et
+            // Create BabylonClient for Testnet and check URLs
             const testnetClient = BabylonClient.getInstance(Network.TESTNET);
             const testnetBaseUrl = testnetClient.getBaseUrl();
             const testnetRpcUrl = testnetClient.getRpcUrl();

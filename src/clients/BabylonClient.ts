@@ -304,31 +304,41 @@ export class BabylonClient {
             } catch (error) {
                 logger.warn(`[BabylonClient] Operation failed on attempt ${attempt + 1}/${maxRetries} for ${this.network}`);
 
-                // Özel hata türlerini kontrol et
+                // Check special error types
+                // Transaction not found error
+                // If the same error occurred in the previous attempt, terminate
+                // If this is the first time we encounter this error, save it and try with a different URL
+                // Height not available error
+                // If the same error occurred in the previous attempt, terminate
+                // If this is the first time we encounter this error, save it and try with a different URL
+                // Invalid Hex format error
+                // For hex format errors, throw the error directly without any rotation
+
+                // Check special error types
                 if (error instanceof Error) {
-                    // İşlem bulunamadı hatası
+                    // Transaction not found error
                     if (error.name === 'TxNotFoundError') {
                         if (specialError) {
-                            // Önceki denemede de aynı hata varsa, sonlandır
+                            // If the same error occurred in the previous attempt, terminate
                             logger.info(`[BabylonClient] Transaction not found error persists across multiple nodes, stopping retries.`);
                             throw error;
                         }
-                        // İlk kez bu hatayı alıyorsak, kaydedip farklı bir URL ile deneyelim
+                        // If this is the first time we encounter this error, save it and try with a different URL
                         specialError = error as CustomError;
                     }
-                    // Blok yüksekliği mevcut değil hatası
+                    // Block height not available error
                     else if (error.name === 'HeightNotAvailableError') {
                         if (specialError) {
-                            // Önceki denemede de aynı hata varsa, sonlandır
+                            // If the same error occurred in the previous attempt, terminate
                             logger.info(`[BabylonClient] Height not available error persists across multiple nodes, stopping retries.`);
                             throw error;
                         }
-                        // İlk kez bu hatayı alıyorsak, kaydedip farklı bir URL ile deneyelim
+                        // If this is the first time we encounter this error, save it and try with a different URL
                         specialError = error as CustomError;
                     }
-                    // Geçersiz Hex formatı hatası
+                    // Invalid Hex format error
                     else if (error.name === 'InvalidHexFormatError') {
-                        // Hex formatı hatalarında hiç rotasyon yapmadan direkt hatayı fırlat
+                        // For hex format errors, throw the error directly without any rotation
                         logger.info(`[BabylonClient] Invalid hex format error detected, no retry necessary.`);
                         throw error;
                     }

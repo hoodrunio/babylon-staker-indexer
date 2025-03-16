@@ -53,7 +53,7 @@ export class WebSocketOrchestratorService {
         const wsUrl = config.getWsUrl();
         if (!wsUrl) {
             logger.warn(`[WebSocketOrchestrator] WebSocket URL for ${network} is not defined, skipping this network`);
-            // BabylonClient varsa infoları logla
+            // If BabylonClient exists, log the information
             const client = config.getClient();
             if (client) {
                 logger.info(`[WebSocketOrchestrator] ${network} is configured with baseURL: ${client.getBaseUrl()} and rpcURL: ${client.getRpcUrl()}`);

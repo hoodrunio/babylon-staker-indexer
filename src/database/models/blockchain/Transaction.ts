@@ -1,12 +1,11 @@
 /**
- * Transaction Model
- * İşlem verilerini veritabanında saklamak için Mongoose modeli
+ * Mongoose model for storing transaction data in the database
  */
 
 import mongoose, { Document, Schema } from 'mongoose';
 import { TxStatus } from '../../../services/block-processor/types/common';
 
-// Fee alt şeması
+// Fee sub-schema
 const FeeAmountSchema = new Schema({
   denom: { type: String, required: true },
   amount: { type: String, required: true }
@@ -17,13 +16,13 @@ const FeeSchema = new Schema({
   gasLimit: { type: String, required: true }
 }, { _id: false });
 
-// TxMessage alt şeması
+// TxMessage sub-schema
 const TxMessageSchema = new Schema({
   typeUrl: { type: String, required: true },
   content: { type: Schema.Types.Mixed, required: true }
 }, { _id: false });
 
-// Transaction şeması
+// Transaction schema
 export interface ITransaction extends Document {
   txHash: string;
   height: string;
@@ -110,13 +109,13 @@ const TransactionSchema = new Schema({
   versionKey: false
 });
 
-// Bileşik indeksler
+// Compound indexes
 TransactionSchema.index({ height: 1, network: 1 });
 TransactionSchema.index({ txHash: 1, network: 1 }, { unique: true });
 TransactionSchema.index({ type: 1, time: 1 });
 TransactionSchema.index({ 'meta.typeUrl': 1 });
-// Aggregation pipeline için optimize edilmiş indeks
+// Optimized index for aggregation pipeline
 TransactionSchema.index({ network: 1, height: -1, time: -1 });
 
-// Model oluştur ve dışa aktar
+// Model create and export
 export const BlockchainTransaction = mongoose.model<ITransaction>('BlockchainTransaction', TransactionSchema); 

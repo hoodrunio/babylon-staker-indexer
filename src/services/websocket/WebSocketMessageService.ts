@@ -141,7 +141,7 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
 
         // Handle block transactions
         if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
-            // Blok verilerini kontrol et ve doğru şekilde geçir
+            // Check block data and pass it correctly
             const blockData = message.result.data.value;
             if (blockData && blockData.block) {
                 await this.blockTransactionHandler.handleNewBlock(blockData, network);
@@ -206,14 +206,14 @@ export class WebSocketMessageService {
         const checkpointStatusHandler = CheckpointStatusHandler.getInstance();
         const validatorSignatureService = ValidatorSignatureService.getInstance();
         
-        // BlockProcessorModule'u kullanarak blok işleme sistemini başlat
+        // Initialize block processing system using BlockProcessorModule
         const blockProcessorModule = BlockProcessorModule.getInstance();
         blockProcessorModule.initialize();
         
-        // BlockTransactionHandler'ı al
+        // Get BlockTransactionHandler
         const blockTransactionHandler = blockProcessorModule.getBlockTransactionHandler();
         
-        // Blok ve işlem processor'larını al
+        // Get block and transaction processors
         const blockTxProcessors = blockProcessorModule.getMessageProcessors();
         
         logger.info('[WebSocketMessageService] Block processor system initialized successfully');
@@ -224,7 +224,7 @@ export class WebSocketMessageService {
             new BLSCheckpointMessageProcessor(blsCheckpointService),
             new NewBlockMessageProcessor(checkpointStatusHandler, validatorSignatureService, blockTransactionHandler),
             new GovernanceMessageProcessor(governanceEventHandler),
-            // Blok ve işlem processor'larını ekle
+            // Add block and transaction processors
             ...blockTxProcessors
         ];
     }

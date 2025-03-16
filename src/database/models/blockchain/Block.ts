@@ -1,11 +1,10 @@
 /**
- * Block Model
- * Blok verilerini veritabanında saklamak için Mongoose modeli
+ * Mongoose model for storing block data in the database
  */
 
 import mongoose, { Document, Schema } from 'mongoose';
 
-// Signature alt şeması
+// Signature sub-schema
 const SignatureSchema = new Schema({
   validator: { 
     type: Schema.Types.ObjectId, 
@@ -15,7 +14,7 @@ const SignatureSchema = new Schema({
   timestamp: { type: String, required: true }
 }, { _id: false });
 
-// Block şeması
+// Block schema
 export interface IBlock extends Document {
   height: string;
   blockHash: string;
@@ -88,9 +87,9 @@ const BlockSchema = new Schema({
   versionKey: false
 });
 
-// Bileşik indeksler
+// Compound indexes
 BlockSchema.index({ height: 1, network: 1 }, { unique: true });
 BlockSchema.index({ time: 1 });
 
-// Model oluştur ve dışa aktar
+// Model create and export
 export const Block = mongoose.model<IBlock>('Block', BlockSchema); 

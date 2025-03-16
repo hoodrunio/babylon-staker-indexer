@@ -1,55 +1,55 @@
 /**
- * Veri sıkıştırma yardımcı fonksiyonları
+ * Data compression utility functions
  */
 import zlib from 'zlib';
 import { logger } from './logger';
 
 /**
- * Veriyi sıkıştırır ve base64 formatında döndürür
- * @param data Sıkıştırılacak veri
- * @returns Sıkıştırılmış ve base64 formatında kodlanmış veri
+ * Compresses data and returns it in base64 format
+ * @param data Data to be compressed
+ * @returns Compressed and base64 encoded data
  */
 export function compressData(data: any): string {
   try {
-    // Veriyi JSON string'e dönüştür
+    // Convert data to JSON string
     const jsonString = JSON.stringify(data);
     
-    // Veriyi sıkıştır (gzip)
+    // Compress data (gzip)
     const compressed = zlib.gzipSync(Buffer.from(jsonString, 'utf-8'));
     
-    // Base64 formatına dönüştür
+    // Convert to base64 format
     return compressed.toString('base64');
   } catch (error) {
-    logger.error(`Veri sıkıştırma hatası: ${error instanceof Error ? error.message : String(error)}`);
-    // Hata durumunda orijinal veriyi JSON string olarak döndür
+    logger.error(`Data compression error: ${error instanceof Error ? error.message : String(error)}`);
+    // In case of error, return the original data as a JSON string
     return JSON.stringify(data);
   }
 }
 
 /**
- * Sıkıştırılmış veriyi açar ve JavaScript nesnesine dönüştürür
- * @param compressedData Sıkıştırılmış ve base64 formatında kodlanmış veri
- * @returns Açılmış JavaScript nesnesi
+ * Decompresses compressed data and converts it to a JavaScript object
+ * @param compressedData Compressed and base64 encoded data
+ * @returns Decompressed JavaScript object
  */
 export function decompressData(compressedData: string): any {
   try {
-    // Base64'ten buffer'a dönüştür
+    // Convert from base64 to buffer
     const buffer = Buffer.from(compressedData, 'base64');
     
-    // Sıkıştırmayı aç
+    // Decompress
     const decompressed = zlib.gunzipSync(buffer);
     
-    // JSON parse ile JavaScript nesnesine dönüştür
+    // Convert to JavaScript object with JSON parse
     return JSON.parse(decompressed.toString('utf-8'));
   } catch (error) {
-    logger.error(`Veri açma hatası: ${error instanceof Error ? error.message : String(error)}`);
+    logger.error(`Data decompression error: ${error instanceof Error ? error.message : String(error)}`);
     
-    // Belki sıkıştırılmamış bir JSON string'dir, doğrudan parse etmeyi dene
+    // Maybe it's an uncompressed JSON string, try parsing directly
     try {
       return JSON.parse(compressedData);
     } catch {
-      // Hiçbir şekilde parse edilemiyorsa boş dizi döndür
+      // If it cannot be parsed in any way, return an empty array
       return [];
     }
   }
-} 
+}

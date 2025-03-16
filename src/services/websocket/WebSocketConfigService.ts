@@ -15,7 +15,7 @@ export class NetworkConfig implements INetworkConfig {
     }
 
     getWsUrl(): string | undefined {
-        // BabylonClient varsa ondan WebSocket URL'sini al
+        // If BabylonClient is available, get WebSocket URL from it
         if (this.client) {
             try {
                 return this.client.getWsEndpoint();
@@ -24,7 +24,7 @@ export class NetworkConfig implements INetworkConfig {
             }
         }
         
-        // BabylonClient yoksa veya hata olursa eski yöntemle dene (geriye uyumluluk için)
+        // If BabylonClient is not available or there is an error, try the old method (for backward compatibility)
         return this.network === Network.MAINNET 
             ? process.env.BABYLON_WS_URL 
             : process.env.BABYLON_TESTNET_WS_URL;
@@ -55,7 +55,7 @@ export class WebSocketConfigService {
         // Add mainnet configuration if exists
         try {
             const client = BabylonClient.getInstance(Network.MAINNET);
-            // BabylonClient'tan base URL, RPC URL ve WS URL al ve kontrol et
+            // Get base URL, RPC URL and WS URL from BabylonClient and check
             const baseUrl = client.getBaseUrl();
             const rpcUrl = client.getRpcUrl();
             const wsUrl = client.getWsEndpoint();
@@ -64,7 +64,7 @@ export class WebSocketConfigService {
                 const networkConfig = new NetworkConfig(Network.MAINNET, client);
                 this.networkConfigs.set(Network.MAINNET, networkConfig);
                 
-                // WS URL durumunu logla
+                // Log WS URL status
                 if (wsUrl) {
                     logger.info(`[WebSocketConfig] Mainnet initialized with WebSocket URL: ${wsUrl}`);
                 } else {
@@ -82,7 +82,7 @@ export class WebSocketConfigService {
         // Add testnet configuration if exists
         try {
             const client = BabylonClient.getInstance(Network.TESTNET);
-            // BabylonClient'tan base URL, RPC URL ve WS URL al ve kontrol et
+            // Get base URL, RPC URL and WS URL from BabylonClient and check
             const baseUrl = client.getBaseUrl();
             const rpcUrl = client.getRpcUrl();
             const wsUrl = client.getWsEndpoint();
@@ -91,7 +91,7 @@ export class WebSocketConfigService {
                 const networkConfig = new NetworkConfig(Network.TESTNET, client);
                 this.networkConfigs.set(Network.TESTNET, networkConfig);
                 
-                // WS URL durumunu logla
+                // Log WS URL status
                 if (wsUrl) {
                     logger.info(`[WebSocketConfig] Testnet initialized with WebSocket URL: ${wsUrl}`);
                 } else {

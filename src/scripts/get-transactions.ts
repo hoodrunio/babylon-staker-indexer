@@ -1,78 +1,78 @@
 import axios from 'axios';
-import { decodeTx } from '../decoders';
+import { decodeTx } from '../services/decoders';
 
-// RPC endpoint (kullanıcı tarafından değiştirilebilir)
+// RPC endpoint (can be modified by the user)
 const DEFAULT_RPC_ENDPOINT = 'https://babylon-testnet-rpc-pruned-1.nodes.guru';
 
 /**
- * Belirli bir blok yüksekliğindeki tüm işlemleri getirir
- * @param height Blok yüksekliği
- * @param rpcEndpoint İsteğe bağlı RPC endpoint
- * @returns İşlem listesi veya hata durumunda null
+ * Retrieves all transactions for a specific block height
+ * @param height Block height
+ * @param rpcEndpoint Optional RPC endpoint
+ * @returns List of transactions or null in case of error
  */
 async function getTxsByHeight(height: number, rpcEndpoint: string = DEFAULT_RPC_ENDPOINT): Promise<any[] | null> {
   try {
-    console.log(`${height} blok yüksekliğindeki işlemler getiriliyor...`);
+    console.log(`Retrieving transactions for block height ${height}...`);
     
-    // tx_search kullanarak blok yüksekliğine göre işlemleri getir
+    // Get transactions by block height using tx_search
     const response = await axios.get(`${rpcEndpoint}/tx_search?query="tx.height=${height}"&prove=false&page=1&per_page=100`);
     
     if (response.data?.result?.txs && response.data.result.txs.length > 0) {
       const txs = response.data.result.txs;
-      console.log(`${txs.length} işlem bulundu.`);
+      console.log(`${txs.length} transactions found.`);
       
-      // İşlemleri hash ve tx bilgisiyle döndür
+      // Return transactions with hash and tx info
       return txs.map((tx: any) => ({
         height: parseInt(tx.height, 10),
         hash: tx.hash,
         tx: tx.tx
       }));
     } else {
-      console.log('Bu blokta işlem bulunamadı.');
+      console.log('No transactions found in this block.');
       return [];
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`İşlemler getirilirken hata oluştu: ${errorMessage}`);
+    console.error(`Error occurred while retrieving transactions: ${errorMessage}`);
     return null;
   }
 }
 
 /**
- * Hash değeri ile bir işlemi getirir
- * @param hash İşlem hash'i
- * @param rpcEndpoint İsteğe bağlı RPC endpoint
- * @returns İşlem verisi veya hata durumunda null
+ * Gets a transaction by its hash
+ * @param hash Transaction hash
+ * @param rpcEndpoint Optional RPC endpoint
+ * @returns Transaction data or null in case of error
  */
 async function getTxByHash(hash: string, rpcEndpoint: string = DEFAULT_RPC_ENDPOINT): Promise<any | null> {
   try {
-    console.log(`${hash} hash'li işlem getiriliyor...`);
+    console.log(`Retrieving transaction with hash ${hash}...`);
     
     const response = await axios.get(`${rpcEndpoint}/tx?hash=0x${hash}`);
     
     if (response.data?.result?.tx) {
-      console.log('İşlem başarıyla getirildi.');
+      console.log('Transaction retrieved successfully.');
       return {
         height: response.data.result.height,
         hash: hash,
         tx: response.data.result.tx
       };
     } else {
-      console.log('İşlem bulunamadı.');
+      console.log('Transaction not found.');
       return null;
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`İşlem getirilirken hata oluştu: ${errorMessage}`);
+    console.error(`Error occurred while retrieving transaction: ${errorMessage}`);
     return null;
   }
 }
 
 /**
- * Belirli bir blok yüksekliğindeki tüm işlemleri getirir ve decode eder
- * @param height Blok yüksekliği
- * @param rpcEndpoint İsteğe bağlı RPC endpoint
- * @returns Decode edilmiş işlem listesi
+ * Retrieves and decodes all transactions for a specific block height
+ * @param height Block height
+ * @param rpcEndpoint Optional RPC endpoint
+ * @returns List of decoded transactions
  */
 async function decodeBlockTransactions(height: number, rpcEndpoint: string = DEFAULT_RPC_ENDPOINT): Promise<any[]> {
   const txs = await getTxsByHeight(height, rpcEndpoint);
@@ -81,7 +81,7 @@ async function decodeBlockTransactions(height: number, rpcEndpoint: string = DEF
     return [];
   }
   
-  console.log(`${txs.length} işlem çözülüyor...`);
+  console.log(`${txs.length} transactions are being decoded...`);
   
   const decodedTxs = [];
   
@@ -95,12 +95,12 @@ async function decodeBlockTransactions(height: number, rpcEndpoint: string = DEF
       });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`${tx.hash} hash'li işlem decode edilirken hata oluştu: ${errorMessage}`);
+      console.error(`Error occurred while decoding transaction with hash ${tx.hash}: ${errorMessage}`);
       
       decodedTxs.push({
         height: tx.height,
         hash: tx.hash,
-        error: `Decode hatası: ${errorMessage}`
+        error: `Decode error: ${errorMessage}`
       });
     }
   }
@@ -109,10 +109,10 @@ async function decodeBlockTransactions(height: number, rpcEndpoint: string = DEF
 }
 
 /**
- * Hash değeri ile bir işlemi getirir ve decode eder
- * @param hash İşlem hash'i
- * @param rpcEndpoint İsteğe bağlı RPC endpoint
- * @returns Decode edilmiş işlem
+ * Retrieves and decodes a transaction by its hash
+ * @param hash Transaction hash
+ * @param rpcEndpoint Optional RPC endpoint
+ * @returns Decoded transaction
  */
 async function decodeTxByHash(hash: string, rpcEndpoint: string = DEFAULT_RPC_ENDPOINT): Promise<any | null> {
   const tx = await getTxByHash(hash, rpcEndpoint);
@@ -130,26 +130,26 @@ async function decodeTxByHash(hash: string, rpcEndpoint: string = DEFAULT_RPC_EN
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`İşlem decode edilirken hata oluştu: ${errorMessage}`);
+    console.error(`Error occurred while decoding transaction: ${errorMessage}`);
     
     return {
       height: tx.height,
       hash: tx.hash,
-      error: `Decode hatası: ${errorMessage}`
+      error: `Decode error: ${errorMessage}`
     };
   }
 }
 
 /**
- * Ana fonksiyon - argümanları değerlendirerek işlemleri getirir
+ * Main function - retrieves transactions based on arguments
  */
 async function main() {
   const args = process.argv.slice(2);
   
   if (args.length === 0) {
-    console.log('Kullanım:');
-    console.log('  npm run get-tx -- --height <blok_yüksekliği>');
-    console.log('  npm run get-tx -- --hash <işlem_hash>');
+    console.log('Usage:');
+    console.log('  npm run get-tx -- --height <block_height>');
+    console.log('  npm run get-tx -- --hash <transaction_hash>');
     return;
   }
   
@@ -162,29 +162,29 @@ async function main() {
     const height = parseInt(value, 10);
     
     if (isNaN(height)) {
-      console.error('Geçersiz blok yüksekliği.');
+      console.error('Invalid block height.');
       return;
     }
     
     result = await decodeBlockTransactions(height);
   } else if (option === '--hash' && value) {
-    // Hash değeri 0x ile başlıyorsa temizle
+    // Remove 0x prefix if present
     const hash = value.startsWith('0x') ? value.substring(2) : value;
     result = await decodeTxByHash(hash);
   } else {
-    console.error('Geçersiz argümanlar.');
-    console.log('Kullanım:');
-    console.log('  npm run get-tx -- --height <blok_yüksekliği>');
-    console.log('  npm run get-tx -- --hash <işlem_hash>');
+    console.error('Invalid arguments.');
+    console.log('Usage:');
+    console.log('  npm run get-tx -- --height <block_height>');
+    console.log('  npm run get-tx -- --hash <transaction_hash>');
     return;
   }
   
-  // Sonuçları göster
+  // Show results
   console.log(JSON.stringify(result, null, 2));
 }
 
-// Uygulamayı başlat
+// Start the application
 main().catch(error => {
-  console.error('Beklenmeyen bir hata oluştu:', error);
+  console.error('Unexpected error occurred:', error);
   process.exit(1);
-}); 
+});

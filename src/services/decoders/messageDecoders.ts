@@ -272,9 +272,9 @@ class MessageRegistry {
 const messageRegistry = new MessageRegistry();
 
 /**
- * Any tipindeki mesajı içeriğine göre decode eder
- * @param anyMsg Any tipindeki mesaj
- * @returns Decode edilmiş mesaj ve tipi
+ * Decodes a message of type Any based on its content.
+ * @param anyMsg The message of type Any.
+ * @returns The decoded message and its type.
  */
 export function decodeAnyMessage(anyMsg: Any): {
   typeUrl: string;
@@ -282,4 +282,4 @@ export function decodeAnyMessage(anyMsg: Any): {
   rawValue?: Uint8Array;
 } {
   return messageRegistry.decodeMessage(anyMsg);
-} 
+}

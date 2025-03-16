@@ -82,7 +82,8 @@ export class CosmosClient extends BaseClient {
 
     /**
      * Gets the governance parameters
-     * Özel endpoint: /cosmos/gov/v1/params/{voting, tallying, deposit}
+     * Special endpoint: /cosmos/gov/v1/params/{voting, tallying, deposit}
+     * Combine all governance parameters
      */
     async getGovParams(): Promise<any> {
         try {

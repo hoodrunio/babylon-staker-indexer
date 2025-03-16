@@ -108,7 +108,9 @@ export abstract class BaseClient {
                     return Promise.reject(heightNotAvailableError);
                 }
                 
-                // Geçersiz Hex formatı hataları için (odd length hex string, invalid byte)
+                // For invalid Hex format errors (odd length hex string, invalid byte)
+                // For these types of errors, do not retry at all, just throw the error
+                // Create a special error
                 if (error.response?.data?.message && 
                     typeof error.response.data.message === 'string' &&
                     (error.response.data.message.includes('odd length hex string') ||
