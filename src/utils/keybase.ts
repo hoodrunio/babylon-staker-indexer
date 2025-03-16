@@ -13,7 +13,7 @@ export async function getKeybaseLogo(identity: string): Promise<string | null> {
         }[]
       };
   
-      // Status kontrolü ve them array'i kontrolü
+      // Check status and them array
       if (data.status?.code !== 0 || !data.them?.[0]?.pictures?.primary?.url) {
         return null;
       }
