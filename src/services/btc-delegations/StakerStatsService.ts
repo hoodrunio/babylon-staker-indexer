@@ -14,70 +14,70 @@ export class StakerStatsService {
     }
 
     /**
-     * Staker istatistiklerini günceller
-     * @param staker Staker dökümanı
-     * @param delegation Delegasyon verisi
-     * @param phase Phase değeri
+     * Updates staker statistics
+     * @param staker Staker document
+     * @param delegation Delegation data
+     * @param phase Phase value
      */
     public async updateStakerStats(staker: any, delegation: any, phase: number): Promise<void> {
         try {
             const { state, networkType, totalSat, stakingTxIdHex, finalityProviderBtcPksHex } = delegation;
-            const finalityProviderBtcPkHex = finalityProviderBtcPksHex[0]; // İlk finality provider'ı kullan
+            const finalityProviderBtcPkHex = finalityProviderBtcPksHex[0]; // Use the first finality provider
             const oldState = staker.recentDelegations.find((d: any) => d.stakingTxIdHex === stakingTxIdHex)?.state;
 
-            // Eğer durum değişmişse, eski durumu azalt
+            // If the status has changed, decrease the old status
             if (oldState && oldState !== state) {
                 staker.delegationStates[oldState] = Math.max(0, (staker.delegationStates[oldState] || 0) - 1);
                 
-                // Eğer eski durum ACTIVE ise ve yeni durum ACTIVE değilse, aktif sayılarını azalt
+                // If the old status is ACTIVE and the new status is not ACTIVE, decrease the active counts
                 if (oldState === 'ACTIVE' && state !== 'ACTIVE') {
                     staker.activeDelegationsCount = Math.max(0, staker.activeDelegationsCount - 1);
                     staker.activeStakedSat = Math.max(0, staker.activeStakedSat - totalSat);
                     
-                    // Ağ bazında aktif istatistikleri güncelle
+                    // Update active statistics on a network basis
                     if (staker.networkStats && staker.networkStats[networkType]) {
                         staker.networkStats[networkType].activeDelegations = Math.max(0, staker.networkStats[networkType].activeDelegations - 1);
                         staker.networkStats[networkType].activeStakedSat = Math.max(0, staker.networkStats[networkType].activeStakedSat - totalSat);
                     }
 
-                    // Phase bazlı aktif istatistikleri güncelle
+                    // Update phase-based active statistics
                     this.updatePhaseStats(staker, phase, networkType, finalityProviderBtcPkHex, totalSat, false, false);
                 }
             }
 
-            // Yeni durumu artır
+            // Increase the new status
             staker.delegationStates[state] = (staker.delegationStates[state] || 0) + 1;
 
-            // Eğer yeni durum ACTIVE ise ve eski durum ACTIVE değilse, aktif sayılarını artır
+            // If the new status is ACTIVE and the old status is not ACTIVE, increase the active counts
             if (state === 'ACTIVE' && oldState !== 'ACTIVE') {
                 staker.activeDelegationsCount += 1;
                 staker.activeStakedSat += totalSat;
                 
-                // Ağ bazında aktif istatistikleri güncelle
+                // Update active statistics on a network basis
                 if (staker.networkStats && staker.networkStats[networkType]) {
                     staker.networkStats[networkType].activeDelegations += 1;
                     staker.networkStats[networkType].activeStakedSat += totalSat;
                 }
 
-                // Phase bazlı aktif istatistikleri güncelle
+                // Update phase-based active statistics
                 this.updatePhaseStats(staker, phase, networkType, finalityProviderBtcPkHex, totalSat, true, oldState ? false : true);
             }
 
-            // Eğer yeni bir delegasyon ise, toplam sayıları artır
+            // If it is a new delegation, increase the total counts
             if (!oldState) {
                 staker.totalDelegationsCount += 1;
                 staker.totalStakedSat += totalSat;
                 
-                // Ağ bazında toplam istatistikleri güncelle
+                // Update total statistics on a network basis
                 if (staker.networkStats && staker.networkStats[networkType]) {
                     staker.networkStats[networkType].totalDelegations += 1;
                     staker.networkStats[networkType].totalStakedSat += totalSat;
                 }
 
-                // Phase bazlı toplam istatistikleri güncelle
+                // Update phase-based total statistics
                 this.updatePhaseStats(staker, phase, networkType, finalityProviderBtcPkHex, totalSat, state === 'ACTIVE', true);
 
-                // Unique finality provider istatistiklerini güncelle
+                // Update unique finality provider statistics
                 this.updateUniqueFinalityProviders(staker, finalityProviderBtcPkHex, totalSat);
             }
         } catch (error) {
@@ -87,14 +87,14 @@ export class StakerStatsService {
     }
 
     /**
-     * Phase bazlı istatistikleri günceller
-     * @param staker Staker dökümanı
-     * @param phase Phase değeri
-     * @param networkType Ağ tipi
-     * @param finalityProviderBtcPkHex Finality provider BTC public key'i
-     * @param totalSat Toplam satoshi miktarı
-     * @param isActive Aktif mi?
-     * @param isNew Yeni mi?
+     * Updates phase-based statistics
+     * @param staker Staker document
+     * @param phase Phase value
+     * @param networkType Network type
+     * @param finalityProviderBtcPkHex Finality provider BTC public key
+     * @param totalSat Total satoshi amount
+     * @param isActive Is active?
+     * @param isNew Is new?
      */
     public updatePhaseStats(
         staker: any, 
@@ -106,17 +106,17 @@ export class StakerStatsService {
         isNew: boolean
     ): void {
         try {
-            // Phase stats dizisini kontrol et
+            // Check the phase stats array
             if (!staker.phaseStats) {
-                // Mongoose DocumentArray oluştur
+                // Create Mongoose DocumentArray
                 staker.phaseStats = staker.phaseStats || [];
             }
 
-            // Bu phase için istatistik var mı?
+            // Is there a statistic for this phase?
             let phaseStats = staker.phaseStats.find((p: any) => p.phase === phase);
             
             if (!phaseStats) {
-                // Yeni phase istatistiği oluştur
+                // Create new phase statistic
                 phaseStats = {
                     phase,
                     totalDelegations: 0,
@@ -128,7 +128,7 @@ export class StakerStatsService {
                 staker.phaseStats.push(phaseStats);
             }
 
-            // İstatistikleri güncelle
+            // Update statistics
             if (isNew) {
                 phaseStats.totalDelegations += 1;
                 phaseStats.totalStakedSat += totalSat;
@@ -138,12 +138,12 @@ export class StakerStatsService {
                 phaseStats.activeDelegations += 1;
                 phaseStats.activeStakedSat += totalSat;
             } else if (!isNew) {
-                // Aktif değilse ve yeni değilse, aktif sayılarını azalt
+                // If not active and not new, decrease the active counts
                 phaseStats.activeDelegations = Math.max(0, phaseStats.activeDelegations - 1);
                 phaseStats.activeStakedSat = Math.max(0, phaseStats.activeStakedSat - totalSat);
             }
 
-            // Finality provider istatistiklerini güncelle
+            // Update finality provider statistics
             if (isNew) {
                 let fpStats = phaseStats.finalityProviders.find((fp: any) => fp.btcPkHex === finalityProviderBtcPkHex);
                 
@@ -166,24 +166,24 @@ export class StakerStatsService {
     }
 
     /**
-     * Unique finality provider istatistiklerini günceller
-     * @param staker Staker dökümanı
-     * @param finalityProviderBtcPkHex Finality provider BTC public key'i
-     * @param totalSat Toplam satoshi miktarı
+     * Updates unique finality provider statistics
+     * @param staker Staker document
+     * @param finalityProviderBtcPkHex Finality provider BTC public key
+     * @param totalSat Total satoshi amount
      */
     public updateUniqueFinalityProviders(staker: any, finalityProviderBtcPkHex: string, totalSat: number): void {
         try {
-            // Unique finality providers dizisini kontrol et
+            // Check the unique finality providers array
             if (!staker.uniqueFinalityProviders) {
-                // Mongoose DocumentArray oluştur
+                // Create Mongoose DocumentArray
                 staker.uniqueFinalityProviders = staker.uniqueFinalityProviders || [];
             }
 
-            // Bu finality provider için istatistik var mı?
+            // Is there a statistic for this finality provider?
             let fpStats = staker.uniqueFinalityProviders.find((fp: any) => fp.btcPkHex === finalityProviderBtcPkHex);
             
             if (!fpStats) {
-                // Yeni finality provider istatistiği oluştur
+                // Create new finality provider statistic
                 fpStats = {
                     btcPkHex: finalityProviderBtcPkHex,
                     delegationsCount: 0,
@@ -192,7 +192,7 @@ export class StakerStatsService {
                 staker.uniqueFinalityProviders.push(fpStats);
             }
             
-            // İstatistikleri güncelle
+            // Update statistics
             fpStats.delegationsCount += 1;
             fpStats.totalStakedSat += totalSat;
         } catch (error) {
@@ -202,12 +202,12 @@ export class StakerStatsService {
     }
 
     /**
-     * Staker istatistiklerini sıfırlar
-     * @param staker Staker dökümanı
+     * Resets staker statistics
+     * @param staker Staker document
      */
     public resetStakerStats(staker: any): void {
         try {
-            // Staker'ın tüm istatistiklerini sıfırla
+            // Reset all staker statistics
             staker.activeDelegationsCount = 0;
             staker.totalDelegationsCount = 0;
             staker.totalStakedSat = 0;
@@ -233,12 +233,12 @@ export class StakerStatsService {
                 }
             };
             
-            // Phase istatistiklerini sıfırla
+            // Reset phase statistics
             if (staker.phaseStats) {
                 staker.phaseStats.splice(0);
             }
             
-            // Unique finality provider istatistiklerini sıfırla
+            // Reset unique finality provider statistics
             if (staker.uniqueFinalityProviders) {
                 staker.uniqueFinalityProviders.splice(0);
             }
@@ -247,4 +247,4 @@ export class StakerStatsService {
             throw error;
         }
     }
-} 
+}

@@ -15,11 +15,11 @@ export class StakerQueryService {
     }
 
     /**
-     * Tüm staker'ları getirir
+     * Gets all stakers
      * @param limit Limit
-     * @param skip Atlanacak kayıt sayısı
-     * @param sortField Sıralama alanı
-     * @param sortOrder Sıralama yönü (asc/desc)
+     * @param skip Number of records to skip
+     * @param sortField Sort field
+     * @param sortOrder Sort order (asc/desc)
      */
     public async getAllStakers(limit = 10, skip = 0, sortField = 'totalStakedSat', sortOrder = 'desc'): Promise<any[]> {
         try {
@@ -38,7 +38,7 @@ export class StakerQueryService {
     }
 
     /**
-     * Toplam staker sayısını getirir
+     * Gets the total number of stakers
      */
     public async getStakersCount(): Promise<number> {
         try {
@@ -50,8 +50,8 @@ export class StakerQueryService {
     }
 
     /**
-     * Bir staker'ı ID'sine göre getirir
-     * @param stakerAddress Staker adresi
+     * Gets a staker by ID
+     * @param stakerAddress Staker address
      */
     public async getStakerByAddress(stakerAddress: string): Promise<any> {
         try {
@@ -63,12 +63,12 @@ export class StakerQueryService {
     }
 
     /**
-     * Bir staker'ın delegasyonlarını getirir
-     * @param stakerAddress Staker adresi
+     * Gets a staker's delegations
+     * @param stakerAddress Staker address
      * @param limit Limit
-     * @param skip Atlanacak kayıt sayısı
-     * @param sortField Sıralama alanı
-     * @param sortOrder Sıralama yönü (asc/desc)
+     * @param skip Number of records to skip
+     * @param sortField Sort field
+     * @param sortOrder Sort order (asc/desc)
      */
     public async getStakerDelegations(
         stakerAddress: string, 
@@ -93,9 +93,9 @@ export class StakerQueryService {
     }
 
     /**
-     * Bir staker'ın phase bazlı istatistiklerini getirir
-     * @param stakerAddress Staker adresi
-     * @param phase Phase değeri (opsiyonel)
+     * Gets a staker's phase-based statistics
+     * @param stakerAddress Staker address
+     * @param phase Phase value (optional)
      */
     public async getStakerPhaseStats(stakerAddress: string, phase?: number): Promise<any[]> {
         try {
@@ -118,8 +118,8 @@ export class StakerQueryService {
     }
 
     /**
-     * Bir staker'ın unique finality provider'larını getirir
-     * @param stakerAddress Staker adresi
+     * Gets a staker's unique finality providers
+     * @param stakerAddress Staker address
      */
     public async getStakerUniqueFinalityProviders(stakerAddress: string): Promise<any[]> {
         try {
@@ -135,4 +135,4 @@ export class StakerQueryService {
             throw error;
         }
     }
-} 
+}

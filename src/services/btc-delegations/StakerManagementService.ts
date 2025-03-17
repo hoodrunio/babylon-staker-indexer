@@ -17,11 +17,11 @@ export class StakerManagementService {
     }
 
     /**
-     * Staker'ı bulur veya oluşturur
-     * @param stakerAddress Staker adresi
-     * @param stakerBtcAddress Staker BTC adresi
-     * @param stakerBtcPkHex Staker BTC public key'i
-     * @param stakingTime Staking zamanı
+     * Finds or creates a staker
+     * @param stakerAddress Staker address
+     * @param stakerBtcAddress Staker BTC address
+     * @param stakerBtcPkHex Staker BTC public key
+     * @param stakingTime Staking time
      */
     public async findOrCreateStaker(
         stakerAddress: string,
@@ -44,7 +44,7 @@ export class StakerManagementService {
                     phaseStats: []
                 });
             } else {
-                // Staker BTC bilgilerini güncelle (eğer boşsa)
+                // Update Staker BTC information (if empty)
                 if (!staker.stakerBtcAddress && stakerBtcAddress) {
                     staker.stakerBtcAddress = stakerBtcAddress;
                 }
@@ -52,7 +52,7 @@ export class StakerManagementService {
                     staker.stakerBtcPkHex = stakerBtcPkHex;
                 }
 
-                // İlk ve son staking zamanlarını güncelle
+                // Update first and last staking times
                 if (!staker.firstStakingTime || stakingTime < staker.firstStakingTime) {
                     staker.firstStakingTime = stakingTime;
                 }
@@ -69,13 +69,13 @@ export class StakerManagementService {
     }
 
     /**
-     * Son delegasyonları günceller
-     * @param staker Staker dökümanı
-     * @param newDelegation Yeni delegasyon
+     * Updates recent delegations
+     * @param staker Staker document
+     * @param newDelegation New delegation
      */
     public updateRecentDelegations(staker: any, newDelegation: RecentDelegation): void {
         try {
-            // Mevcut recentDelegations'ı bir array olarak alıp işlem yapalım
+            // Get the current recentDelegations as an array and process it
             const currentDelegations: RecentDelegation[] = staker.recentDelegations ? 
                 Array.from(staker.recentDelegations).map((d: any) => ({
                     stakingTxIdHex: d.stakingTxIdHex,
@@ -86,25 +86,25 @@ export class StakerManagementService {
                     stakingTime: d.stakingTime
                 })) : [];
 
-            // Eğer bu delegasyon zaten varsa, güncelle
+            // If this delegation already exists, update it
             const existingIndex = currentDelegations.findIndex(d => d.stakingTxIdHex === newDelegation.stakingTxIdHex);
             if (existingIndex !== -1) {
                 currentDelegations[existingIndex] = newDelegation;
             } else {
-                // Yoksa ekle ve en fazla 10 tane tut
+                // If not, add it and keep a maximum of 10
                 currentDelegations.unshift(newDelegation);
                 if (currentDelegations.length > 10) {
                     currentDelegations.splice(10);
                 }
             }
 
-            // Güncellenmiş recentDelegations'ı staker'a ata
-            // Önce mevcut diziyi temizle
+            // Assign the updated recentDelegations to the staker
+            // First, clear the existing array
             if (staker.recentDelegations) {
                 staker.recentDelegations.splice(0);
             }
             
-            // Sonra yeni değerleri ekle
+            // Then add the new values
             currentDelegations.forEach(d => {
                 staker.recentDelegations.push(d);
             });
@@ -115,41 +115,41 @@ export class StakerManagementService {
     }
 
     /**
-     * Delegasyonlardan staker'ları oluşturur
-     * Bu metod, delegasyonlardan staker'ları oluşturmak için kullanılır
+     * Creates stakers from delegations
+     * This method is used to create stakers from delegations
      */
     public async createStakersFromDelegations(): Promise<void> {
         try {
             logger.info('Starting to create stakers from delegations...');
             
-            // Tüm staker adreslerini getir (distinct)
+            // Get all staker addresses (distinct)
             const stakerAddresses = await NewBTCDelegation.distinct('stakerAddress');
             
             logger.info(`Found ${stakerAddresses.length} unique staker addresses`);
             
-            // Toplu işleme için batch boyutu
+            // Batch size for bulk processing
             const batchSize = 100;
             let processedCount = 0;
             let createdCount = 0;
             
-            // Staker adreslerini batch'ler halinde işle
+            // Process staker addresses in batches
             for (let i = 0; i < stakerAddresses.length; i += batchSize) {
                 const batch = stakerAddresses.slice(i, i + batchSize);
                 
-                // Her batch için paralel işlem
+                // Parallel processing for each batch
                 await Promise.all(batch.map(async (stakerAddress) => {
                     try {
-                        // Staker'ın zaten var olup olmadığını kontrol et
+                        // Check if the staker already exists
                         const existingStaker = await NewStaker.findOne({ stakerAddress });
                         
                         if (!existingStaker) {
-                            // Staker'ın ilk delegasyonunu getir
+                            // Get the first delegation of the staker
                             const firstDelegation = await NewBTCDelegation.findOne({ stakerAddress })
                                 .sort({ createdAt: 1 })
                                 .limit(1);
                             
                             if (firstDelegation) {
-                                // Yeni staker oluştur
+                                // Create a new staker
                                 const newStaker = new NewStaker({
                                     stakerAddress,
                                     stakerBtcAddress: firstDelegation.stakerBtcAddress || '',
@@ -181,7 +181,7 @@ export class StakerManagementService {
                                     }
                                 });
                                 
-                                // Staker'ı kaydet
+                                // Save the staker
                                 await newStaker.save();
                                 createdCount++;
                             }
@@ -201,4 +201,4 @@ export class StakerManagementService {
             throw error;
         }
     }
-} 
+}

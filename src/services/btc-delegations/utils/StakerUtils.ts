@@ -2,19 +2,19 @@ import { logger } from '../../../utils/logger';
 
 export class StakerUtils {
     /**
-     * Params version'a göre phase değerini hesaplar
+     * Calculates the phase value based on the params version
      * @param paramsVersion Params version
-     * @returns Phase değeri
+     * @returns Phase value
      */
     public static calculatePhase(paramsVersion?: number): number {
         return (!paramsVersion || paramsVersion < 4) ? 1 : 2;
     }
 
     /**
-     * Delegasyon için txHash değerini düzenler
+     * Formats the txHash value for delegation
      * @param txHash Transaction hash
      * @param stakingTxIdHex Staking transaction ID
-     * @returns Düzenlenmiş txHash
+     * @returns Formatted txHash
      */
     public static formatTxHash(txHash?: string, stakingTxIdHex?: string): string {
         if (!txHash || !stakingTxIdHex) return '';
@@ -22,11 +22,11 @@ export class StakerUtils {
     }
 
     /**
-     * Hata durumunda loglama yapar
-     * @param message Hata mesajı
-     * @param error Hata objesi
+     * Logs errors
+     * @param message Error message
+     * @param error Error object
      */
     public static logError(message: string, error: any): void {
         logger.error(`${message}: ${error}`);
     }
-} 
+}

@@ -24,28 +24,28 @@ export class StakerRecalculationService {
     }
 
     /**
-     * Tüm staker istatistiklerini yeniden hesaplar
-     * Bu metod, veritabanı tutarsızlıklarını düzeltmek için kullanılabilir
+     * Recalculates all staker statistics
+     * This method can be used to correct database inconsistencies
      */
     public async recalculateAllStakerStats(): Promise<void> {
         try {
             logger.info('Starting recalculation of all staker statistics...');
             
-            // Tüm staker'ları getir
+            // Get all stakers
             const stakerCount = await NewStaker.countDocuments({});
             logger.info(`Found ${stakerCount} stakers to process`);
             
-            // Toplu işleme için batch boyutu
+            // Batch size for processing
             const batchSize = 50;
             let processedCount = 0;
             
-            // Staker'ları batch'ler halinde işle
+            // Process stakers in batches
             for (let skip = 0; skip < stakerCount; skip += batchSize) {
                 const stakers = await NewStaker.find({})
                     .skip(skip)
                     .limit(batchSize);
                 
-                // Her staker için istatistikleri güncelle
+                // Update statistics for each staker
                 for (const staker of stakers) {
                     try {
                         await this.recalculateStakerStats(staker);
@@ -67,42 +67,42 @@ export class StakerRecalculationService {
     }
 
     /**
-     * Bir staker'ın istatistiklerini yeniden hesaplar
-     * @param staker Staker dökümanı
+     * Recalculates the statistics of a staker
+     * @param staker Staker document
      */
     public async recalculateStakerStats(staker: any): Promise<void> {
         try {
-            // Staker'ın tüm istatistiklerini sıfırla
+            // Reset all staker statistics
             this.stakerStatsService.resetStakerStats(staker);
             
-            // Delegasyon detaylarını sıfırla
+            // Reset delegation details
             if (staker.delegations) {
                 staker.delegations.splice(0);
             }
             
-            // Staker'ın tüm delegasyonlarını getir
+            // Get all delegations of the staker
             const delegations = await NewBTCDelegation.find({ stakerAddress: staker.stakerAddress });
             
-            // İlk ve son staking zamanlarını sıfırla
+            // Reset first and last staking times
             staker.firstStakingTime = null;
             staker.lastStakingTime = null;
             
-            // Son delegasyonları temizle
+            // Clear recent delegations
             if (staker.recentDelegations) {
                 staker.recentDelegations.splice(0);
             }
             
-            // Geçici dizi oluştur
+            // Create temporary array
             const tempRecentDelegations: RecentDelegation[] = [];
             
-            // Her delegasyon için istatistikleri güncelle
+            // Update statistics for each delegation
             for (const delegation of delegations) {
-                // Phase hesapla - null veya undefined kontrolü yap
+                // Calculate phase - check for null or undefined
                 const paramsVersion = delegation.paramsVersion !== null && delegation.paramsVersion !== undefined ? 
                     delegation.paramsVersion : undefined;
                 const phase = StakerUtils.calculatePhase(paramsVersion);
                 
-                // İlk ve son staking zamanlarını güncelle
+                // Update first and last staking times
                 if (!staker.firstStakingTime || (delegation.createdAt && new Date(delegation.createdAt).getTime() < staker.firstStakingTime)) {
                     staker.firstStakingTime = delegation.createdAt ? new Date(delegation.createdAt).getTime() : delegation.stakingTime;
                 }
@@ -110,16 +110,16 @@ export class StakerRecalculationService {
                     staker.lastStakingTime = delegation.createdAt ? new Date(delegation.createdAt).getTime() : delegation.stakingTime;
                 }
                 
-                // Delegasyon detayını ekle
+                // Add delegation detail
                 const delegationDetail = this.delegationDetailsService.createDelegationDetail(delegation, phase);
                 staker.delegations.push(delegationDetail);
                 
-                // Toplam sayıları artır
+                // Increase total counts
                 staker.totalDelegationsCount += 1;
                 staker.totalStakedSat += delegation.totalSat;
                 staker.delegationStates[delegation.state] += 1;
                 
-                // Ağ bazında toplam istatistikleri güncelle
+                // Update total statistics on a network basis
                 if (staker.networkStats) {
                     const networkStats = staker.networkStats[delegation.networkType];
                     if (networkStats) {
@@ -128,12 +128,12 @@ export class StakerRecalculationService {
                     }
                 }
                 
-                // Eğer durum ACTIVE ise, aktif sayıları artır
+                // If the status is ACTIVE, increase the active counts
                 if (delegation.state === 'ACTIVE') {
                     staker.activeDelegationsCount += 1;
                     staker.activeStakedSat += delegation.totalSat;
                     
-                    // Ağ bazında aktif istatistikleri güncelle
+                    // Update active statistics on a network basis
                     if (staker.networkStats) {
                         const networkStats = staker.networkStats[delegation.networkType];
                         if (networkStats) {
@@ -143,7 +143,7 @@ export class StakerRecalculationService {
                     }
                 }
                 
-                // Phase bazlı istatistikleri güncelle
+                // Update phase-based statistics
                 this.stakerStatsService.updatePhaseStats(
                     staker, 
                     phase, 
@@ -154,14 +154,14 @@ export class StakerRecalculationService {
                     true
                 );
                 
-                // Unique finality provider istatistiklerini güncelle
+                // Update unique finality provider statistics
                 this.stakerStatsService.updateUniqueFinalityProviders(
                     staker, 
                     delegation.finalityProviderBtcPksHex[0], 
                     delegation.totalSat
                 );
                 
-                // Son delegasyonları güncelle (en fazla 10 tane)
+                // Update recent delegations (maximum 10)
                 if (tempRecentDelegations.length < 10) {
                     tempRecentDelegations.push({
                         stakingTxIdHex: delegation.stakingTxIdHex,
@@ -174,22 +174,22 @@ export class StakerRecalculationService {
                 }
             }
             
-            // Son delegasyonları stakingTime'a göre sırala (en yeniden en eskiye)
+            // Sort recent delegations by stakingTime (newest to oldest)
             tempRecentDelegations.sort((a, b) => (b.stakingTime || 0) - (a.stakingTime || 0));
             
-            // Sıralanmış delegasyonları staker'a ekle
+            // Add the sorted delegations to the staker
             tempRecentDelegations.forEach(d => {
                 staker.recentDelegations.push(d);
             });
             
-            // Son güncelleme zamanını ayarla
+            // Set the last update time
             staker.lastUpdated = new Date();
             
-            // Staker'ı kaydet
+            // Save the staker
             await staker.save();
         } catch (error) {
             StakerUtils.logError(`Error recalculating stats for staker: ${staker.stakerAddress}`, error);
             throw error;
         }
     }
-} 
+}

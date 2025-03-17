@@ -47,15 +47,15 @@ export class NewBTCDelegationService {
             state: 'PENDING'
         });
         
-        // Delegasyonu kaydet
+        // Save the delegation
         const savedDelegation = await delegation.save();
         
-        // Staker bilgilerini güncelle
+        // Update staker information
         try {
             await this.stakerService.updateStakerFromDelegation(savedDelegation);
         } catch (error) {
             logger.error(`Error updating staker from delegation: ${error}`);
-            // Staker güncellemesi başarısız olsa bile delegasyon kaydını dönüyoruz
+            // Return the delegation record even if the staker update fails
         }
         
         return savedDelegation;
@@ -94,12 +94,12 @@ export class NewBTCDelegationService {
 
             logger.info(`[Delegation state updated successfully] ${stakingTxIdHex}`);
             
-            // Staker bilgilerini güncelle
+            // Update staker information
             try {
                 await this.stakerService.updateStakerFromDelegation(result);
             } catch (error) {
                 logger.error(`Error updating staker after delegation state change: ${error}`);
-                // Staker güncellemesi başarısız olsa bile delegasyon kaydını dönüyoruz
+                // Return the delegation record even if the staker update fails
             }
 
             return result;
@@ -122,13 +122,13 @@ export class NewBTCDelegationService {
             { new: true }
         );
         
-        // Staker bilgilerini güncelle
+        // Update staker information
         if (result) {
             try {
                 await this.stakerService.updateStakerFromDelegation(result);
             } catch (error) {
                 logger.error(`Error updating staker after unbonding: ${error}`);
-                // Staker güncellemesi başarısız olsa bile delegasyon kaydını dönüyoruz
+                // Return the delegation record even if the staker update fails
             }
         }
         
