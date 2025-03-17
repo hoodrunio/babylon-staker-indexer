@@ -5,11 +5,15 @@ import { formatSatoshis } from '../../utils/util';
 import { getTxHash } from '../../utils/generate-tx-hash';
 import { extractAmountFromBTCTransaction, extractAddressesFromTransaction } from '../../utils/btc-transaction';
 import { logger } from '../../utils/logger';
+import { NewStakerService } from './NewStakerService';
 
 export class NewBTCDelegationService {
     private static instance: NewBTCDelegationService | null = null;
+    private stakerService: NewStakerService;
 
-    private constructor() {}
+    private constructor() {
+        this.stakerService = NewStakerService.getInstance();
+    }
 
     public static getInstance(): NewBTCDelegationService {
         if (!NewBTCDelegationService.instance) {
@@ -42,7 +46,19 @@ export class NewBTCDelegationService {
             stakingTxIdHex,
             state: 'PENDING'
         });
-        return delegation.save();
+        
+        // Delegasyonu kaydet
+        const savedDelegation = await delegation.save();
+        
+        // Staker bilgilerini güncelle
+        try {
+            await this.stakerService.updateStakerFromDelegation(savedDelegation);
+        } catch (error) {
+            logger.error(`Error updating staker from delegation: ${error}`);
+            // Staker güncellemesi başarısız olsa bile delegasyon kaydını dönüyoruz
+        }
+        
+        return savedDelegation;
     }
 
     public async updateDelegationState(
@@ -77,6 +93,14 @@ export class NewBTCDelegationService {
             }
 
             logger.info(`[Delegation state updated successfully] ${stakingTxIdHex}`);
+            
+            // Staker bilgilerini güncelle
+            try {
+                await this.stakerService.updateStakerFromDelegation(result);
+            } catch (error) {
+                logger.error(`Error updating staker after delegation state change: ${error}`);
+                // Staker güncellemesi başarısız olsa bile delegasyon kaydını dönüyoruz
+            }
 
             return result;
         } catch (error) {
@@ -88,7 +112,7 @@ export class NewBTCDelegationService {
     public async updateUnbondingInfo(stakingTxHex: string, network: Network, unbondingTxHex: string) {
         const unbondingTxIdHex = getTxHash(unbondingTxHex, false);
         
-        return NewBTCDelegation.findOneAndUpdate(
+        const result = await NewBTCDelegation.findOneAndUpdate(
             { stakingTxHex, networkType: network.toLowerCase() },
             { 
                 unbondingTxHex,
@@ -97,6 +121,18 @@ export class NewBTCDelegationService {
             },
             { new: true }
         );
+        
+        // Staker bilgilerini güncelle
+        if (result) {
+            try {
+                await this.stakerService.updateStakerFromDelegation(result);
+            } catch (error) {
+                logger.error(`Error updating staker after unbonding: ${error}`);
+                // Staker güncellemesi başarısız olsa bile delegasyon kaydını dönüyoruz
+            }
+        }
+        
+        return result;
     }
 
     public async updateSpendStakeInfo(stakingTxHex: string, network: Network, spendStakeTxHex: string) {

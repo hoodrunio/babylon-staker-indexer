@@ -11,6 +11,7 @@ import validatorInfoRouter from './validator-info';
 import covenantRouter from './covenant';
 import governanceRoutes from './governance';
 import blockProcessorRouter from './block-processor';
+import newStakersRouter from './new-stakers';
 
 const v1Router = Router();
 
@@ -29,5 +30,6 @@ v1Router.use('/covenant', covenantRouter);
 v1Router.use('/', paramsRouter);
 v1Router.use('/governance', governanceRoutes);
 v1Router.use('/block-processor', blockProcessorRouter);
+v1Router.use('/new-stakers', newStakersRouter);
 
 export default v1Router;
