@@ -28,18 +28,15 @@ const connectDB = async () => {
 };
 
 // Main function
-const populateNewStakers = async () => {
+const recalculateStakerStats = async () => {
     try {
         // Connect to MongoDB
         await connectDB();
 
-        logger.info('Starting to populate new stakers from existing delegations...');
+        logger.info('Starting to recalculate all staker statistics...');
 
         // Initialize NewStakerService
         const stakerService = NewStakerService.getInstance();
-
-        // Log memory usage
-        logMemoryUsage();
 
         // Recalculate all staker statistics
         await stakerService.recalculateAllStakerStats();
@@ -47,16 +44,16 @@ const populateNewStakers = async () => {
         // Log final memory usage
         logMemoryUsage();
 
-        logger.info('Successfully populated new stakers from existing delegations');
+        logger.info('Successfully recalculated all staker statistics');
         process.exit(0);
     } catch (error) {
-        logger.error('Error populating new stakers:', error);
+        logger.error('Error recalculating staker statistics:', error);
         process.exit(1);
     }
 };
 
 // Run the script
-populateNewStakers();
+recalculateStakerStats();
 
 // Monitor memory usage
 process.on('warning', e => {

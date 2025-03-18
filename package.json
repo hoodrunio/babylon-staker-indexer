@@ -15,6 +15,8 @@
     "db:reset": "ts-node src/database/setup.ts --reset",
     "migrate-public-keys": "ts-node src/scripts/migrate-staker-public-keys.ts",
     "migrate-transactions": "ts-node src/scripts/migrate-transactions.ts",
+    "recalculate-staker-stats": "ts-node src/scripts/recalculate-staker-stats.ts",
+    "fix-finality-provider-stats": "ts-node src/scripts/fix-finality-provider-stats.ts",
     "test:decoder": "ts-node src/test-decoder.ts",
     "test:protobuf-decoder": "ts-node src/test-protobuf-decoder.ts",
     "get-tx": "ts-node src/scripts/get-transactions.ts"

@@ -117,15 +117,28 @@ export class StakerQueryService {
         sortOrder = 'desc'
     ): Promise<any[]> {
         try {
-            const sort: any = {};
-            sort[sortField] = sortOrder === 'asc' ? 1 : -1;
+            const staker = await NewStaker.findOne(
+                { stakerAddress }
+            ).lean();
             
-            return NewBTCDelegation.find({ stakerAddress })
-                .sort(sort)
-                .skip(skip)
-                .limit(limit)
-                .select('-stakingTxHex')
-                .lean();
+            if (!staker || !staker.delegations || staker.delegations.length === 0) {
+                return [];
+            }
+            
+            // Sort delegations based on the sort field
+            const sortedDelegations = [...staker.delegations].sort((a, b) => {
+                const aValue = a[sortField as keyof typeof a];
+                const bValue = b[sortField as keyof typeof b];
+                
+                if (typeof aValue === 'number' && typeof bValue === 'number') {
+                    return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
+                }
+                
+                return 0;
+            });
+            
+            // Apply pagination
+            return sortedDelegations.slice(skip, skip + limit);
         } catch (error) {
             StakerUtils.logError(`Error getting staker delegations: ${stakerAddress}`, error);
             throw error;

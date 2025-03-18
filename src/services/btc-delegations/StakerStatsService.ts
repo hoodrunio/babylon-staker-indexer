@@ -22,6 +22,13 @@ export class StakerStatsService {
     public async updateStakerStats(staker: any, delegation: any, phase: number): Promise<void> {
         try {
             const { state, networkType, totalSat, stakingTxIdHex, finalityProviderBtcPksHex } = delegation;
+            
+            // Verify finality provider public key
+            if (!finalityProviderBtcPksHex || finalityProviderBtcPksHex.length === 0) {
+                StakerUtils.logError(`Missing finalityProviderBtcPksHex for delegation: ${stakingTxIdHex}`, new Error('Missing finality provider'));
+                return;
+            }
+            
             const finalityProviderBtcPkHex = finalityProviderBtcPksHex[0]; // Use the first finality provider
             const oldState = staker.recentDelegations.find((d: any) => d.stakingTxIdHex === stakingTxIdHex)?.state;
 
@@ -78,7 +85,12 @@ export class StakerStatsService {
                 this.updatePhaseStats(staker, phase, networkType, finalityProviderBtcPkHex, totalSat, state === 'ACTIVE', true);
 
                 // Update unique finality provider statistics
-                this.updateUniqueFinalityProviders(staker, finalityProviderBtcPkHex, totalSat);
+                this.updateUniqueFinalityProviders(staker, finalityProviderBtcPkHex, totalSat, state, true);
+            } else if (oldState && oldState !== state) {
+                // If the status has changed and became UNBONDED, update finality provider statistics
+                if (state === 'UNBONDED') {
+                    this.updateUniqueFinalityProviders(staker, finalityProviderBtcPkHex, totalSat, state, false);
+                }
             }
         } catch (error) {
             StakerUtils.logError('Error updating staker stats', error);
@@ -156,8 +168,12 @@ export class StakerStatsService {
                     phaseStats.finalityProviders.push(fpStats);
                 }
                 
-                fpStats.delegationsCount += 1;
-                fpStats.totalStakedSat += totalSat;
+                // Increase delegationsCount and totalStakedSat for delegations that are not UNBONDED
+                // To be consistent with the logic in the fix-finality-provider-stats.ts script
+                if (isActive) {
+                    fpStats.delegationsCount += 1;
+                    fpStats.totalStakedSat += totalSat;
+                }
             }
         } catch (error) {
             StakerUtils.logError('Error updating phase stats', error);
@@ -170,8 +186,16 @@ export class StakerStatsService {
      * @param staker Staker document
      * @param finalityProviderBtcPkHex Finality provider BTC public key
      * @param totalSat Total satoshi amount
+     * @param state Delegation state
+     * @param isNew Is this a new delegation?
      */
-    public updateUniqueFinalityProviders(staker: any, finalityProviderBtcPkHex: string, totalSat: number): void {
+    public updateUniqueFinalityProviders(
+        staker: any, 
+        finalityProviderBtcPkHex: string, 
+        totalSat: number,
+        state: string,
+        isNew: boolean
+    ): void {
         try {
             // Check the unique finality providers array
             if (!staker.uniqueFinalityProviders) {
@@ -192,9 +216,18 @@ export class StakerStatsService {
                 staker.uniqueFinalityProviders.push(fpStats);
             }
             
-            // Update statistics
-            fpStats.delegationsCount += 1;
-            fpStats.totalStakedSat += totalSat;
+            // If it is a new delegation and not UNBONDED, increase the counter
+            if (isNew) {
+                if (state !== 'UNBONDED') {
+                    fpStats.delegationsCount += 1;
+                    fpStats.totalStakedSat += totalSat;
+                }
+            } 
+            // If the delegation has transitioned to the UNBONDED state and is not new, decrease the counter
+            else if (state === 'UNBONDED') {
+                fpStats.delegationsCount = Math.max(0, fpStats.delegationsCount - 1);
+                fpStats.totalStakedSat = Math.max(0, fpStats.totalStakedSat - totalSat);
+            }
         } catch (error) {
             StakerUtils.logError('Error updating unique finality providers', error);
             throw error;

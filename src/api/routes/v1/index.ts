@@ -30,6 +30,6 @@ v1Router.use('/covenant', covenantRouter);
 v1Router.use('/', paramsRouter);
 v1Router.use('/governance', governanceRoutes);
 v1Router.use('/block-processor', blockProcessorRouter);
-v1Router.use('/new-stakers', newStakersRouter);
+v1Router.use('/stakers', newStakersRouter);
 
 export default v1Router;
