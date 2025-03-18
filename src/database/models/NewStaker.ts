@@ -41,6 +41,12 @@ const delegationDetailSchema = new mongoose.Schema({
     phase: {
         type: Number,
         default: 1
+    },
+    createdAt: {
+        type: Date,
+    },
+    updatedAt: {
+        type: Date,
     }
 }, { _id: false });
 
@@ -159,7 +165,9 @@ const newStakerSchema = new mongoose.Schema({
         state: { type: String },
         networkType: { type: String },
         totalSat: { type: Number },
-        stakingTime: { type: Number }
+        stakingTime: { type: Number },
+        createdAt: { type: Date },
+        updatedAt: { type: Date }
     }],
     // Staker'ın son güncelleme zamanı
     lastUpdated: {

@@ -222,7 +222,9 @@ export class StakerRecalculationService {
                         state: delegation.state,
                         networkType: delegation.networkType,
                         totalSat: delegation.totalSat,
-                        stakingTime: delegation.stakingTime
+                        stakingTime: delegation.stakingTime,
+                        createdAt: delegation.createdAt ? new Date(delegation.createdAt) : undefined,
+                        updatedAt: delegation.updatedAt ? new Date(delegation.updatedAt) : undefined
                     });
                 }
             }

@@ -34,13 +34,17 @@ const populateNewStakers = async () => {
         await connectDB();
 
         logger.info('Starting to populate new stakers from existing delegations...');
-
         // Initialize NewStakerService
         const stakerService = NewStakerService.getInstance();
 
         // Log memory usage
         logMemoryUsage();
 
+
+        // create new stakers from delegations
+        await stakerService.createStakersFromDelegations();
+        
+        await new Promise(resolve => setTimeout(resolve, 10000));
         // Recalculate all staker statistics
         await stakerService.recalculateAllStakerStats();
 

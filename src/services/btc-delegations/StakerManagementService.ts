@@ -75,6 +75,14 @@ export class StakerManagementService {
      */
     public updateRecentDelegations(staker: any, newDelegation: RecentDelegation): void {
         try {
+            // Add timestamps if missing
+            if (!newDelegation.createdAt) {
+                newDelegation.createdAt = new Date();
+            }
+            if (!newDelegation.updatedAt) {
+                newDelegation.updatedAt = new Date();
+            }
+
             // Get the current recentDelegations as an array and process it
             const currentDelegations: RecentDelegation[] = staker.recentDelegations ? 
                 Array.from(staker.recentDelegations).map((d: any) => ({
@@ -83,13 +91,19 @@ export class StakerManagementService {
                     state: d.state,
                     networkType: d.networkType,
                     totalSat: d.totalSat,
-                    stakingTime: d.stakingTime
+                    stakingTime: d.stakingTime,
+                    createdAt: d.createdAt,
+                    updatedAt: d.updatedAt
                 })) : [];
 
             // If this delegation already exists, update it
             const existingIndex = currentDelegations.findIndex(d => d.stakingTxIdHex === newDelegation.stakingTxIdHex);
             if (existingIndex !== -1) {
-                currentDelegations[existingIndex] = newDelegation;
+                currentDelegations[existingIndex] = {
+                    ...newDelegation,
+                    createdAt: currentDelegations[existingIndex].createdAt || undefined,
+                    updatedAt: currentDelegations[existingIndex].updatedAt || undefined
+                };
             } else {
                 // If not, add it and keep a maximum of 10
                 currentDelegations.unshift(newDelegation);

@@ -14,10 +14,10 @@ export class DelegationDetailsService {
     }
 
     /**
-     * Delegasyon detaylarını günceller
-     * @param staker Staker dökümanı
-     * @param delegation Delegasyon verisi
-     * @param phase Phase değeri
+     * Updates delegation details
+     * @param staker Staker document
+     * @param delegation Delegation data
+     * @param phase Phase value
      */
     public async updateDelegationDetails(staker: any, delegation: any, phase: number): Promise<void> {
         try {
@@ -30,37 +30,42 @@ export class DelegationDetailsService {
                 unbondingTime, 
                 state, 
                 networkType, 
-                paramsVersion 
+                paramsVersion,
+                createdAt,
+                updatedAt 
             } = delegation;
 
-            // Delegasyon detayı oluştur
+            // Create delegation detail
             const delegationDetail: DelegationDetail = {
                 stakingTxIdHex,
                 txHash: StakerUtils.formatTxHash(txHash, stakingTxIdHex),
-                finalityProviderBtcPkHex: finalityProviderBtcPksHex[0], // İlk finality provider'ı kullan
+                finalityProviderBtcPkHex: finalityProviderBtcPksHex[0], // Use the first finality provider
                 totalSat,
                 stakingTime,
                 unbondingTime,
                 state,
                 networkType,
                 paramsVersion,
-                phase
+                phase,
+                createdAt: createdAt ? new Date(createdAt) : new Date(),
+                updatedAt: updatedAt ? new Date(updatedAt) : new Date()
             };
 
-            // Mevcut delegasyonları kontrol et
+            // Check existing delegations
             const existingDelegationIndex = staker.delegations ? 
                 Array.from(staker.delegations).findIndex((d: any) => d.stakingTxIdHex === stakingTxIdHex) : -1;
 
             if (existingDelegationIndex !== -1) {
-                // Mevcut delegasyonu güncelle
+                // Update existing delegation
                 if (staker.delegations[existingDelegationIndex]) {
                     staker.delegations[existingDelegationIndex].state = state;
                     if (txHash) staker.delegations[existingDelegationIndex].txHash = StakerUtils.formatTxHash(txHash, stakingTxIdHex);
+                    staker.delegations[existingDelegationIndex].updatedAt = new Date();
                 }
             } else {
-                // Yeni delegasyon ekle
+                // Add new delegation
                 if (!staker.delegations) {
-                    // Mongoose DocumentArray oluştur
+                    // Create Mongoose DocumentArray
                     staker.delegations = staker.delegations || [];
                 }
                 staker.delegations.push(delegationDetail);
@@ -72,10 +77,10 @@ export class DelegationDetailsService {
     }
 
     /**
-     * Delegasyon detayını oluşturur
-     * @param delegation Delegasyon verisi
-     * @param phase Phase değeri
-     * @returns Delegasyon detayı
+     * Creates a delegation detail
+     * @param delegation Delegation data
+     * @param phase Phase value
+     * @returns Delegation detail
      */
     public createDelegationDetail(delegation: any, phase: number): DelegationDetail {
         const { 
@@ -87,20 +92,24 @@ export class DelegationDetailsService {
             unbondingTime, 
             state, 
             networkType, 
-            paramsVersion 
+            paramsVersion,
+            createdAt,
+            updatedAt 
         } = delegation;
 
         return {
             stakingTxIdHex,
             txHash: StakerUtils.formatTxHash(txHash, stakingTxIdHex),
-            finalityProviderBtcPkHex: finalityProviderBtcPksHex[0], // İlk finality provider'ı kullan
+            finalityProviderBtcPkHex: finalityProviderBtcPksHex[0], // Use the first finality provider
             totalSat,
             stakingTime,
             unbondingTime,
             state,
             networkType,
             paramsVersion,
-            phase
+            phase,
+            createdAt: createdAt ? new Date(createdAt) : new Date(),
+            updatedAt: updatedAt ? new Date(updatedAt) : new Date()
         };
     }
-} 
+}

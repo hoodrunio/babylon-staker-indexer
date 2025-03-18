@@ -5,6 +5,8 @@ export interface RecentDelegation {
     networkType: string;
     totalSat: number;
     stakingTime: number;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 export interface DelegationDetail {
@@ -18,6 +20,8 @@ export interface DelegationDetail {
     networkType: string;
     paramsVersion?: number;
     phase: number;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 export interface FinalityProviderStat {
