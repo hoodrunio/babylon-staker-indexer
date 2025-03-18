@@ -116,6 +116,17 @@ export class NewStakerService {
     }
 
     /**
+     * Gets stakers summary with only essential fields
+     * @param limit Limit
+     * @param skip Number of records to skip
+     * @param sortField Sort field
+     * @param sortOrder Sort order (asc/desc)
+     */
+    public async getStakersSummary(limit = 10, skip = 0, sortField = 'totalStakedSat', sortOrder = 'desc'): Promise<any[]> {
+        return this.stakerQueryService.getStakersSummary(limit, skip, sortField, sortOrder);
+    }
+
+    /**
      * Gets the total number of stakers
      */
     public async getStakersCount(): Promise<number> {

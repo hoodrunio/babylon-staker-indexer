@@ -7,6 +7,7 @@ import { WebSocketReconnectionService } from './WebSocketReconnectionService';
 import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
 import { ValidatorHistoricalSyncService } from '../validator/ValidatorHistoricalSyncService';
 import { IWebSocketEventHandlers } from './interfaces';
+import { WebSocketHealthMonitor } from './WebSocketHealthMonitor';
 
 // Main WebSocket Orchestrator Service
 export class WebSocketOrchestratorService {
@@ -17,6 +18,7 @@ export class WebSocketOrchestratorService {
     private reconnectionService: WebSocketReconnectionService;
     private healthTracker: WebsocketHealthTracker;
     private validatorHistoricalSync: ValidatorHistoricalSyncService;
+    private healthMonitor: WebSocketHealthMonitor;
     
     private constructor() {
         // Initialize services
@@ -26,6 +28,7 @@ export class WebSocketOrchestratorService {
         this.reconnectionService = WebSocketReconnectionService.getInstance();
         this.healthTracker = WebsocketHealthTracker.getInstance();
         this.validatorHistoricalSync = ValidatorHistoricalSyncService.getInstance();
+        this.healthMonitor = WebSocketHealthMonitor.getInstance();
     }
     
     public static getInstance(): WebSocketOrchestratorService {
@@ -41,6 +44,9 @@ export class WebSocketOrchestratorService {
         for (const network of networks) {
             this.connectToNetwork(network);
         }
+        
+        // Start health monitoring
+        this.healthMonitor.startMonitoring();
     }
     
     private connectToNetwork(network: Network): void {
@@ -151,5 +157,16 @@ export class WebSocketOrchestratorService {
     
     public stop(): void {
         this.connectionService.disconnectAll();
+        this.healthMonitor.stopMonitoring();
+    }
+
+    /**
+     * Reconnect to a specific network
+     * @param network The network to reconnect to
+     */
+    public reconnectNetwork(network: Network): void {
+        logger.info(`[WebSocketOrchestrator] Manually reconnecting to ${network}`);
+        this.connectionService.removeConnection(network);
+        this.connectToNetwork(network);
     }
 } 

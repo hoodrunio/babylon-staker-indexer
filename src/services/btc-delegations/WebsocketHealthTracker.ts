@@ -80,6 +80,7 @@ export class WebsocketHealthTracker {
             if (height > currentState.lastProcessedHeight) {
                 logger.debug(`[${network}] Updating block height from ${currentState.lastProcessedHeight} to ${height}`);
                 currentState.lastProcessedHeight = height;
+                currentState.lastUpdateTime = new Date();
                 this.state.set(network, currentState);
 
                 // Save to cache
@@ -154,13 +155,21 @@ export class WebsocketHealthTracker {
         }
     }
 
+    /**
+     * Get the current state for a network
+     */
+    public getNetworkState(network: Network): WebsocketState | undefined {
+        return this.state.get(network);
+    }
+
     private getOrCreateState(network: Network): WebsocketState {
         let state = this.state.get(network);
         if (!state) {
             state = {
                 lastProcessedHeight: 0,
                 isConnected: true,
-                lastConnectionTime: new Date()
+                lastConnectionTime: new Date(),
+                lastUpdateTime: new Date()
             };
             this.state.set(network, state);
         }
@@ -172,5 +181,6 @@ interface WebsocketState {
     lastProcessedHeight: number;
     isConnected: boolean;
     lastConnectionTime: Date;
+    lastUpdateTime?: Date;
     disconnectedAt?: Date;
 }

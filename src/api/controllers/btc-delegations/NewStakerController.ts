@@ -19,28 +19,49 @@ export class NewStakerController {
 
     public async getAllStakers(req: Request, res: Response): Promise<void> {
         try {
-            const limit = parseInt(req.query.limit as string) || 10;
+            let limit = parseInt(req.query.limit as string) || 10;
+            limit = Math.min(limit, 100);
             const page = parseInt(req.query.page as string) || 1;
             const skip = (page - 1) * limit;
             const sortField = (req.query.sort_by as string) || 'totalStakedSat';
             const sortOrder = (req.query.order as string) || 'desc';
+            const detailed = req.query.detailed === 'true';
 
-            const [stakers, total] = await Promise.all([
-                this.stakerService.getAllStakers(limit, skip, sortField, sortOrder),
-                this.stakerService.getStakersCount()
-            ]);
+            if (detailed) {
+                const [stakers, total] = await Promise.all([
+                    this.stakerService.getAllStakers(limit, skip, sortField, sortOrder),
+                    this.stakerService.getStakersCount()
+                ]);
 
-            res.json({
-                data: stakers,
-                meta: {
-                    pagination: {
-                        total,
-                        page,
-                        limit,
-                        pages: Math.ceil(total / limit)
+                res.json({
+                    data: stakers,
+                    meta: {
+                        pagination: {
+                            total,
+                            page,
+                            limit,
+                            pages: Math.ceil(total / limit)
+                        }
                     }
-                }
-            });
+                });
+            } else {
+                const [stakers, total] = await Promise.all([
+                    this.stakerService.getStakersSummary(limit, skip, sortField, sortOrder),
+                    this.stakerService.getStakersCount()
+                ]);
+
+                res.json({
+                    data: stakers,
+                    meta: {
+                        pagination: {
+                            total,
+                            page,
+                            limit,
+                            pages: Math.ceil(total / limit)
+                        }
+                    }
+                });
+            }
         } catch (error) {
             logger.error('Error fetching stakers:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -67,7 +88,8 @@ export class NewStakerController {
     public async getStakerDelegations(req: Request, res: Response): Promise<void> {
         try {
             const { stakerAddress } = req.params;
-            const limit = parseInt(req.query.limit as string) || 10;
+            let limit = parseInt(req.query.limit as string) || 10;
+            limit = Math.min(limit, 100);
             const page = parseInt(req.query.page as string) || 1;
             const skip = (page - 1) * limit;
             const sortField = (req.query.sort_by as string) || 'stakingTime';

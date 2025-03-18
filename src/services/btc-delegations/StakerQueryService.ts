@@ -38,6 +38,45 @@ export class StakerQueryService {
     }
 
     /**
+     * Gets stakers summary with only essential fields
+     * @param limit Limit
+     * @param skip Number of records to skip
+     * @param sortField Sort field
+     * @param sortOrder Sort order (asc/desc)
+     */
+    public async getStakersSummary(limit = 10, skip = 0, sortField = 'totalStakedSat', sortOrder = 'desc'): Promise<any[]> {
+        try {
+            const sort: any = {};
+            sort[sortField] = sortOrder === 'asc' ? 1 : -1;
+            
+            return NewStaker.find({}, {
+                stakerAddress: 1,
+                stakerBtcAddress: 1,
+                stakerBtcPkHex: 1,
+                totalStakedSat: 1,
+                totalDelegationsCount: 1,
+                uniqueFinalityProviders: 1
+            })
+                .sort(sort)
+                .skip(skip)
+                .limit(limit)
+                .lean()
+                .then(stakers => stakers.map(staker => ({
+                    stakerAddress: staker.stakerAddress,
+                    stakerBtcAddress: staker.stakerBtcAddress,
+                    stakerBtcPkHex: staker.stakerBtcPkHex,
+                    totalStake: staker.totalStakedSat,
+                    averageStake: staker.totalDelegationsCount > 0 ? Math.floor(staker.totalStakedSat / staker.totalDelegationsCount) : 0,
+                    transactionsCount: staker.totalDelegationsCount,
+                    providersCount: staker.uniqueFinalityProviders ? staker.uniqueFinalityProviders.length : 0
+                })));
+        } catch (error) {
+            StakerUtils.logError('Error getting stakers summary', error);
+            throw error;
+        }
+    }
+
+    /**
      * Gets the total number of stakers
      */
     public async getStakersCount(): Promise<number> {
@@ -85,6 +124,7 @@ export class StakerQueryService {
                 .sort(sort)
                 .skip(skip)
                 .limit(limit)
+                .select('-stakingTxHex')
                 .lean();
         } catch (error) {
             StakerUtils.logError(`Error getting staker delegations: ${stakerAddress}`, error);
