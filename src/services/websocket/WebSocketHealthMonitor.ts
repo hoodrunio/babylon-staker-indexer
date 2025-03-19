@@ -14,17 +14,18 @@ import { WebSocketConfigService } from './WebSocketConfigService';
 export class WebSocketHealthMonitor {
     private static instance: WebSocketHealthMonitor | null = null;
     private connectionService: WebSocketConnectionService;
-    private orchestratorService: WebSocketOrchestratorService;
     private healthTracker: WebsocketHealthTracker;
     private configService: WebSocketConfigService;
+    // Removed from constructor, will be used for lazy initialization
+    private orchestratorService: WebSocketOrchestratorService | null = null;
     
     private monitorInterval: NodeJS.Timeout | null = null;
     private readonly CHECK_INTERVAL = 60000; // Check every minute
     private readonly MAX_INACTIVE_TIME = 300000; // 5 minutes without block updates is considered inactive
+    private readonly INITIAL_DELAY = 10000; // 10 seconds delay before first check
     
     private constructor() {
         this.connectionService = WebSocketConnectionService.getInstance();
-        this.orchestratorService = WebSocketOrchestratorService.getInstance();
         this.healthTracker = WebsocketHealthTracker.getInstance();
         this.configService = WebSocketConfigService.getInstance();
     }
@@ -37,6 +38,16 @@ export class WebSocketHealthMonitor {
     }
     
     /**
+     * Get Orchestrator service lazily to avoid circular dependency
+     */
+    private getOrchestratorService(): WebSocketOrchestratorService {
+        if (!this.orchestratorService) {
+            this.orchestratorService = WebSocketOrchestratorService.getInstance();
+        }
+        return this.orchestratorService;
+    }
+    
+    /**
      * Start monitoring WebSocket connections
      */
     public startMonitoring(): void {
@@ -46,13 +57,20 @@ export class WebSocketHealthMonitor {
             clearInterval(this.monitorInterval);
         }
         
-        // Start periodic health checks
-        this.monitorInterval = setInterval(() => {
-            this.checkAllConnections();
-        }, this.CHECK_INTERVAL);
+        // Wait before first check to allow connections to establish
+        logger.info(`[WebSocketHealthMonitor] Initial check will run after ${this.INITIAL_DELAY/1000} seconds`);
         
-        // Run an initial check
-        this.checkAllConnections();
+        setTimeout(() => {
+            // Run initial check after delay
+            this.checkAllConnections();
+            
+            // Start periodic health checks
+            this.monitorInterval = setInterval(() => {
+                this.checkAllConnections();
+            }, this.CHECK_INTERVAL);
+            
+            logger.info(`[WebSocketHealthMonitor] Health monitoring started, will check every ${this.CHECK_INTERVAL/1000} seconds`);
+        }, this.INITIAL_DELAY);
     }
     
     /**
@@ -72,6 +90,7 @@ export class WebSocketHealthMonitor {
      */
     private checkAllConnections(): void {
         const networks = this.configService.getAllNetworks();
+        logger.debug(`[WebSocketHealthMonitor] Checking connection status for ${networks.length} networks`);
         
         for (const network of networks) {
             this.checkConnection(network);
@@ -87,14 +106,21 @@ export class WebSocketHealthMonitor {
             
             if (!connection) {
                 logger.warn(`[WebSocketHealthMonitor] No connection found for ${network}, attempting to reconnect`);
-                this.orchestratorService.reconnectNetwork(network);
+                this.getOrchestratorService().reconnectNetwork(network);
                 return;
             }
             
             // Check if connection is active
             if (!connection.isConnected()) {
-                logger.warn(`[WebSocketHealthMonitor] Connection for ${network} is not connected, reconnecting`);
-                this.orchestratorService.reconnectNetwork(network);
+                // Verify connection status again after a small delay to avoid false positives
+                // during connection establishment
+                setTimeout(() => {
+                    const conn = this.connectionService.getConnection(network);
+                    if (conn && !conn.isConnected()) {
+                        logger.warn(`[WebSocketHealthMonitor] Connection for ${network} is not connected, reconnecting`);
+                        this.getOrchestratorService().reconnectNetwork(network);
+                    }
+                }, 1000);
                 return;
             }
             
@@ -136,18 +162,18 @@ export class WebSocketHealthMonitor {
                         
                         if (currentHeight > lastProcessedHeight) {
                             logger.warn(`[WebSocketHealthMonitor] Current height (${currentHeight}) is ahead of last processed height (${lastProcessedHeight}), reconnecting`);
-                            this.orchestratorService.reconnectNetwork(network);
+                            this.getOrchestratorService().reconnectNetwork(network);
                         } else {
                             logger.info(`[WebSocketHealthMonitor] No new blocks available for ${network}, current height: ${currentHeight}`);
                         }
                     } catch (error) {
                         logger.error(`[WebSocketHealthMonitor] Error getting current height for ${network}:`, error);
                         // Reconnect anyway as we can't confirm if there's a real issue
-                        this.orchestratorService.reconnectNetwork(network);
+                        this.getOrchestratorService().reconnectNetwork(network);
                     }
                 } else {
                     // No client available, reconnect anyway
-                    this.orchestratorService.reconnectNetwork(network);
+                    this.getOrchestratorService().reconnectNetwork(network);
                 }
             }
         } catch (error) {

@@ -61,9 +61,18 @@ export class BlockProcessorModule {
      */
     public getMessageProcessors(): IMessageProcessor[] {
         if (!this.isInitialized) {
-            this.initialize();
+            return this.getProcessorsWithoutInitializing();
         }
         
+        return this.initializer.createMessageProcessors();
+    }
+    
+    /**
+     * Returns message processors without triggering full initialization.
+     * This is used to break the circular dependency with WebSocketMessageService.
+     */
+    private getProcessorsWithoutInitializing(): IMessageProcessor[] {
+        logger.debug('[BlockProcessorModule] Getting message processors without full initialization');
         return this.initializer.createMessageProcessors();
     }
     

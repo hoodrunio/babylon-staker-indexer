@@ -20,6 +20,9 @@ export class WebSocketOrchestratorService {
     private validatorHistoricalSync: ValidatorHistoricalSyncService;
     private healthMonitor: WebSocketHealthMonitor;
     
+    // Map to track reconnection locks
+    private reconnectLocks: Map<Network, boolean> = new Map();
+    
     private constructor() {
         // Initialize services
         this.connectionService = WebSocketConnectionService.getInstance();
@@ -165,8 +168,29 @@ export class WebSocketOrchestratorService {
      * @param network The network to reconnect to
      */
     public reconnectNetwork(network: Network): void {
-        logger.info(`[WebSocketOrchestrator] Manually reconnecting to ${network}`);
-        this.connectionService.removeConnection(network);
-        this.connectToNetwork(network);
+        // If there is already a reconnection process for this network, cancel it
+        if (this.reconnectLocks.get(network)) {
+            logger.debug(`[WebSocketOrchestrator] Already reconnecting to ${network}, skipping duplicate request`);
+            return;
+        }
+
+        try {
+            // Set the lock
+            this.reconnectLocks.set(network, true);
+            
+            logger.info(`[WebSocketOrchestrator] Manually reconnecting to ${network}`);
+            this.connectionService.removeConnection(network);
+            
+            // add a short wait before reconnecting
+            setTimeout(() => {
+                this.connectToNetwork(network);
+                // Remove the lock
+                this.reconnectLocks.set(network, false);
+            }, 1000);
+        } catch (error) {
+            // Remove the lock in case of error
+            this.reconnectLocks.set(network, false);
+            logger.error(`[WebSocketOrchestrator] Error during reconnection to ${network}:`, error);
+        }
     }
-} 
+}
