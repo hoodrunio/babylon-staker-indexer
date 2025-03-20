@@ -1,5 +1,4 @@
 import { NewStaker } from '../../database/models/NewStaker';
-import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
 import { StakerUtils } from './utils/StakerUtils';
 
 export class StakerQueryService {
@@ -185,6 +184,81 @@ export class StakerQueryService {
             return staker.uniqueFinalityProviders;
         } catch (error) {
             StakerUtils.logError(`Error getting staker unique finality providers: ${stakerAddress}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets the total amount of BTC staked across all stakers
+     * @returns Total staked amount in satoshis
+     */
+    public async getTotalStakedAmount(): Promise<number> {
+        try {
+            const result = await NewStaker.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalAmount: { $sum: '$totalStakedSat' }
+                    }
+                }
+            ]);
+            
+            return result.length > 0 ? result[0].totalAmount : 0;
+        } catch (error) {
+            StakerUtils.logError('Error getting total staked amount', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets the average stake amount across all stakers
+     * @returns Average stake amount in satoshis
+     */
+    public async getAverageStakeAmount(): Promise<number> {
+        try {
+            const result = await NewStaker.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalAmount: { $sum: '$totalStakedSat' },
+                        totalDelegations: { $sum: '$totalDelegationsCount' }
+                    }
+                },
+                {
+                    $project: {
+                        averageStake: {
+                            $cond: [
+                                { $gt: ['$totalDelegations', 0] },
+                                { $divide: ['$totalAmount', '$totalDelegations'] },
+                                0
+                            ]
+                        }
+                    }
+                }
+            ]);
+            
+            return result.length > 0 ? Math.floor(result[0].averageStake) : 0;
+        } catch (error) {
+            StakerUtils.logError('Error getting average stake amount', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets the count of unique finality providers across all stakers
+     * @returns Count of unique finality providers
+     */
+    public async getUniqueProvidersCount(): Promise<number> {
+        try {
+            const result = await NewStaker.aggregate([
+                { $unwind: '$uniqueFinalityProviders' },
+                { $group: { _id: '$uniqueFinalityProviders.btcPkHex' } },
+                { $count: 'total' }
+            ]);
+            
+            return result.length > 0 ? result[0].total : 0;
+        } catch (error) {
+            StakerUtils.logError('Error getting unique providers count', error);
             throw error;
         }
     }

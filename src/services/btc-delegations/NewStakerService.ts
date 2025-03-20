@@ -175,4 +175,28 @@ export class NewStakerService {
     public async getStakerUniqueFinalityProviders(stakerAddress: string): Promise<any[]> {
         return this.stakerQueryService.getStakerUniqueFinalityProviders(stakerAddress);
     }
+
+    /**
+     * Gets the total amount of BTC staked across all stakers
+     * @returns Total staked amount in satoshis
+     */
+    public async getTotalStakedAmount(): Promise<number> {
+        return this.stakerQueryService.getTotalStakedAmount();
+    }
+
+    /**
+     * Gets the average stake amount across all delegations
+     * @returns Average stake amount in satoshis
+     */
+    public async getAverageStakeAmount(): Promise<number> {
+        return this.stakerQueryService.getAverageStakeAmount();
+    }
+
+    /**
+     * Gets the count of unique finality providers across all stakers
+     * @returns Count of unique finality providers
+     */
+    public async getUniqueProvidersCount(): Promise<number> {
+        return this.stakerQueryService.getUniqueProvidersCount();
+    }
 }

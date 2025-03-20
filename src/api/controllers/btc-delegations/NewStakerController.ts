@@ -27,6 +27,13 @@ export class NewStakerController {
             const sortOrder = (req.query.order as string) || 'desc';
             const detailed = req.query.detailed === 'true';
 
+            // Get total staked amount and unique providers count
+            const [totalStakedAmount, uniqueProvidersCount, averageStakeAmount] = await Promise.all([
+                this.stakerService.getTotalStakedAmount(),
+                this.stakerService.getUniqueProvidersCount(),
+                this.stakerService.getAverageStakeAmount()
+            ]);
+
             if (detailed) {
                 const [stakers, total] = await Promise.all([
                     this.stakerService.getAllStakers(limit, skip, sortField, sortOrder),
@@ -41,6 +48,11 @@ export class NewStakerController {
                             page,
                             limit,
                             pages: Math.ceil(total / limit)
+                        },
+                        stats: {
+                            totalStakedAmount,
+                            uniqueProvidersCount,
+                            averageStakeAmount
                         }
                     }
                 });
@@ -58,6 +70,11 @@ export class NewStakerController {
                             page,
                             limit,
                             pages: Math.ceil(total / limit)
+                        },
+                        stats: {
+                            totalStakedAmount,
+                            uniqueProvidersCount,
+                            averageStakeAmount
                         }
                     }
                 });
