@@ -97,22 +97,22 @@ export function decodeTx(txBase64: string): DecodedTx {
     }) || [];
     
     // Convert buffers to hex and Long values to normal values
-    // const processedTx = convertLongValues(convertBuffersToHex(tx)) as any;
+    const processedTx = convertLongValues(convertBuffersToHex(tx)) as any;
     const processedMessages = convertLongValues(decodedMessages);
     
     return {
-      //tx: processedTx,
+      tx: processedTx,
       messages: processedMessages,
-      //rawBytes: txBytes
+      rawBytes: txBytes
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error('Transaction decode error:', errorMessage);
     
     return {
-      //tx: null,
+      tx: null,
       messages: [],
-      //rawBytes: txBytes,
+      rawBytes: txBytes,
       error: `Failed to decode transaction: ${errorMessage}`
     };
   }
