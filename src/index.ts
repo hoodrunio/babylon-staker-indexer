@@ -12,6 +12,7 @@ import { GovernanceIndexerService } from './services/governance/GovernanceIndexe
 import { BabylonClient } from './clients/BabylonClient';
 import { BlockProcessorModule } from './services/block-processor/BlockProcessorModule';
 import { Network } from './types/finality';
+import { StatsController } from './api/controllers/stats.controller';
 
 // Load environment variables
 dotenv.config();
@@ -78,6 +79,10 @@ async function startServer() {
     logger.info('Initializing BlockProcessorModule...');
     const blockProcessorModule = BlockProcessorModule.getInstance();
     blockProcessorModule.initialize();
+    
+    // Initialize StatsController to start background cache refresh
+    logger.info('Initializing StatsController with background cache refresh...');
+    StatsController.initialize();
     
     // Start historical sync if BLOCK_SYNC_ENABLED is true
     if (process.env.BLOCK_SYNC_ENABLED === 'true') {

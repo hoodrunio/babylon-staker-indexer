@@ -125,7 +125,59 @@ router.get('/signatures/:fpBtcPkHex/stream', async (req, res) => {
     }
 });
 
-// Get active finality providers
+// Get finality providers with optional status filter
+router.get('/providers', async (req, res) => {
+    try {
+        const network = req.network || Network.MAINNET;
+        const status = req.query.status as string || 'all';
+        
+        // Validate status parameter
+        if (status && !['active', 'inactive', 'all'].includes(status.toLowerCase())) {
+            return res.status(400).json({
+                error: 'Invalid status parameter. Must be one of: active, inactive, all'
+            });
+        }
+        
+        let providers;
+        
+        // Get providers based on status parameter
+        if (status.toLowerCase() === 'active') {
+            providers = await finalityProviderService.getActiveFinalityProviders(network);
+            logger.info(`Retrieved ${providers.length} active finality providers for ${network}`);
+        } else if (status.toLowerCase() === 'inactive') {
+            // Get all providers first
+            const allProviders = await finalityProviderService.getAllFinalityProviders(network);
+            // Then get active providers
+            const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+            
+            // Create a set of active provider keys for efficient lookup
+            const activePkSet = new Set(activeProviders.map(p => p.btc_pk));
+            
+            // Filter out active providers to get inactive ones
+            providers = allProviders.filter(p => !activePkSet.has(p.btc_pk));
+            logger.info(`Retrieved ${providers.length} inactive finality providers for ${network}`);
+        } else {
+            // Default to all providers
+            providers = await finalityProviderService.getAllFinalityProviders(network);
+            logger.info(`Retrieved ${providers.length} total finality providers for ${network}`);
+        }
+
+        return res.json({
+            providers,
+            count: providers.length,
+            status: status.toLowerCase(),
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        logger.error('Error getting finality providers:', error);
+        return res.status(500).json({
+            error: 'Internal server error',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+
+// For backward compatibility - redirect to filtered active providers
 router.get('/providers/active', async (req, res) => {
     try {
         const network = req.network || Network.MAINNET;
@@ -137,25 +189,6 @@ router.get('/providers/active', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error getting active finality providers:', error);
-        return res.status(500).json({
-            error: 'Internal server error',
-            message: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
-
-// Get all finality providers
-router.get('/providers', async (req, res) => {
-    try {
-        const network = req.network || Network.MAINNET;
-        const providers = await finalityProviderService.getAllFinalityProviders(network);
-        return res.json({
-            providers,
-            count: providers.length,
-            timestamp: Date.now()
-        });
-    } catch (error) {
-        logger.error('Error getting all finality providers:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error instanceof Error ? error.message : 'Unknown error'
