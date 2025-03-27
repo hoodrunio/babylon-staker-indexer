@@ -8,7 +8,11 @@ export class CacheService {
 
   private constructor() {
     this.client = createClient({
-      url: process.env.REDIS_URL || 'redis://localhost:6379'
+      url: process.env.REDIS_URL || 'redis://localhost:6379',
+      socket: {
+        connectTimeout: 10000,
+        timeout: 10000
+      }
     });
 
     this.client.on('error', (err) => logger.error('Redis Client Error:', err));
