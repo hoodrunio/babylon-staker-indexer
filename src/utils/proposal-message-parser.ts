@@ -46,6 +46,12 @@ export class ProposalMessageParser {
             subject_client_id: msg.subject_client_id,
             substitute_client_id: msg.substitute_client_id,
             signer: msg.signer
+        }),
+
+        '/babylon.finality.v1.MsgResumeFinalityProposal': (msg: any) => ({
+            authority: msg.authority,
+            fp_pks_hex: msg.fp_pks_hex,
+            halting_height: msg.halting_height
         })
     };
 
