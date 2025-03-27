@@ -126,9 +126,11 @@ export class StatsController {
             // Initialize stats objects
             let activeTVL = 0;
             let pendingTVL = 0;
+            let verifiedTVL = 0;
             let totalTVL = 0;
             let activeDelegationCount = 0;
             let pendingDelegationCount = 0;
+            let verifiedDelegationCount = 0;
             let totalDelegationCount = 0;
 
             // Process aggregation results
@@ -142,6 +144,9 @@ export class StatsController {
                 } else if (stat._id === BTCDelegationStatus.PENDING) {
                     pendingTVL = stat.totalAmount;
                     pendingDelegationCount = stat.count;
+                } else if (stat._id === BTCDelegationStatus.VERIFIED) {
+                    verifiedTVL = stat.totalAmount;
+                    verifiedDelegationCount = stat.count;
                 }
             });
 
@@ -172,7 +177,9 @@ export class StatsController {
                     confirmed: formatSatoshis(activeTVL),
                     confirmed_sat: activeTVL,
                     pending: formatSatoshis(pendingTVL),
-                    pending_sat: pendingTVL
+                    pending_sat: pendingTVL,
+                    verified: formatSatoshis(verifiedTVL),
+                    verified_sat: verifiedTVL
                 },
                 finality_providers: {
                     total: allFinalityProviders.length,
@@ -181,7 +188,8 @@ export class StatsController {
                 delegations: {
                     total: totalDelegationCount,
                     active: activeDelegationCount,
-                    pending: pendingDelegationCount
+                    pending: pendingDelegationCount,
+                    verified: verifiedDelegationCount
                 },
                 tvl_distribution: tvlDistribution,
                 timestamp: Date.now()
