@@ -92,6 +92,9 @@ export class CosmWasmIndexer {
       
       logger.info(`Found ${chainContracts.length} contracts for code ${codeId}`);
       
+      // Keep track of new contracts to update count later
+      let newContractsCount = 0;
+      
       // Process each contract
       for (const contractAddress of chainContracts) {
         // Skip if we already have this contract in our database
@@ -137,9 +140,30 @@ export class CosmWasmIndexer {
             });
             
             await newContract.save();
+            newContractsCount++;
             logger.info(`Indexed new CosmWasm contract: ${contractAddress}`);
           }
         }
+      }
+      
+      // Update contract count in the Code document if we found new contracts
+      if (newContractsCount > 0) {
+        await Code.findOneAndUpdate(
+          { code_id: codeId },
+          { $inc: { contract_count: newContractsCount } }
+        );
+        logger.info(`Updated contract count for code ${codeId}`);
+      }
+      
+      // Update the total contract count to match the actual number on chain
+      // This is helpful for keeping counts accurate in case of deleted contracts
+      const totalContractsInDb = await Contract.countDocuments({ code_id: codeId });
+      if (chainContracts.length !== totalContractsInDb) {
+        await Code.findOneAndUpdate(
+          { code_id: codeId },
+          { contract_count: chainContracts.length }
+        );
+        logger.info(`Corrected contract count for code ${codeId} to ${chainContracts.length}`);
       }
     } catch (error) {
       logger.error(`Error indexing contracts for code ${codeId}:`, error);
