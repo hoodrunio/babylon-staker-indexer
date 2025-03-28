@@ -25,6 +25,10 @@ const contractSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     required: true
   },
+  created: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   created_at: {
     type: Date,
     required: true
