@@ -13,6 +13,7 @@ import { BabylonClient } from './clients/BabylonClient';
 import { BlockProcessorModule } from './services/block-processor/BlockProcessorModule';
 import { Network } from './types/finality';
 import { StatsController } from './api/controllers/stats.controller';
+import { CosmWasmScheduler } from './services/CosmWasmScheduler';
 
 // Load environment variables
 dotenv.config();
@@ -122,6 +123,17 @@ async function startServer() {
     // Initialize governance indexer
     const governanceIndexer = new GovernanceIndexerService(babylonClient);
     governanceIndexer.start();
+
+    // Initialize and start CosmWasm indexer if enabled
+    if (process.env.COSMWASM_INDEXER_ENABLED === 'true') {
+        logger.info('Initializing CosmWasm indexer...');
+        // Use the singleton pattern to get the CosmWasm scheduler
+        const indexInterval = process.env.COSMWASM_INDEX_INTERVAL || '0 * * * *'; // Default: hourly
+        const cosmWasmScheduler = CosmWasmScheduler.getInstance(indexInterval);
+        
+        cosmWasmScheduler.start();
+        logger.info('CosmWasm indexer started successfully');
+    }
 
     // Special shutdown process for PM2
     const shutdown = async (signal: string) => {

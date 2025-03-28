@@ -164,7 +164,7 @@ export class StatsController {
 
             // Calculate TVL distribution using the active delegations
             const tvlDistribution = StatsController.calculateTVLDistribution(
-                activeFinalityProviders, 
+                allFinalityProviders,
                 activeDelegations, 
                 activeTVL
             );
@@ -201,14 +201,14 @@ export class StatsController {
     }
 
     private static calculateTVLDistribution(
-        activeFinalityProviders: any[], 
+        allFinalityProviders: any[],
         activeDelegations: any[],
         totalStakedAmount: number
     ) {
         try {
             // Create a lookup by btc_pk
             const providerLookup = new Map();
-            activeFinalityProviders.forEach(provider => {
+            allFinalityProviders.forEach(provider => {
                 providerLookup.set(provider.btc_pk, {
                     btc_pk: provider.btc_pk,
                     name: provider.description.moniker || provider.btc_pk.substring(0, 10) + '...',
@@ -237,6 +237,7 @@ export class StatsController {
 
             // Format output and calculate percentages
             const result = Array.from(providerLookup.values())
+                .filter(provider => provider.staked_amount_sat > 0)
                 .map(provider => {
                     return {
                         ...provider,
