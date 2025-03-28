@@ -36,7 +36,15 @@ const verificationSchema = new mongoose.Schema({
   wasm_hash: {
     type: String,
     default: null
+  },
+  repo_url: {
+    type: String,
+    default: null
+  },
+  branch: {
+    type: String,
+    default: null
   }
-}, { timestamps: true });
+}, { timestamps: { createdAt: 'created_at' } });
 
 export const Verification = mongoose.model('Verification', verificationSchema);

@@ -16,7 +16,7 @@ const codeSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  creation_time: {
+  created_at: {
     type: Date,
     required: true
   },
@@ -24,17 +24,26 @@ const codeSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  source_type: {
+    type: String,
+    enum: ['zip', 'github', null],
+    default: null
+  },
   source_url: {
     type: String,
     default: null
   },
-  source_hash: {
+  wasm_hash: {
     type: String,
     default: null
   },
-  language: {
+  optimizer_type: {
     type: String,
-    default: 'Rust'
+    default: 'rust-optimizer'
+  },
+  optimizer_version: {
+    type: String,
+    default: '0.16.0'
   },
   contract_count: {
     type: Number,

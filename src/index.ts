@@ -13,7 +13,7 @@ import { BabylonClient } from './clients/BabylonClient';
 import { BlockProcessorModule } from './services/block-processor/BlockProcessorModule';
 import { Network } from './types/finality';
 import { StatsController } from './api/controllers/stats.controller';
-import { CosmWasmScheduler } from './services/CosmWasmScheduler';
+import { CosmWasmScheduler } from './services/cosmwasm/scheduler.service';
 
 // Load environment variables
 dotenv.config();
@@ -128,8 +128,7 @@ async function startServer() {
     if (process.env.COSMWASM_INDEXER_ENABLED === 'true') {
         logger.info('Initializing CosmWasm indexer...');
         // Use the singleton pattern to get the CosmWasm scheduler
-        const indexInterval = process.env.COSMWASM_INDEX_INTERVAL || '0 * * * *'; // Default: hourly
-        const cosmWasmScheduler = CosmWasmScheduler.getInstance(indexInterval);
+        const cosmWasmScheduler = CosmWasmScheduler.getInstance();
         
         cosmWasmScheduler.start();
         logger.info('CosmWasm indexer started successfully');

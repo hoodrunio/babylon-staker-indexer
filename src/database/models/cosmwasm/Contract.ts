@@ -28,6 +28,18 @@ const contractSchema = new mongoose.Schema({
   created_at: {
     type: Date,
     required: true
+  },
+  query_methods: {
+    type: [String],
+    default: []
+  },
+  execute_methods: {
+    type: [String],
+    default: []
+  },
+  latest_migration_code_id: {
+    type: Number,
+    default: null
   }
 }, { timestamps: true });
 
