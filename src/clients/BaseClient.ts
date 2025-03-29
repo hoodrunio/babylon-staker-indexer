@@ -127,6 +127,19 @@ export abstract class BaseClient {
                     return Promise.reject(heightNotAvailableError);
                 }
                 
+                // For blocks with height greater than current blockchain height
+                if (error.response?.data?.error?.data && 
+                    typeof error.response.data.error.data === 'string' &&
+                    error.response.data.error.data.includes('height') && 
+                    error.response.data.error.data.includes('must be less than or equal to the current blockchain height')) {
+                    
+                    // Create a special error for height greater than current blockchain height
+                    const heightNotAvailableError: CustomError = new Error('SPECIAL_ERROR_HEIGHT_NOT_AVAILABLE');
+                    heightNotAvailableError.name = 'HeightNotAvailableError';
+                    heightNotAvailableError.originalError = error;
+                    return Promise.reject(heightNotAvailableError);
+                }
+                
                 // For invalid Hex format errors (odd length hex string, invalid byte)
                 if (error.response?.data?.message && 
                     typeof error.response.data.message === 'string' &&

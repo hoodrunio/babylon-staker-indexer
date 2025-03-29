@@ -183,6 +183,19 @@ export class FinalityBlockProcessor {
             }
         } catch (error) {
             if (retryCount < this.MAX_RETRIES && !this.cacheManager.hasSignatureData(height)) {
+                // Check if the error is related to future blocks (height not available)
+                if (error instanceof Error && 
+                    (error.name === 'HeightNotAvailableError' || 
+                     error.message.includes('SPECIAL_ERROR_FUTURE_HEIGHT') ||
+                     error.message.includes('height') && 
+                     error.message.includes('must be less than or equal to the current blockchain height'))) {
+                    
+                    logger.info(`[Cache] Block ${height} is not available yet (future block), skipping retry`);
+                    this.requestLocks.delete(requestKey);
+                    this.processingBlocks.delete(height);
+                    return;
+                }
+                
                 this.requestLocks.delete(requestKey);
                 logger.warn(`[Cache] Error processing block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms:`, error);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));

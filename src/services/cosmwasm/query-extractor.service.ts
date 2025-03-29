@@ -138,24 +138,4 @@ export class QueryMethodExtractor {
       return null;
     }
   }
-
-  /**
-   * Process and save query methods for a contract
-   * @param contractAddress The contract address to process
-   */
-  public async processAndSaveQueryMethods(contractAddress: string): Promise<void> {
-    try {
-      const methods = await this.extractQueryMethods(contractAddress);
-      
-      if (methods !== null) {
-        await Contract.updateOne(
-          { contract_address: contractAddress },
-          { $set: { query_methods: methods } }
-        );
-        logger.info(`Saved ${methods.length} query methods for contract ${contractAddress}`);
-      }
-    } catch (error) {
-      logger.error(`Error saving query methods for ${contractAddress}:`, error);
-    }
-  }
 } 

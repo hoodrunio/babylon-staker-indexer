@@ -344,6 +344,37 @@ export class BabylonClient {
                     }
                 }
 
+                // Check for JSON-RPC errors with "height must be less than or equal to the current blockchain height" message
+                if ((error as any).response?.data?.error?.data && 
+                    typeof (error as any).response.data.error.data === 'string' && 
+                    (error as any).response.data.error.data.includes('height') && 
+                    (error as any).response.data.error.data.includes('must be less than or equal to the current blockchain height')) {
+                    
+                    logger.info(`[BabylonClient] Block height not available (future block), stopping retries.`);
+                    // Create a special error for height not available
+                    const heightNotAvailableError: CustomError = new Error('SPECIAL_ERROR_FUTURE_HEIGHT');
+                    heightNotAvailableError.name = 'HeightNotAvailableError';
+                    heightNotAvailableError.originalError = error;
+                    throw heightNotAvailableError;
+                }
+
+                // Also check for direct JSON-RPC error format
+                if ((error as any).error?.message && 
+                    typeof (error as any).error.message === 'string' && 
+                    (error as any).error.message.includes('Internal error') &&
+                    (error as any).error.data && 
+                    typeof (error as any).error.data === 'string' && 
+                    (error as any).error.data.includes('height') && 
+                    (error as any).error.data.includes('must be less than or equal to the current blockchain height')) {
+                    
+                    logger.info(`[BabylonClient] Block height not available in JSON-RPC format (future block), stopping retries.`);
+                    // Create a special error for height not available
+                    const heightNotAvailableError: CustomError = new Error('SPECIAL_ERROR_FUTURE_HEIGHT');
+                    heightNotAvailableError.name = 'HeightNotAvailableError';
+                    heightNotAvailableError.originalError = error;
+                    throw heightNotAvailableError;
+                }
+
                 // If not the last attempt, rotate clients and retry
                 if (attempt < maxRetries - 1) {
                     this.rotateClients();

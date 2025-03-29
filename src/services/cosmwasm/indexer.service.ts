@@ -282,12 +282,7 @@ export class CosmWasmIndexerService {
           logger.info(`Updated migration code ID for contract ${contractAddress}: ${codeId}`);
         }
         
-        // Check if we need to extract query methods
-        if (!existingContract.query_methods || existingContract.query_methods.length === 0) {
-          // Try to extract query methods
-          await this.queryExtractor.processAndSaveQueryMethods(contractAddress);
-        }
-        
+        // Don't extract query methods for existing contracts
         return false;
       }
       
@@ -341,6 +336,9 @@ export class CosmWasmIndexerService {
         }
       }
       
+      // Extract query methods for the new contract
+      const methods = await this.queryExtractor.extractQueryMethods(contractAddress);
+      
       // Save contract to database
       const newContract = new Contract({
         contract_address: contractAddress,
@@ -350,14 +348,12 @@ export class CosmWasmIndexerService {
         init_msg: initMsg,
         created: contractDetails.created || null,
         created_at: new Date(contractDetails.created?.at || Date.now()),
-        latest_migration_code_id: latestMigrationCodeId
+        latest_migration_code_id: latestMigrationCodeId,
+        query_methods: methods || [] // Save extracted methods or empty array if extraction failed
       });
       
       await newContract.save();
       logger.info(`Indexed new CosmWasm contract: ${contractAddress}`);
-      
-      // Extract query methods for the new contract
-      await this.queryExtractor.processAndSaveQueryMethods(contractAddress);
       
       return true;
     } catch (error) {
