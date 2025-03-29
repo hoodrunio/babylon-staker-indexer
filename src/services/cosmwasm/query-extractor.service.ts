@@ -27,8 +27,8 @@ export class QueryMethodExtractor {
       // The "100000" is just a random string that won't be a valid query method
       const invalidQuery = { "100000": {} };
       
-      // Try to execute the query (this should fail with a helpful error)
-      await this.client.queryContract(contractAddress, invalidQuery);
+      // Try to execute the query with retries disabled (we expect this to fail)
+      await this.client.queryContract(contractAddress, invalidQuery, { retry: false });
       
       // If we get here, the query somehow succeeded! This should never happen with our invalid query
       logger.warn(`Query extraction: Invalid query unexpectedly succeeded for ${contractAddress}`);
@@ -51,16 +51,23 @@ export class QueryMethodExtractor {
         if (errorMessage && typeof errorMessage === 'string') {
           const methods = this.extractMethodsFromErrorMessage(errorMessage);
           if (methods) {
-            logger.info(`Successfully extracted methods from ${statusCode} error for ${contractAddress}`);
+            // Only log at debug level since this is expected behavior
+            logger.debug(`Successfully extracted methods from ${statusCode} error for ${contractAddress}`);
             return methods;
           }
         }
         
-        // Log unexpected status codes without methods
-        logger.error(`Unexpected API response (${statusCode}) for ${contractAddress}: ${errorMessage || 'No error message'}`);
+        // Only log unexpected errors (not the ones we expect for method extraction)
+        if (!errorMessage?.includes('unknown variant') && !errorMessage?.includes('Missing export query')) {
+          logger.error(`Unexpected API response (${statusCode}) for ${contractAddress}: ${errorMessage || 'No error message'}`);
+        }
       }
       
-      logger.error(`Failed to extract query methods for ${contractAddress}:`, error);
+      // Only log unexpected errors
+      if (!error.response?.data?.message?.includes('unknown variant') && 
+          !error.response?.data?.message?.includes('Missing export query')) {
+        logger.error(`Failed to extract query methods for ${contractAddress}:`, error);
+      }
       return null;
     }
   }
@@ -75,6 +82,12 @@ export class QueryMethodExtractor {
       // Log the complete error message for debugging
       logger.debug(`Query extraction error message: ${errorMessage}`);
       
+      // Check if the error message indicates missing query export
+      if (errorMessage.includes('Missing export query')) {
+        logger.info('Contract does not support queries (no query export)');
+        return [];
+      }
+
       // Check if the error message is just "Not Implemented"
       if (errorMessage === "Not Implemented") {
         logger.warn("Received 'Not Implemented' error message, endpoint might not be supported");
@@ -108,6 +121,14 @@ export class QueryMethodExtractor {
         return methods;
       }
 
+      // Format 4: expected `method`
+      const singleMatch = errorMessage.match(/expected `([^`]+)`/);
+      if (singleMatch && singleMatch[1]) {
+        methods = [singleMatch[1]];
+        logger.info(`Successfully extracted single query method`);
+        return methods;
+      }
+
       // If no methods found, log warning and return null
       logger.warn(`Could not find method list in error message: ${errorMessage}`);
       return null;
@@ -126,7 +147,7 @@ export class QueryMethodExtractor {
     try {
       const methods = await this.extractQueryMethods(contractAddress);
       
-      if (methods) {
+      if (methods !== null) {
         await Contract.updateOne(
           { contract_address: contractAddress },
           { $set: { query_methods: methods } }

@@ -1,6 +1,8 @@
 import { BaseClient } from './BaseClient';
 import { Network } from '../types/finality';
 import { logger } from '../utils/logger';
+import { RetryConfig } from './BaseClient';
+import { AxiosRequestConfig, RawAxiosRequestHeaders } from 'axios';
 
 /**
  * Pagination options for CosmWasm API requests
@@ -172,17 +174,29 @@ export class CosmWasmClient extends BaseClient {
    * Get smart contract query (read-only interaction with a contract)
    * @param address The contract address to query
    * @param queryMsg The query message to send
+   * @param options Additional options for the query
    */
-  public async queryContract(address: string, queryMsg: Record<string, any>): Promise<any> {
+  public async queryContract(
+    address: string, 
+    queryMsg: Record<string, any>,
+    options?: { retry?: boolean }
+  ): Promise<any> {
     try {
       // Convert query to base64 as required by the API
       const queryBase64 = Buffer.from(JSON.stringify(queryMsg)).toString('base64');
       
-      // Use GET request with base64 encoded query as part of the URL
-      const response = await this.client.get(`/cosmwasm/wasm/v1/contract/${address}/smart/${queryBase64}`);
+      const response = await this.client.get(
+        `/cosmwasm/wasm/v1/contract/${address}/smart/${queryBase64}`,
+        this.createRequestConfig(options?.retry)
+      );
       return response.data;
-    } catch (error) {
-      logger.error(`Failed to query contract at address ${address}:`, error);
+    } catch (error: any) {
+      // Only log unexpected errors
+      const errorMessage = error.response?.data?.message;
+      if (!errorMessage?.includes('unknown variant') && 
+          !errorMessage?.includes('Missing export query')) {
+        logger.error(`Failed to query contract at address ${address}:`, error);
+      }
       throw error;
     }
   }

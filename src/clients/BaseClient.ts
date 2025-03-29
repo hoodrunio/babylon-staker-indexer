@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosRequestHeaders } from 'axios';
 import { Network } from '../types/finality';
 import { logger } from '../utils/logger';
 
@@ -66,7 +66,10 @@ export abstract class BaseClient {
     private setupRetryInterceptor(): void {
         // Add retry config to each request
         this.client.interceptors.request.use((config: RetryConfig) => {
-            config.retry = true;
+            // Only set retry if not explicitly set
+            if (config.retry === undefined) {
+                config.retry = true;
+            }
             config.currentRetryCount = config.currentRetryCount ?? 0;
             return config;
         });
@@ -77,9 +80,25 @@ export abstract class BaseClient {
             async (error) => {
                 const config = error.config as RetryConfig;
 
-                // If no retry config or request already retried, reject the error
-                if (!config || !config.retry) {
+                // If retry is explicitly disabled or request already retried, reject the error
+                if (config.retry === false || !config.retry) {
                     return Promise.reject(error);
+                }
+
+                // Check for specific error messages where we don't want to retry
+                if (error.response?.data?.message && typeof error.response.data.message === 'string') {
+                    const errorMessage = error.response.data.message;
+                    
+                    // Don't retry for "Missing export query" errors
+                    if (errorMessage.includes('Missing export query')) {
+                        return Promise.reject(error);
+                    }
+                    
+                    // Don't retry for "unknown variant" errors (these are expected for query extraction)
+                    if (errorMessage.includes('unknown variant') && 
+                        (errorMessage.includes('expected one of') || errorMessage.includes('expected `'))) {
+                        return Promise.reject(error);
+                    }
                 }
 
                 // Check for specific error conditions where we shouldn't retry with the same URL
@@ -109,8 +128,6 @@ export abstract class BaseClient {
                 }
                 
                 // For invalid Hex format errors (odd length hex string, invalid byte)
-                // For these types of errors, do not retry at all, just throw the error
-                // Create a special error
                 if (error.response?.data?.message && 
                     typeof error.response.data.message === 'string' &&
                     (error.response.data.message.includes('odd length hex string') ||
@@ -244,5 +261,12 @@ export abstract class BaseClient {
      */
     public getRpcUrl(): string {
         return this.baseRpcUrl;
+    }
+
+    protected createRequestConfig(retry?: boolean): RetryConfig {
+        return {
+            retry: retry ?? true,
+            headers: this.client.defaults.headers as unknown as AxiosRequestHeaders
+        } as RetryConfig;
     }
 }
