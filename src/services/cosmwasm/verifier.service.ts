@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from '../../utils/logger';
-import { Code, Verification } from '../../database/models/cosmwasm';
+import { Code, Contract, Verification } from '../../database/models/cosmwasm';
 import { SchemaParserService } from './schema-parser.service';
 import { GitHubService } from './github.service';
 
@@ -363,6 +363,66 @@ export class VerifierService {
   private static cleanupVerification(extractPath: string): void {
     if (fs.existsSync(extractPath)) {
       fs.rmSync(extractPath, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Process verification result
+   * @param codeId Code ID that was verified
+   * @param success Whether verification was successful
+   * @param data Additional data from verification
+   */
+  private async processVerificationResult(codeId: number, success: boolean, data: any): Promise<void> {
+    try {
+      // Update code record with verification status
+      await Code.updateOne(
+        { code_id: codeId },
+        { 
+          $set: { 
+            verified: success,
+            source_type: data.source_type || null,
+            source_url: data.source_url || null,
+            optimizer_type: data.optimizer_type || null,
+            optimizer_version: data.optimizer_version || null
+          }
+        }
+      );
+      
+      // If verification was successful, update contracts with schema information
+      if (success && data.query_methods) {
+        // Get all contracts for this code
+        const contracts = await Contract.find({ code_id: codeId });
+        
+        logger.info(`Updating ${contracts.length} contracts with schema information for code ${codeId}`);
+        
+        // Process each contract
+        for (const contract of contracts) {
+          // Update query methods if they were extracted
+          if (data.query_methods.length > 0) {
+            contract.query_methods = data.query_methods;
+          }
+          
+          // Update execute methods if they were extracted
+          if (data.execute_methods.length > 0) {
+            contract.execute_methods = data.execute_methods;
+          }
+          
+          await contract.save();
+        }
+      }
+      
+      // Update verification record
+      await Verification.updateOne(
+        { code_id: codeId },
+        { 
+          $set: { 
+            status: success ? 'SUCCESS' : 'FAILURE',
+            details: data
+          }
+        }
+      );
+    } catch (error) {
+      logger.error(`Error processing verification result for code ${codeId}:`, error);
     }
   }
 }

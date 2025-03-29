@@ -2,6 +2,7 @@ import { CosmWasmClient } from '../../clients/CosmWasmClient';
 import { Code, Contract, WasmState } from '../../database/models/cosmwasm';
 import { logger } from '../../utils/logger';
 import { BabylonClient } from '../../clients/BabylonClient';
+import { QueryMethodExtractor } from './query-extractor.service';
 
 /**
  * Interface for code info returned from the chain
@@ -23,6 +24,7 @@ const WASM_STATE_ID = 'cosmwasm_state';
  */
 export class CosmWasmIndexerService {
   private readonly client: CosmWasmClient;
+  private readonly queryExtractor: QueryMethodExtractor;
   private static instance: CosmWasmIndexerService | null = null;
 
   /**
@@ -37,6 +39,7 @@ export class CosmWasmIndexerService {
       babylonClient.getRpcUrl(),
       babylonClient.getWsEndpoint()
     );
+    this.queryExtractor = new QueryMethodExtractor(this.client);
   }
 
   /**
@@ -278,6 +281,13 @@ export class CosmWasmIndexerService {
           await existingContract.save();
           logger.info(`Updated migration code ID for contract ${contractAddress}: ${codeId}`);
         }
+        
+        // Check if we need to extract query methods
+        if (!existingContract.query_methods || existingContract.query_methods.length === 0) {
+          // Try to extract query methods
+          await this.queryExtractor.processAndSaveQueryMethods(contractAddress);
+        }
+        
         return false;
       }
       
@@ -345,6 +355,9 @@ export class CosmWasmIndexerService {
       
       await newContract.save();
       logger.info(`Indexed new CosmWasm contract: ${contractAddress}`);
+      
+      // Extract query methods for the new contract
+      await this.queryExtractor.processAndSaveQueryMethods(contractAddress);
       
       return true;
     } catch (error) {

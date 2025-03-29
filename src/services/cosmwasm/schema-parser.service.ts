@@ -9,11 +9,10 @@ export class SchemaParserService {
   /**
    * Extract query methods from schema files
    * @param schemaPath Path to the schema directory
-   * @returns Array of query method names
    */
   public static extractQueryMethods(schemaPath: string): string[] {
     try {
-      const querySchemaPath = path.join(schemaPath, 'query_msg.json');
+      const querySchemaPath = path.join(schemaPath, 'query.json');
       
       if (!fs.existsSync(querySchemaPath)) {
         logger.warn(`Query schema file not found at ${querySchemaPath}`);
@@ -22,12 +21,12 @@ export class SchemaParserService {
       
       const querySchema = JSON.parse(fs.readFileSync(querySchemaPath, 'utf8'));
       
-      // Extract root keys from "oneOf" array if it exists
+      // First try to handle oneOf structure
       if (querySchema.oneOf && Array.isArray(querySchema.oneOf)) {
         return this.extractMethodsFromOneOf(querySchema.oneOf);
       }
       
-      // Extract root keys from properties if it exists
+      // Fallback to properties if no oneOf
       if (querySchema.properties) {
         return Object.keys(querySchema.properties);
       }
@@ -43,11 +42,10 @@ export class SchemaParserService {
   /**
    * Extract execute methods from schema files
    * @param schemaPath Path to the schema directory
-   * @returns Array of execute method names
    */
   public static extractExecuteMethods(schemaPath: string): string[] {
     try {
-      const executeSchemaPath = path.join(schemaPath, 'execute_msg.json');
+      const executeSchemaPath = path.join(schemaPath, 'execute.json');
       
       if (!fs.existsSync(executeSchemaPath)) {
         logger.warn(`Execute schema file not found at ${executeSchemaPath}`);
@@ -56,12 +54,12 @@ export class SchemaParserService {
       
       const executeSchema = JSON.parse(fs.readFileSync(executeSchemaPath, 'utf8'));
       
-      // Extract root keys from "oneOf" array if it exists
+      // First try to handle oneOf structure
       if (executeSchema.oneOf && Array.isArray(executeSchema.oneOf)) {
         return this.extractMethodsFromOneOf(executeSchema.oneOf);
       }
       
-      // Extract root keys from properties if it exists
+      // Fallback to properties if no oneOf
       if (executeSchema.properties) {
         return Object.keys(executeSchema.properties);
       }
@@ -77,20 +75,24 @@ export class SchemaParserService {
   /**
    * Extract methods from oneOf array in schema
    * @param oneOf oneOf array from schema
-   * @returns Array of method names
    */
   private static extractMethodsFromOneOf(oneOf: any[]): string[] {
-    const methods: string[] = [];
-    
-    for (const item of oneOf) {
-      if (item.properties) {
-        const keys = Object.keys(item.properties);
-        if (keys.length === 1) {
-          methods.push(keys[0]);
+    try {
+      const methods: string[] = [];
+      
+      for (const item of oneOf) {
+        if (item.properties) {
+          const keys = Object.keys(item.properties);
+          if (keys.length > 0) {
+            methods.push(keys[0]);
+          }
         }
       }
+      
+      return methods;
+    } catch (error) {
+      logger.error('Error extracting methods from oneOf:', error);
+      return [];
     }
-    
-    return methods;
   }
 }

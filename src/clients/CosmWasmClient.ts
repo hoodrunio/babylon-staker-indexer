@@ -175,9 +175,11 @@ export class CosmWasmClient extends BaseClient {
    */
   public async queryContract(address: string, queryMsg: Record<string, any>): Promise<any> {
     try {
-      const response = await this.client.post(`/cosmwasm/wasm/v1/contract/${address}/smart`, {
-        query_data: Buffer.from(JSON.stringify(queryMsg)).toString('base64')
-      });
+      // Convert query to base64 as required by the API
+      const queryBase64 = Buffer.from(JSON.stringify(queryMsg)).toString('base64');
+      
+      // Use GET request with base64 encoded query as part of the URL
+      const response = await this.client.get(`/cosmwasm/wasm/v1/contract/${address}/smart/${queryBase64}`);
       return response.data;
     } catch (error) {
       logger.error(`Failed to query contract at address ${address}:`, error);

@@ -174,4 +174,44 @@ export class ContractController {
       res.status(500).json({ error: 'Failed to fetch contract methods' });
     }
   }
+  
+  /**
+   * Get suggested query methods for a contract
+   * These are automatically extracted from error messages
+   */
+  public async getSuggestedQueries(req: Request, res: Response): Promise<void> {
+    try {
+      const { address } = req.params;
+      
+      if (!address) {
+        res.status(400).json({ error: 'Invalid contract address' });
+        return;
+      }
+      
+      const contract = await Contract.findOne({ contract_address: address });
+      
+      if (!contract) {
+        res.status(404).json({ error: 'Contract not found' });
+        return;
+      }
+      
+      // Get the related code information to check if it's verified
+      const { Code } = await import('../../../database/models/cosmwasm');
+      const code = await Code.findOne({ code_id: contract.code_id });
+      const isVerified = code?.verified || false;
+      
+      res.status(200).json({
+        contract_address: contract.contract_address,
+        query_methods: contract.query_methods || [],
+        is_verified: isVerified,
+        is_inferred: true,
+        note: isVerified 
+          ? 'These query methods are available from the verified contract schema.'
+          : 'These query methods are inferred automatically. Contract is not verified.'
+      });
+    } catch (error) {
+      logger.error(`Error fetching query suggestions for contract ${req.params.address}:`, error);
+      res.status(500).json({ error: 'Failed to fetch query suggestions' });
+    }
+  }
 }
