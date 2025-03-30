@@ -8,15 +8,20 @@ import multer from 'multer';
 import os from 'os';
 import { VerifierService } from '../../../services/cosmwasm/verifier.service';
 
+// Extend Multer request type
+interface MulterRequest extends Request {
+  file?: any;
+}
+
 // Set up multer storage for uploaded files
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (req: any, file: any, cb: (error: Error | null, destination: string) => void) => {
     // Create a unique temp directory for this upload
     const uploadDir = path.join(os.tmpdir(), 'cosmwasm-verifier', uuidv4());
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
+  filename: (req: any, file: any, cb: (error: Error | null, filename: string) => void) => {
     cb(null, 'source.zip');
   }
 });
@@ -34,7 +39,7 @@ export class VerificationController {
   /**
    * Submit contract source code for verification via ZIP upload
    */
-  public async verifyContract(req: Request, res: Response): Promise<void> {
+  public async verifyContract(req: MulterRequest, res: Response): Promise<void> {
     try {
       const { code_id, optimizer_type, optimizer_version } = req.body;
       const file = req.file;
