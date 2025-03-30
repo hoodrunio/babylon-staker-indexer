@@ -14,6 +14,7 @@ import { BlockProcessorModule } from './services/block-processor/BlockProcessorM
 import { Network } from './types/finality';
 import { StatsController } from './api/controllers/stats.controller';
 import { CosmWasmScheduler } from './services/cosmwasm/scheduler.service';
+import { errorHandler } from './api/errorHandlers';
 
 // Load environment variables
 dotenv.config();
@@ -58,10 +59,7 @@ async function startServer() {
     });
 
     // Error handling
-    app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        logger.error(err.stack);
-        res.status(500).json({ error: 'Something broke!' });
-    });
+    app.use(errorHandler);
 
     // Start server
     app.listen(port, () => {

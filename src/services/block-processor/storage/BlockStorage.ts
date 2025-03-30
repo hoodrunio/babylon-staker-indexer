@@ -9,6 +9,7 @@ import { logger } from '../../../utils/logger';
 import { Network } from '../../../types/finality';
 import { BlockService } from '../block/service/BlockService';
 import { IBlockService } from '../block/service/IBlockService';
+import { FutureBlockError } from '../../../types/errors';
 
 /**
  * Service for storing block data
@@ -65,6 +66,20 @@ export class BlockStorage implements IBlockStorage {
         try {
             return await this.blockService.getBlockByHeight(height, network, useRawFormat);
         } catch (error) {
+            // Pass through FutureBlockError instances to be handled by controller
+            if (error instanceof FutureBlockError) {
+                throw error;
+            }
+            
+            // Check for height not available errors and pass them through
+            if (error instanceof Error && 
+                (error.name === 'HeightNotAvailableError' || 
+                 error.message.includes('SPECIAL_ERROR_HEIGHT_NOT_AVAILABLE') ||
+                 error.message.includes('SPECIAL_ERROR_FUTURE_HEIGHT') ||
+                 error.message.includes('is not available yet (future block)'))) {
+                throw error;
+            }
+            
             logger.error(`[BlockStorage] Error getting block by height: ${this.formatError(error)}`);
             return null;
         }

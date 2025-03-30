@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 // add an interface for custom error types
 export interface CustomError extends Error {
     originalError?: any;
+    details?: any;
 }
 
 export interface RetryConfig extends InternalAxiosRequestConfig {

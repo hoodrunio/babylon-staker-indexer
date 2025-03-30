@@ -7,6 +7,8 @@ import { IFetcherService } from '../types/interfaces';
 import { BabylonClient } from '../../../clients/BabylonClient';
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
+import { handleFutureBlockError } from '../../../utils/futureBlockHelper';
+import { FutureBlockError } from '../../../types/errors';
 
 /**
  * FetcherService is used to fetch complete transaction details from the blockchain
@@ -143,6 +145,31 @@ export class FetcherService implements IFetcherService {
       logger.debug(`[FetcherService] Successfully fetched block at height ${height} on ${network}`);
       return blockData;
     } catch (error) {
+      // Check if this is a future block error
+      if (error instanceof Error && 
+         (error.name === 'HeightNotAvailableError' || 
+          error.message.includes('SPECIAL_ERROR_HEIGHT_NOT_AVAILABLE') || 
+          error.message.includes('SPECIAL_ERROR_FUTURE_HEIGHT'))) {
+        
+        try {
+          // Try to enhance error with time estimates
+          const enhancedError = await handleFutureBlockError(error, network);
+          
+          // If successfully converted to FutureBlockError, throw it
+          if (enhancedError instanceof FutureBlockError) {
+            logger.info(`[FetcherService] Future block detected at height ${height}: ${enhancedError.message}`);
+            throw enhancedError;
+          }
+          
+          // Otherwise, throw a more descriptive error
+          logger.warn(`[FetcherService] Block at height ${height} is not available yet (future block)`);
+          throw new Error(`Block at height ${height} is not available yet (future block)`);
+        } catch (enrichError) {
+          // If enhancing the error fails, log and continue with standard error
+          logger.warn(`[FetcherService] Failed to enhance future block error: ${enrichError instanceof Error ? enrichError.message : String(enrichError)}`);
+        }
+      }
+      
       logger.error(`[FetcherService] Error fetching block at height ${height} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Failed to fetch block at height ${height}: ${error instanceof Error ? error.message : String(error)}`);
     }
