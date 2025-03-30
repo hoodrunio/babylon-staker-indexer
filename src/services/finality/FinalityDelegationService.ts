@@ -100,7 +100,7 @@ export class FinalityDelegationService {
 
         return response;
     }
-
+/* 
     private async fetchDelegations(
         fpBtcPkHex: string,
         network: Network,
@@ -134,7 +134,7 @@ export class FinalityDelegationService {
             delegations,
             next_key: data.pagination?.next_key
         };
-    }
+    } */
 
     private buildQuery(fpBtcPkHex: string, network: Network, options?: DelegationQueryOptions) {
         const query: any = {

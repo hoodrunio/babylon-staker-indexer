@@ -11,6 +11,7 @@ import {
 } from '../../types/finality/btcstaking';
 import { formatSatoshis, calculatePowerPercentage } from '../../utils/util';
 import { logger } from '../../utils/logger';
+import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
 
 interface CacheEntry<T> {
     data: T;
@@ -306,6 +307,195 @@ export class FinalityProviderService {
                 };
 
                 return result;
+            }
+        );
+    }
+
+    public async getFinalityProviderDelegationStats(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<{
+        active_tvl: string;
+        active_tvl_sat: number;
+        total_tvl: string;
+        total_tvl_sat: number;
+        delegation_count: number;
+    }> {
+        const cacheKey = `fp:delegation-stats:${fpBtcPkHex}:${network}`;
+        return this.getWithRevalidate(
+            cacheKey,
+            this.CACHE_TTL.PROVIDER_DETAILS,
+            async () => {
+                try {
+                    const networkLower = network.toLowerCase();
+                    
+                    // Aggregate delegation stats for this provider
+                    // Only include delegations that reference this finality provider
+                    const result = await NewBTCDelegation.aggregate([
+                        { 
+                            $match: { 
+                                networkType: networkLower,
+                                finalityProviderBtcPksHex: fpBtcPkHex
+                            }
+                        },
+                        {
+                            $group: {
+                                _id: "$state",
+                                count: { $sum: 1 },
+                                totalAmount: { $sum: "$totalSat" }
+                            }
+                        }
+                    ]);
+                    
+                    // Initialize return values
+                    let activeTvlSat = 0;
+                    let totalTvlSat = 0;
+                    let delegationCount = 0;
+                    
+                    // Process aggregation results
+                    result.forEach((stat: { _id: string; count: number; totalAmount: number }) => {
+                        delegationCount += stat.count;
+                        totalTvlSat += stat.totalAmount;
+                        
+                        if (stat._id === 'ACTIVE') {
+                            activeTvlSat = stat.totalAmount;
+                        }
+                    });
+                    
+                    return {
+                        active_tvl: formatSatoshis(activeTvlSat),
+                        active_tvl_sat: activeTvlSat,
+                        total_tvl: formatSatoshis(totalTvlSat),
+                        total_tvl_sat: totalTvlSat,
+                        delegation_count: delegationCount
+                    };
+                } catch (error) {
+                    logger.error(`Error getting delegation stats for provider ${fpBtcPkHex}:`, error);
+                    return {
+                        active_tvl: "0 BTC",
+                        active_tvl_sat: 0,
+                        total_tvl: "0 BTC",
+                        total_tvl_sat: 0,
+                        delegation_count: 0
+                    };
+                }
+            }
+        );
+    }
+
+    public async getAllFinalityProviderDelegationStats(network: Network = Network.MAINNET): Promise<Record<string, {
+        active_tvl: string;
+        active_tvl_sat: number;
+        total_tvl: string;
+        total_tvl_sat: number;
+        delegation_count: number;
+    }>> {
+        const cacheKey = `fp:all-delegation-stats:${network}`;
+        return this.getWithRevalidate(
+            cacheKey,
+            this.CACHE_TTL.PROVIDER_DETAILS,
+            async () => {
+                try {
+                    const networkLower = network.toLowerCase();
+                    
+                    logger.info(`[FINALITY] Getting all delegation stats for network: ${networkLower}`);
+                    
+                    // Get delegation information for all finality providers with a single aggregation query
+                    const result = await NewBTCDelegation.aggregate([
+                        { 
+                            // Filter delegations in a specific network
+                            $match: { 
+                                networkType: networkLower
+                            }
+                        },
+                        // Expand the delegation to all finality providers within it
+                        { 
+                            $unwind: {
+                                path: "$finalityProviderBtcPksHex",
+                                preserveNullAndEmptyArrays: false
+                            }
+                        },
+                        // Group by each finality provider and status combination
+                        {
+                            $group: {
+                                _id: {
+                                    fpBtcPkHex: "$finalityProviderBtcPksHex",
+                                    state: "$state"
+                                },
+                                count: { $sum: 1 },
+                                totalAmount: { $sum: "$totalSat" }
+                            }
+                        },
+                        // Group the results by finality provider
+                        {
+                            $group: {
+                                _id: "$_id.fpBtcPkHex",
+                                states: { 
+                                    $push: { 
+                                        state: "$_id.state", 
+                                        count: "$count", 
+                                        totalAmount: "$totalAmount" 
+                                    } 
+                                },
+                                totalCount: { $sum: "$count" },
+                                totalAmount: { $sum: "$totalAmount" }
+                            }
+                        }
+                    ]);
+                    
+                    logger.info(`[FINALITY] Query result for delegation stats: ${result.length} providers found`);
+                    
+                    // Process the results and return them as an object
+                    const statsObj: Record<string, {
+                        active_tvl: string;
+                        active_tvl_sat: number;
+                        total_tvl: string;
+                        total_tvl_sat: number;
+                        delegation_count: number;
+                    }> = {};
+                    
+                    if (result.length === 0) {
+                        logger.warn(`[FINALITY] No delegation stats found for network: ${networkLower}`);
+                    }
+                    
+                    result.forEach((fpStats: { 
+                        _id: string; 
+                        states: Array<{ state: string; count: number; totalAmount: number }>;
+                        totalCount: number;
+                        totalAmount: number;
+                    }) => {
+                        const fpBtcPkHex = fpStats._id;
+                        let activeTvlSat = 0;
+                        
+                        // Find delegations in the Active state - here we use a string value instead of an enum
+                        // We are looking for the string value 'ACTIVE' stored in the NewBTCDelegation schema
+                        const activeState = fpStats.states.find(s => s.state === 'ACTIVE');
+                        if (activeState) {
+                            activeTvlSat = activeState.totalAmount;
+                        }
+                        
+                        // Save the stats
+                        statsObj[fpBtcPkHex] = {
+                            active_tvl: formatSatoshis(activeTvlSat),
+                            active_tvl_sat: activeTvlSat,
+                            total_tvl: formatSatoshis(fpStats.totalAmount),
+                            total_tvl_sat: fpStats.totalAmount,
+                            delegation_count: fpStats.totalCount
+                        };
+                    });
+                    
+                    const providerCount = Object.keys(statsObj).length;
+                    logger.info(`[FINALITY] Processed ${providerCount} finality providers with delegations`);
+                    
+                    // Check for zero values - for debugging purposes
+                    const zeroValueProviders = Object.entries(statsObj).filter(([_, stats]) => stats.total_tvl_sat === 0).length;
+                    if (zeroValueProviders > 0) {
+                        logger.warn(`[FINALITY] Found ${zeroValueProviders} providers with zero TVL - potential issue with data`);
+                    }
+                    
+                    return statsObj;
+                } catch (error) {
+                    logger.error(`Error getting all delegation stats: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    logger.error(`Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
+                    return {};
+                }
             }
         );
     }
