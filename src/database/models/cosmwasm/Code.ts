@@ -1,5 +1,18 @@
 import mongoose from 'mongoose';
 
+// Define schema for instantiate_permission
+const instantiatePermissionSchema = new mongoose.Schema({
+  permission: {
+    type: String,
+    enum: ['Nobody', 'Everybody', 'AnyOfAddresses', 'OnlyAddress'],
+    default: 'Everybody'
+  },
+  addresses: {
+    type: [String],
+    default: []
+  }
+}, { _id: false });
+
 const codeSchema = new mongoose.Schema({
   code_id: {
     type: Number,
@@ -12,13 +25,20 @@ const codeSchema = new mongoose.Schema({
     required: true,
     index: true
   },
-  data_hash: {
+  checksum: {
     type: String,
     required: true
   },
   created_at: {
     type: Date,
     required: true
+  },
+  instantiate_permission: {
+    type: instantiatePermissionSchema,
+    default: () => ({
+      permission: 'Everybody',
+      addresses: []
+    })
   },
   verified: {
     type: Boolean,
@@ -39,11 +59,11 @@ const codeSchema = new mongoose.Schema({
   },
   optimizer_type: {
     type: String,
-    default: 'rust-optimizer'
+    default: null
   },
   optimizer_version: {
     type: String,
-    default: '0.16.0'
+    default: null
   },
   contract_count: {
     type: Number,

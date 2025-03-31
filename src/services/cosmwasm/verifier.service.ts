@@ -34,8 +34,8 @@ export class VerifierService {
     verificationId: string,
     sourceFilePath: string,
     codeId: number,
-    optimizerType: string = OptimizerType.RUST_OPTIMIZER,
-    optimizerVersion: string = '0.16.0'
+    optimizerType: OptimizerType,
+    optimizerVersion: string
   ): Promise<void> {
     try {
       logger.info(`Starting verification process for code ID ${codeId} from ZIP`);
@@ -72,7 +72,7 @@ export class VerifierService {
       verification.wasm_hash = wasmHash;
       
       // Compare with the chain hash
-      if (wasmHash.toLowerCase() === code.data_hash.toLowerCase()) {
+      if (wasmHash.toLowerCase() === code.checksum.toLowerCase()) {
         // Extract schema information if successful
         const schemaPath = path.join(extractPath, 'schema');
         const queryMethods = SchemaParserService.extractQueryMethods(schemaPath);
@@ -106,7 +106,7 @@ export class VerifierService {
       } else {
         // Update verification record to failed status
         verification.status = 'failed';
-        verification.error = `Hash mismatch. Chain hash: ${code.data_hash}, Built hash: ${wasmHash}`;
+        verification.error = `Hash mismatch. Chain hash: ${code.checksum}, Built hash: ${wasmHash}`;
         await verification.save();
         
         logger.warn(`Verification ${verificationId} failed due to hash mismatch`);
@@ -140,8 +140,8 @@ export class VerifierService {
    * @param verificationId The verification record ID
    * @param repoUrl The GitHub repository URL
    * @param branch The branch to checkout
-   * @param codeId The code ID to verify
    * @param subdir Optional subdirectory within the repo to focus on
+   * @param codeId The code ID to verify
    * @param optimizerType The type of optimizer to use
    * @param optimizerVersion The version of optimizer to use
    */
@@ -149,10 +149,10 @@ export class VerifierService {
     verificationId: string,
     repoUrl: string,
     branch: string,
+    subdir: string,
     codeId: number,
-    subdir?: string,
-    optimizerType: string = OptimizerType.RUST_OPTIMIZER,
-    optimizerVersion: string = '0.16.0'
+    optimizerType: OptimizerType,
+    optimizerVersion: string
   ): Promise<void> {
     let repoPath = '';
     
@@ -193,7 +193,7 @@ export class VerifierService {
       verification.wasm_hash = wasmHash;
       
       // Compare with the chain hash
-      if (wasmHash.toLowerCase() === code.data_hash.toLowerCase()) {
+      if (wasmHash.toLowerCase() === code.checksum.toLowerCase()) {
         // Extract schema information if successful
         const schemaPath = path.join(repoPath, 'schema');
         const queryMethods = SchemaParserService.extractQueryMethods(schemaPath);
@@ -227,7 +227,7 @@ export class VerifierService {
       } else {
         // Update verification record to failed status
         verification.status = 'failed';
-        verification.error = `Hash mismatch. Chain hash: ${code.data_hash}, Built hash: ${wasmHash}`;
+        verification.error = `Hash mismatch. Chain hash: ${code.checksum}, Built hash: ${wasmHash}`;
         await verification.save();
         
         logger.warn(`Verification ${verificationId} failed due to hash mismatch`);
@@ -292,7 +292,7 @@ export class VerifierService {
    */
   private static async buildContract(
     projectPath: string,
-    optimizerType: string,
+    optimizerType: OptimizerType,
     optimizerVersion: string
   ): Promise<string> {
     const dockerImage = `cosmwasm/${optimizerType}:${optimizerVersion}`;

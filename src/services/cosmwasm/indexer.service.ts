@@ -14,6 +14,10 @@ interface CodeInfo {
   created?: {
     at: string;
   };
+  instantiate_permission?: {
+    permission: string;
+    addresses: string[];
+  };
 }
 
 // CosmWasm State dokument ID
@@ -166,9 +170,13 @@ export class CosmWasmIndexerService {
           const newCode = new Code({
             code_id: codeId,
             creator: codeInfo.creator,
-            data_hash: codeInfo.data_hash,
+            checksum: codeInfo.data_hash,
             created_at: new Date(codeInfo.created?.at || Date.now()),
-            verified: false
+            verified: false,
+            instantiate_permission: codeInfo.instantiate_permission || {
+              permission: 'Everybody',
+              addresses: []
+            }
           });
           
           await newCode.save();

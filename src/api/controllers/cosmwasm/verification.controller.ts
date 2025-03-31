@@ -6,7 +6,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import os from 'os';
-import { VerifierService } from '../../../services/cosmwasm/verifier.service';
+import { VerifierService, OptimizerType } from '../../../services/cosmwasm/verifier.service';
 
 // Extend Multer request type
 interface MulterRequest extends Request {
@@ -54,6 +54,28 @@ export class VerificationController {
         return;
       }
       
+      // Validate optimizer information
+      if (!optimizer_type) {
+        res.status(400).json({ error: 'Optimizer type is required' });
+        return;
+      }
+      
+      if (!optimizer_version) {
+        res.status(400).json({ error: 'Optimizer version is required' });
+        return;
+      }
+
+      // Convert optimizer_type string to enum
+      let optimizerTypeEnum: OptimizerType;
+      if (optimizer_type === 'rust-optimizer') {
+        optimizerTypeEnum = OptimizerType.RUST_OPTIMIZER;
+      } else if (optimizer_type === 'workspace-optimizer') {
+        optimizerTypeEnum = OptimizerType.WORKSPACE_OPTIMIZER;
+      } else {
+        res.status(400).json({ error: 'Invalid optimizer type. Must be "rust-optimizer" or "workspace-optimizer"' });
+        return;
+      }
+      
       // Check if the code exists
       const code = await Code.findOne({ code_id: Number(code_id) });
       
@@ -73,6 +95,8 @@ export class VerificationController {
         code_id: Number(code_id),
         status: 'pending',
         source_path: file.path,
+        optimizer_type,
+        optimizer_version
       });
       
       await verification.save();
@@ -82,7 +106,7 @@ export class VerificationController {
         verification.id, 
         file.path, 
         Number(code_id),
-        optimizer_type,
+        optimizerTypeEnum,
         optimizer_version
       );
       
@@ -125,6 +149,28 @@ export class VerificationController {
         return;
       }
       
+      // Validate optimizer information
+      if (!optimizer_type) {
+        res.status(400).json({ error: 'Optimizer type is required' });
+        return;
+      }
+      
+      if (!optimizer_version) {
+        res.status(400).json({ error: 'Optimizer version is required' });
+        return;
+      }
+
+      // Convert optimizer_type string to enum
+      let optimizerTypeEnum: OptimizerType;
+      if (optimizer_type === 'rust-optimizer') {
+        optimizerTypeEnum = OptimizerType.RUST_OPTIMIZER;
+      } else if (optimizer_type === 'workspace-optimizer') {
+        optimizerTypeEnum = OptimizerType.WORKSPACE_OPTIMIZER;
+      } else {
+        res.status(400).json({ error: 'Invalid optimizer type. Must be "rust-optimizer" or "workspace-optimizer"' });
+        return;
+      }
+      
       // Validate GitHub URL format
       if (!this.isValidGitHubUrl(repo_url)) {
         res.status(400).json({ error: 'Invalid GitHub repository URL format' });
@@ -150,19 +196,21 @@ export class VerificationController {
         code_id: Number(code_id),
         status: 'pending',
         repo_url,
-        branch
+        branch,
+        optimizer_type,
+        optimizer_version
       });
       
       await verification.save();
       
-      // Start GitHub verification process in the background
+      // Start verification process in the background
       VerifierService.verifyFromGitHub(
-        verification.id,
-        repo_url,
-        branch,
+        verification.id, 
+        repo_url, 
+        branch, 
+        subdir || '', 
         Number(code_id),
-        subdir,
-        optimizer_type,
+        optimizerTypeEnum,
         optimizer_version
       );
       

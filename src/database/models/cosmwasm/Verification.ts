@@ -44,6 +44,14 @@ const verificationSchema = new mongoose.Schema({
   branch: {
     type: String,
     default: null
+  },
+  optimizer_type: {
+    type: String,
+    default: null
+  },
+  optimizer_version: {
+    type: String,
+    default: null
   }
 }, { timestamps: { createdAt: 'created_at' } });
 
