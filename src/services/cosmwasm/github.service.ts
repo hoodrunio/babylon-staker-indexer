@@ -17,13 +17,13 @@ export class GitHubService {
    * @param repoUrl The GitHub repository URL
    * @param branch The branch to checkout
    * @param subdir Optional subdirectory within the repo to focus on
-   * @returns Path to the cloned repository
+   * @returns Object containing paths to the repo root and working directory
    */
   public static async cloneRepository(
     repoUrl: string,
     branch: string,
     subdir?: string
-  ): Promise<string> {
+  ): Promise<{ repoDir: string; workingDir: string }> {
     try {
       // Create a unique temporary directory for this clone operation
       const tmpDirBase = path.join(os.tmpdir(), 'cosmwasm-verifier');
@@ -44,7 +44,7 @@ export class GitHubService {
         }
       }
       
-      return workingDir;
+      return { repoDir, workingDir };
     } catch (error: any) {
       logger.error('Error cloning GitHub repository:', error);
       throw new Error(`GitHub clone failed: ${error.message}`);

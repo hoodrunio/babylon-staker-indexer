@@ -21,36 +21,68 @@ async function createTransactionIndexes() {
       throw new Error('Database connection is not initialized');
     }
     
-    const transactionsCollection = db.collection('blockchaintransactionsTree');
+    const transactionsCollection = db.collection('blockchaintransactions');
 
-    // Create indexes
-    logger.info('Creating indexes for blockchain transactions...');
-    
-    // Create compound index for meta.content.contract and time
-    await transactionsCollection.createIndex(
-      { 'meta.content.contract': 1, time: -1 },
-      { background: true, name: 'idx_contract_time' }
-    );
-    
-    // Create individual index for meta.content.contract
-    await transactionsCollection.createIndex(
-      { 'meta.content.contract': 1 },
-      { background: true, name: 'idx_contract' }
-    );
-    
-    // Create index for code_id if it exists
-    await transactionsCollection.createIndex(
-      { 'meta.content.code_id': 1, time: -1 },
-      { background: true, name: 'idx_code_id_time' }
-    );
+    // Get existing indexes
+    const existingIndexes = await transactionsCollection.indexes();
+    logger.info(`Found ${existingIndexes.length} existing indexes`);
 
-    // Create index for type to improve performance for filtered queries
-    await transactionsCollection.createIndex(
-      { type: 1 },
-      { background: true, name: 'idx_type' }
-    );
+    // Create indexes only if they don't exist
+    logger.info('Checking and creating necessary indexes for blockchain transactions...');
+    
+    // Helper function to check if an index for a specific key pattern exists
+    const indexExists = (keyPattern: Record<string, number>) => {
+      const keyString = JSON.stringify(keyPattern);
+      return existingIndexes.some(index => 
+        JSON.stringify(index.key) === keyString
+      );
+    };
 
-    logger.info('All indexes created successfully');
+    // Check and create compound index for meta.content.contract and time
+    if (!indexExists({ 'meta.content.contract': 1, time: -1 })) {
+      logger.info('Creating index for meta.content.contract and time...');
+      await transactionsCollection.createIndex(
+        { 'meta.content.contract': 1, time: -1 },
+        { background: true }
+      );
+    } else {
+      logger.info('Index for meta.content.contract and time already exists');
+    }
+    
+    // Check and create individual index for meta.content.contract
+    if (!indexExists({ 'meta.content.contract': 1 })) {
+      logger.info('Creating index for meta.content.contract...');
+      await transactionsCollection.createIndex(
+        { 'meta.content.contract': 1 },
+        { background: true }
+      );
+    } else {
+      logger.info('Index for meta.content.contract already exists');
+    }
+    
+    // Check and create index for code_id if it exists
+    if (!indexExists({ 'meta.content.code_id': 1, time: -1 })) {
+      logger.info('Creating index for meta.content.code_id and time...');
+      await transactionsCollection.createIndex(
+        { 'meta.content.code_id': 1, time: -1 },
+        { background: true }
+      );
+    } else {
+      logger.info('Index for meta.content.code_id and time already exists');
+    }
+
+    // Check and create index for type
+    if (!indexExists({ type: 1 })) {
+      logger.info('Creating index for type...');
+      await transactionsCollection.createIndex(
+        { type: 1 },
+        { background: true }
+      );
+    } else {
+      logger.info('Index for type already exists');
+    }
+
+    logger.info('All indexes checked and created successfully');
   } catch (error) {
     logger.error('Failed to create indexes:', error);
   } finally {

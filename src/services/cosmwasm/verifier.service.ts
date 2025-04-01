@@ -155,6 +155,7 @@ export class VerifierService {
     optimizerVersion: string
   ): Promise<void> {
     let repoPath = '';
+    let repoDir = '';
     
     try {
       logger.info(`Starting verification process for code ID ${codeId} from GitHub`);
@@ -172,7 +173,12 @@ export class VerifierService {
       }
       
       // Clone the repository
-      repoPath = await GitHubService.cloneRepository(repoUrl, branch, subdir);
+      const { repoDir: rootDir, workingDir } = await GitHubService.cloneRepository(repoUrl, branch, subdir);
+      repoDir = rootDir; // Keep track of root directory for cleanup
+      
+      // For workspace-optimizer, we always use the root directory
+      // For rust-optimizer, we use the working directory (with subdir)
+      repoPath = optimizerType === OptimizerType.WORKSPACE_OPTIMIZER ? rootDir : workingDir;
       
       // Update the source path in verification record
       verification.source_path = repoPath;
@@ -248,9 +254,9 @@ export class VerifierService {
       }
     } finally {
       // Clean up repository if it was cloned
-      if (repoPath) {
+      if (repoDir) {
         try {
-          await GitHubService.cleanupRepository(repoPath);
+          await GitHubService.cleanupRepository(repoDir);
         } catch (cleanupError) {
           logger.error(`Error cleaning up GitHub repository for ${verificationId}:`, cleanupError);
         }
@@ -264,22 +270,37 @@ export class VerifierService {
    */
   private static validateProjectStructure(projectPath: string): void {
     const cargoTomlPath = path.join(projectPath, 'Cargo.toml');
-    const srcDirPath = path.join(projectPath, 'src');
     
     if (!fs.existsSync(cargoTomlPath)) {
       throw new Error('Cargo.toml not found in project root');
     }
     
-    if (!fs.existsSync(srcDirPath) || !fs.statSync(srcDirPath).isDirectory()) {
-      throw new Error('src directory not found in project root');
-    }
+    // Check if this is a workspace
+    const cargoContent = fs.readFileSync(cargoTomlPath, 'utf8');
+    const isWorkspace = cargoContent.includes('[workspace]');
     
-    // Check for lib.rs or main.rs in src directory
-    const libPath = path.join(srcDirPath, 'lib.rs');
-    const mainPath = path.join(srcDirPath, 'main.rs');
-    
-    if (!fs.existsSync(libPath) && !fs.existsSync(mainPath)) {
-      throw new Error('Neither lib.rs nor main.rs found in src directory');
+    if (isWorkspace) {
+      // For workspace, we need to check if there are directories in contracts/
+      const contractsDir = path.join(projectPath, 'contracts');
+      if (fs.existsSync(contractsDir) && fs.statSync(contractsDir).isDirectory()) {
+        // Workspace seems valid
+        return;
+      }
+    } else {
+      // For a standalone contract, check for src directory
+      const srcDirPath = path.join(projectPath, 'src');
+      
+      if (!fs.existsSync(srcDirPath) || !fs.statSync(srcDirPath).isDirectory()) {
+        throw new Error('src directory not found in project root');
+      }
+      
+      // Check for lib.rs or main.rs in src directory
+      const libPath = path.join(srcDirPath, 'lib.rs');
+      const mainPath = path.join(srcDirPath, 'main.rs');
+      
+      if (!fs.existsSync(libPath) && !fs.existsSync(mainPath)) {
+        throw new Error('Neither lib.rs nor main.rs found in src directory');
+      }
     }
   }
   
@@ -298,13 +319,112 @@ export class VerifierService {
     const dockerImage = `cosmwasm/${optimizerType}:${optimizerVersion}`;
     const platform = `--platform linux/amd64`;
     
-    logger.info(`Building contract using ${dockerImage}`);
+    // Set appropriate timeouts based on optimizer type
+    const timeout = optimizerType === OptimizerType.WORKSPACE_OPTIMIZER ? 300000 : 120000; // 5 min for workspace, 2 min for rust
+    
+    logger.info(`Building contract using ${dockerImage} with timeout of ${timeout/1000} seconds`);
     
     try {
-      // Run the optimizer with a timeout of 60 seconds
+      // For workspace-optimizer, check if we're dealing with workspace root or contract subdir
+      if (optimizerType === OptimizerType.WORKSPACE_OPTIMIZER) {
+        const cargoPath = path.join(projectPath, 'Cargo.toml');
+        const cargoContent = fs.readFileSync(cargoPath, 'utf8');
+        
+        // If this is a subdirectory and not a workspace, we need to adjust
+        if (!cargoContent.includes('[workspace]')) {
+          // Try to find the workspace root (go up until we find a workspace Cargo.toml)
+          let currentPath = projectPath;
+          let foundWorkspace = false;
+          
+          while (path.dirname(currentPath) !== currentPath) { // Stop at filesystem root
+            currentPath = path.dirname(currentPath);
+            const rootCargoPath = path.join(currentPath, 'Cargo.toml');
+            
+            if (fs.existsSync(rootCargoPath)) {
+              const rootCargoContent = fs.readFileSync(rootCargoPath, 'utf8');
+              if (rootCargoContent.includes('[workspace]')) {
+                // Found workspace root, use that instead
+                logger.info(`Found workspace root at ${currentPath}`);
+                projectPath = currentPath;
+                foundWorkspace = true;
+                break;
+              }
+            }
+          }
+          
+          if (!foundWorkspace) {
+            throw new Error('When using workspace-optimizer, a workspace root with [workspace] in Cargo.toml must be found');
+          }
+        }
+      } else if (optimizerType === OptimizerType.RUST_OPTIMIZER) {
+        // For rust-optimizer, make sure the Cargo.toml doesn't reference workspace
+        const cargoPath = path.join(projectPath, 'Cargo.toml');
+        let cargoContent = fs.readFileSync(cargoPath, 'utf8');
+        
+        // Check if it references workspace
+        if (cargoContent.includes('workspace = true') || 
+            cargoContent.includes('.workspace = true') ||
+            cargoContent.includes('workspace.package')) {
+            
+          logger.info('Detected workspace references in Cargo.toml. Temporarily modifying for rust-optimizer...');
+          
+          // Create backup
+          const backupPath = `${cargoPath}.bak`;
+          fs.writeFileSync(backupPath, cargoContent);
+          
+          // Remove workspace references
+          cargoContent = cargoContent.replace(/version\.workspace\s*=\s*true/g, 'version = "2.0.0"');
+          cargoContent = cargoContent.replace(/authors\.workspace\s*=\s*true/g, 'authors = ["CosmWasm"]');
+          cargoContent = cargoContent.replace(/edition\.workspace\s*=\s*true/g, 'edition = "2021"');
+          
+          // Write modified Cargo.toml
+          fs.writeFileSync(cargoPath, cargoContent);
+          
+          // Remember to restore after build
+          try {
+            // Run the optimizer
+            await execPromise(
+              `docker run ${platform} --rm -v "${projectPath}:/code" ${dockerImage}`,
+              { timeout }
+            );
+            
+            // Restore original Cargo.toml
+            fs.copyFileSync(backupPath, cargoPath);
+            fs.unlinkSync(backupPath);
+            
+            // Check for artifacts directory
+            const artifactsDir = path.join(projectPath, 'artifacts');
+            if (!fs.existsSync(artifactsDir)) {
+              throw new Error('Build failed: artifacts directory not found');
+            }
+            
+            // Get the WASM file
+            const checksumPath = path.join(artifactsDir, 'checksums.txt');
+            if (fs.existsSync(checksumPath)) {
+              return checksumPath;
+            }
+            
+            const wasmFiles = fs.readdirSync(artifactsDir).filter(file => file.endsWith('.wasm'));
+            if (wasmFiles.length === 0) {
+              throw new Error('Build failed: no WASM files found in artifacts directory');
+            }
+            
+            return path.join(artifactsDir, wasmFiles[0]);
+          } catch (error) {
+            // Make sure to restore even on error
+            if (fs.existsSync(backupPath)) {
+              fs.copyFileSync(backupPath, cargoPath);
+              fs.unlinkSync(backupPath);
+            }
+            throw error;
+          }
+        }
+      }
+      
+      // Run the optimizer
       await execPromise(
         `docker run ${platform} --rm -v "${projectPath}:/code" ${dockerImage}`,
-        { timeout: 60000 }
+        { timeout }
       );
       
       // Check for artifacts directory
@@ -328,7 +448,7 @@ export class VerifierService {
       return path.join(artifactsDir, wasmFiles[0]);
     } catch (error: any) {
       if (error.code === 'ETIMEDOUT') {
-        throw new Error('Build timed out after 60 seconds');
+        throw new Error(`Build timed out after ${timeout/1000} seconds. Consider using a larger timeout for complex contracts.`);
       }
       throw new Error(`Build failed: ${error.message || 'Unknown error'}`);
     }

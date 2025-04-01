@@ -39,7 +39,7 @@ export class VerificationController {
   /**
    * Submit contract source code for verification via ZIP upload
    */
-  public async verifyContract(req: MulterRequest, res: Response): Promise<void> {
+  public verifyContract = async (req: MulterRequest, res: Response): Promise<void> => {
     try {
       const { code_id, optimizer_type, optimizer_version } = req.body;
       const file = req.file;
@@ -123,7 +123,7 @@ export class VerificationController {
   /**
    * Submit contract source code for verification via GitHub repository
    */
-  public async verifyContractFromGitHub(req: Request, res: Response): Promise<void> {
+  public verifyContractFromGitHub = async (req: Request, res: Response): Promise<void> => {
     try {
       const { 
         code_id, 
@@ -227,7 +227,7 @@ export class VerificationController {
   /**
    * Get verification status
    */
-  public async getVerificationStatus(req: Request, res: Response): Promise<void> {
+  public getVerificationStatus = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
       
@@ -253,7 +253,7 @@ export class VerificationController {
   /**
    * Get all verification records for a code ID
    */
-  public async getVerificationsByCodeId(req: Request, res: Response): Promise<void> {
+  public getVerificationsByCodeId = async (req: Request, res: Response): Promise<void> => {
     try {
       const { code_id } = req.params;
       
@@ -275,7 +275,7 @@ export class VerificationController {
   /**
    * Validate GitHub URL format
    */
-  private isValidGitHubUrl(url: string): boolean {
+  private isValidGitHubUrl = (url: string): boolean => {
     // Simple validation for GitHub URLs
     return /^https:\/\/github\.com\/[^/]+\/[^/]+/.test(url);
   }
