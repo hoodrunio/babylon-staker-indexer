@@ -210,11 +210,13 @@ export class CosmWasmClient extends BaseClient {
     options?: { retry?: boolean }
   ): Promise<any> {
     try {
-      // Check if the key is already Base64 encoded
-      const isBase64 = /^[A-Za-z0-9+/]*={0,2}$/.test(key);
+      // Trim the key and remove any quotes
+      const trimmedKey = key.trim().replace(/^["']|["']$/g, '');
       
-      // If not Base64, encode it
-      const queryBase64 = isBase64 ? key : Buffer.from(key).toString('base64');
+      // Always encode as Base64 - simplest solution to avoid ambiguity
+      const queryBase64 = Buffer.from(trimmedKey).toString('base64');
+      
+      logger.debug(`[CosmWasmClient] Querying raw state for address ${address} with key "${trimmedKey}" (base64: ${queryBase64})`);
       
       const response = await this.client.get(
         `/cosmwasm/wasm/v1/contract/${address}/raw/${queryBase64}`,
