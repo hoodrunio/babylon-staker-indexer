@@ -11,7 +11,10 @@ config();
 async function createTransactionIndexes() {
   try {
     // Connect to MongoDB
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/babylon-indexer';
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+      throw new Error('MONGODB_URI is not defined in the environment variables');
+    }
     await mongoose.connect(mongoUri);
     logger.info('Connected to MongoDB');
 
@@ -21,7 +24,7 @@ async function createTransactionIndexes() {
       throw new Error('Database connection is not initialized');
     }
     
-    const transactionsCollection = db.collection('blockchaintransactions');
+    const transactionsCollection = db.collection('BlockchainTransaction');
 
     // Get existing indexes
     const existingIndexes = await transactionsCollection.indexes();
