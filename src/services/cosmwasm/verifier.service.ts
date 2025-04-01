@@ -326,9 +326,15 @@ export class VerifierService {
     const platform = `--platform linux/amd64`;
     
     // Set appropriate timeouts based on optimizer type
-    const timeout = optimizerType === OptimizerType.WORKSPACE_OPTIMIZER ? 300000 : 120000; // 5 min for workspace, 2 min for rust
+    const timeout = optimizerType === OptimizerType.WORKSPACE_OPTIMIZER || optimizerType === OptimizerType.OPTIMIZER 
+      ? 300000 // 5 min for workspace or optimizer
+      : 120000; // 2 min for rust-optimizer
+    
+    // Get project directory name for cache naming
+    const projectName = path.basename(projectPath).replace(/[^a-zA-Z0-9]/g, '_');
     
     logger.info(`Building contract using ${dockerImage} with timeout of ${timeout/1000} seconds`);
+    logger.info(`Project path: ${projectPath}, using cache name: ${projectName}_cache`);
     
     try {
       // For workspace-optimizer, check if we're dealing with workspace root or contract subdir
@@ -397,7 +403,10 @@ export class VerifierService {
           try {
             // Run the optimizer
             await execPromise(
-              `docker run ${platform} --rm -v "${projectPath}:/code" ${dockerImage}`,
+              `docker run ${platform} --rm -v "${projectPath}:/code" \
+              --mount type=volume,source="${projectName}_cache",target=/target \
+              --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
+              ${dockerImage}`,
               { timeout }
             );
             
@@ -436,7 +445,10 @@ export class VerifierService {
       
       // Run the optimizer
       await execPromise(
-        `docker run ${platform} --rm -v "${projectPath}:/code" ${dockerImage}`,
+        `docker run ${platform} --rm -v "${projectPath}:/code" \
+        --mount type=volume,source="${projectName}_cache",target=/target \
+        --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
+        ${dockerImage}`,
         { timeout }
       );
       
