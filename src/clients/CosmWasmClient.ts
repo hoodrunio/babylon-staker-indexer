@@ -1,9 +1,6 @@
 import { BaseClient } from './BaseClient';
 import { Network } from '../types/finality';
 import { logger } from '../utils/logger';
-import { RetryConfig } from './BaseClient';
-import { AxiosRequestConfig, RawAxiosRequestHeaders } from 'axios';
-
 /**
  * Pagination options for CosmWasm API requests
  */
@@ -197,6 +194,35 @@ export class CosmWasmClient extends BaseClient {
           !errorMessage?.includes('Missing export query')) {
         logger.error(`Failed to query contract at address ${address}:`, error);
       }
+      throw error;
+    }
+  }
+
+  /**
+   * Get raw contract state for a specific key
+   * @param address The contract address to query
+   * @param key The raw state key to query (will be base64 encoded if not already)
+   * @param options Additional options for the query
+   */
+  public async rawQueryContract(
+    address: string, 
+    key: string,
+    options?: { retry?: boolean }
+  ): Promise<any> {
+    try {
+      // Check if the key is already Base64 encoded
+      const isBase64 = /^[A-Za-z0-9+/]*={0,2}$/.test(key);
+      
+      // If not Base64, encode it
+      const queryBase64 = isBase64 ? key : Buffer.from(key).toString('base64');
+      
+      const response = await this.client.get(
+        `/cosmwasm/wasm/v1/contract/${address}/raw/${queryBase64}`,
+        this.createRequestConfig(options?.retry)
+      );
+      return response.data;
+    } catch (error: any) {
+      logger.error(`Failed to raw query contract at address ${address}:`, error);
       throw error;
     }
   }

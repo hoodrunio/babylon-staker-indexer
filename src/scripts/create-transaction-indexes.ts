@@ -11,10 +11,7 @@ config();
 async function createTransactionIndexes() {
   try {
     // Connect to MongoDB
-    const mongoUri = process.env.MONGODB_URI;
-    if (!mongoUri) {
-      throw new Error('MONGODB_URI is not defined in the environment variables');
-    }
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/babylon-indexer';
     await mongoose.connect(mongoUri);
     logger.info('Connected to MongoDB');
 
@@ -24,11 +21,42 @@ async function createTransactionIndexes() {
       throw new Error('Database connection is not initialized');
     }
     
-    const transactionsCollection = db.collection('BlockchainTransaction');
-
-    // Get existing indexes
-    const existingIndexes = await transactionsCollection.indexes();
-    logger.info(`Found ${existingIndexes.length} existing indexes`);
+    // List all collections first to confirm names
+    const collections = await db.listCollections().toArray();
+    logger.info('Collections in database:');
+    collections.forEach(col => {
+      logger.info(`- ${col.name}`);
+    });
+    
+    // Try with both possible names
+    let transactionsCollection;
+    const possibleNames = ['blockchaintransactions', 'blockchaintransactionsTree', 'BlockchainTransaction', 'blockchaintransaction'];
+    
+    for (const name of possibleNames) {
+      try {
+        const collection = db.collection(name);
+        const count = await collection.countDocuments();
+        logger.info(`Collection '${name}' exists with ${count} documents`);
+        
+        // Get existing indexes
+        const indexes = await collection.indexes();
+        logger.info(`Indexes for '${name}' collection:`);
+        indexes.forEach(idx => {
+          logger.info(`- ${JSON.stringify(idx.name)}: ${JSON.stringify(idx.key)}`);
+        });
+        
+        // If we get here, collection exists
+        transactionsCollection = collection;
+        logger.info(`Using collection: ${name}`);
+        break;
+      } catch (err) {
+        logger.info(`Collection '${name}' access failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    
+    if (!transactionsCollection) {
+      throw new Error('Could not find blockchain transactions collection');
+    }
 
     // Create indexes only if they don't exist
     logger.info('Checking and creating necessary indexes for blockchain transactions...');
@@ -40,13 +68,17 @@ async function createTransactionIndexes() {
         JSON.stringify(index.key) === keyString
       );
     };
+    
+    // Get existing indexes
+    const existingIndexes = await transactionsCollection.indexes();
+    logger.info(`Found ${existingIndexes.length} existing indexes`);
 
     // Check and create compound index for meta.content.contract and time
     if (!indexExists({ 'meta.content.contract': 1, time: -1 })) {
       logger.info('Creating index for meta.content.contract and time...');
       await transactionsCollection.createIndex(
         { 'meta.content.contract': 1, time: -1 },
-        { background: true }
+        { background: true, name: 'idx_contract_time' }
       );
     } else {
       logger.info('Index for meta.content.contract and time already exists');
@@ -57,7 +89,7 @@ async function createTransactionIndexes() {
       logger.info('Creating index for meta.content.contract...');
       await transactionsCollection.createIndex(
         { 'meta.content.contract': 1 },
-        { background: true }
+        { background: true, name: 'idx_contract' }
       );
     } else {
       logger.info('Index for meta.content.contract already exists');
@@ -68,7 +100,7 @@ async function createTransactionIndexes() {
       logger.info('Creating index for meta.content.code_id and time...');
       await transactionsCollection.createIndex(
         { 'meta.content.code_id': 1, time: -1 },
-        { background: true }
+        { background: true, name: 'idx_code_id_time' }
       );
     } else {
       logger.info('Index for meta.content.code_id and time already exists');
@@ -79,7 +111,7 @@ async function createTransactionIndexes() {
       logger.info('Creating index for type...');
       await transactionsCollection.createIndex(
         { type: 1 },
-        { background: true }
+        { background: true, name: 'idx_type' }
       );
     } else {
       logger.info('Index for type already exists');

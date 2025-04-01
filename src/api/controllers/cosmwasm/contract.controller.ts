@@ -214,4 +214,122 @@ export class ContractController {
       res.status(500).json({ error: 'Failed to fetch query suggestions' });
     }
   }
+
+  /**
+   * Execute a smart query against a contract
+   */
+  public async queryContract(req: Request, res: Response): Promise<void> {
+    try {
+      const { address } = req.params;
+      const queryMsg = req.body;
+      
+      if (!address) {
+        res.status(400).json({ error: 'Invalid contract address' });
+        return;
+      }
+      
+      if (!queryMsg || Object.keys(queryMsg).length === 0) {
+        res.status(400).json({ error: 'Query message is required' });
+        return;
+      }
+      
+      const { BabylonClient } = await import('../../../clients/BabylonClient');
+      const client = BabylonClient.getInstance();
+      
+      try {
+        const result = await client.cosmWasmClient.queryContract(address, queryMsg);
+        res.status(200).json({
+          result: result.data || null,
+          success: true
+        });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+        // Capture specific known contract query errors
+        if (errorMessage.includes('unknown variant')) {
+          // Use regex to extract valid query methods if possible
+          const methodsMatch = errorMessage.match(/expected one of `(.*?)`/);
+          const methods = methodsMatch?.[1]?.split(/`,\s*`/) || [];
+          
+          res.status(400).json({
+            error: 'Invalid query method',
+            message: errorMessage,
+            suggestions: methods.length > 0 ? { query_methods: methods } : null
+          });
+        } else {
+          res.status(400).json({
+            error: 'Contract query failed',
+            message: errorMessage
+          });
+        }
+      }
+    } catch (error) {
+      logger.error(`Error executing smart query for contract ${req.params.address}:`, error);
+      res.status(500).json({ error: 'Failed to execute contract query' });
+    }
+  }
+
+  /**
+   * Execute a raw query against a contract's storage
+   */
+  public async rawQueryContract(req: Request, res: Response): Promise<void> {
+    try {
+      const { address } = req.params;
+      const { key } = req.query;
+      
+      if (!address) {
+        res.status(400).json({ error: 'Invalid contract address' });
+        return;
+      }
+      
+      if (!key || typeof key !== 'string') {
+        res.status(400).json({ error: 'Key parameter is required' });
+        return;
+      }
+      
+      // Temizleme işlemi - boşlukları ve çift tırnakları kaldır
+      const cleanKey = key.trim().replace(/^"|"$/g, '');
+      
+      const { BabylonClient } = await import('../../../clients/BabylonClient');
+      const client = BabylonClient.getInstance();
+      
+      try {
+        const result = await client.cosmWasmClient.rawQueryContract(address, cleanKey);
+        
+        // Base64 olarak gelen veriyi decode etmeyi dene
+        let decodedData = null;
+        if (result.data && typeof result.data === 'string') {
+          try {
+            const decoded = Buffer.from(result.data, 'base64').toString('utf-8');
+            // JSON olarak parse etmeyi dene
+            try {
+              decodedData = JSON.parse(decoded);
+            } catch {
+              // JSON değilse düz string olarak kullan
+              decodedData = decoded;
+            }
+          } catch (e) {
+            // Decode edilemezse, raw veriyi kullan
+            decodedData = result.data;
+          }
+        }
+        
+        res.status(200).json({
+          result: {
+            data: result.data || null,
+            decoded: decodedData
+          },
+          success: true
+        });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+        res.status(400).json({
+          error: 'Raw contract query failed',
+          message: errorMessage
+        });
+      }
+    } catch (error) {
+      logger.error(`Error executing raw query for contract ${req.params.address}:`, error);
+      res.status(500).json({ error: 'Failed to execute raw contract query' });
+    }
+  }
 }

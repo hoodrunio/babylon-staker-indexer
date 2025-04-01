@@ -23,6 +23,10 @@ router.get('/contracts/:address/transactions', historyController.getContractTran
 router.get('/contracts/:address/state', historyController.getContractState);
 router.get('/contracts/:address/history', historyController.getContractHistory);
 
+// Smart and Raw Query routes
+router.post('/contracts/:address/query', contractController.queryContract);
+router.get('/contracts/:address/raw', contractController.rawQueryContract);
+
 // Verification routes
 router.post('/verify', upload.single('source'), verificationController.verifyContract);
 router.post('/verify/github', verificationController.verifyContractFromGitHub);
