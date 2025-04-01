@@ -15,7 +15,8 @@ const execPromise = promisify(exec);
  */
 export enum OptimizerType {
   RUST_OPTIMIZER = 'rust-optimizer',
-  WORKSPACE_OPTIMIZER = 'workspace-optimizer'
+  WORKSPACE_OPTIMIZER = 'workspace-optimizer',
+  OPTIMIZER = 'optimizer'
 }
 
 /**
@@ -176,9 +177,14 @@ export class VerifierService {
       const { repoDir: rootDir, workingDir } = await GitHubService.cloneRepository(repoUrl, branch, subdir);
       repoDir = rootDir; // Keep track of root directory for cleanup
       
-      // For workspace-optimizer, we always use the root directory
-      // For rust-optimizer, we use the working directory (with subdir)
-      repoPath = optimizerType === OptimizerType.WORKSPACE_OPTIMIZER ? rootDir : workingDir;
+      // For workspace-optimizer or optimizer with workspace, we always use the root directory
+      // For rust-optimizer or optimizer with single contract, we use the working directory (with subdir)
+      if (optimizerType === OptimizerType.WORKSPACE_OPTIMIZER || 
+         (optimizerType === OptimizerType.OPTIMIZER && this.isWorkspace(rootDir))) {
+        repoPath = rootDir;
+      } else {
+        repoPath = workingDir;
+      }
       
       // Update the source path in verification record
       verification.source_path = repoPath;
@@ -326,37 +332,44 @@ export class VerifierService {
     
     try {
       // For workspace-optimizer, check if we're dealing with workspace root or contract subdir
-      if (optimizerType === OptimizerType.WORKSPACE_OPTIMIZER) {
+      if (optimizerType === OptimizerType.WORKSPACE_OPTIMIZER || optimizerType === OptimizerType.OPTIMIZER) {
         const cargoPath = path.join(projectPath, 'Cargo.toml');
         const cargoContent = fs.readFileSync(cargoPath, 'utf8');
         
         // If this is a subdirectory and not a workspace, we need to adjust
         if (!cargoContent.includes('[workspace]')) {
-          // Try to find the workspace root (go up until we find a workspace Cargo.toml)
-          let currentPath = projectPath;
-          let foundWorkspace = false;
-          
-          while (path.dirname(currentPath) !== currentPath) { // Stop at filesystem root
-            currentPath = path.dirname(currentPath);
-            const rootCargoPath = path.join(currentPath, 'Cargo.toml');
+          // For OPTIMIZER type, if not a workspace, treat it like rust-optimizer (single contract)
+          if (optimizerType === OptimizerType.OPTIMIZER) {
+            logger.info('Using optimizer for single contract (not workspace)');
+          } else {
+            // For WORKSPACE_OPTIMIZER, we need to find the workspace root
+            // Try to find the workspace root (go up until we find a workspace Cargo.toml)
+            let currentPath = projectPath;
+            let foundWorkspace = false;
             
-            if (fs.existsSync(rootCargoPath)) {
-              const rootCargoContent = fs.readFileSync(rootCargoPath, 'utf8');
-              if (rootCargoContent.includes('[workspace]')) {
-                // Found workspace root, use that instead
-                logger.info(`Found workspace root at ${currentPath}`);
-                projectPath = currentPath;
-                foundWorkspace = true;
-                break;
+            while (path.dirname(currentPath) !== currentPath) { // Stop at filesystem root
+              currentPath = path.dirname(currentPath);
+              const rootCargoPath = path.join(currentPath, 'Cargo.toml');
+              
+              if (fs.existsSync(rootCargoPath)) {
+                const rootCargoContent = fs.readFileSync(rootCargoPath, 'utf8');
+                if (rootCargoContent.includes('[workspace]')) {
+                  // Found workspace root, use that instead
+                  logger.info(`Found workspace root at ${currentPath}`);
+                  projectPath = currentPath;
+                  foundWorkspace = true;
+                  break;
+                }
               }
             }
-          }
-          
-          if (!foundWorkspace) {
-            throw new Error('When using workspace-optimizer, a workspace root with [workspace] in Cargo.toml must be found');
+            
+            if (!foundWorkspace) {
+              throw new Error('When using workspace-optimizer, a workspace root with [workspace] in Cargo.toml must be found');
+            }
           }
         }
-      } else if (optimizerType === OptimizerType.RUST_OPTIMIZER) {
+      } else if (optimizerType === OptimizerType.RUST_OPTIMIZER || 
+                 (optimizerType === OptimizerType.OPTIMIZER && !this.isWorkspace(projectPath))) {
         // For rust-optimizer, make sure the Cargo.toml doesn't reference workspace
         const cargoPath = path.join(projectPath, 'Cargo.toml');
         let cargoContent = fs.readFileSync(cargoPath, 'utf8');
@@ -544,5 +557,19 @@ export class VerifierService {
     } catch (error) {
       logger.error(`Error processing verification result for code ${codeId}:`, error);
     }
+  }
+
+  /**
+   * Check if the directory contains a workspace Cargo.toml
+   * @param dirPath Path to check for workspace
+   * @returns true if it's a workspace
+   */
+  private static isWorkspace(dirPath: string): boolean {
+    const cargoTomlPath = path.join(dirPath, 'Cargo.toml');
+    if (!fs.existsSync(cargoTomlPath)) {
+      return false;
+    }
+    const cargoContent = fs.readFileSync(cargoTomlPath, 'utf8');
+    return cargoContent.includes('[workspace]');
   }
 }

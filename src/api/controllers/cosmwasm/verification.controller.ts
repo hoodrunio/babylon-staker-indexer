@@ -71,8 +71,10 @@ export class VerificationController {
         optimizerTypeEnum = OptimizerType.RUST_OPTIMIZER;
       } else if (optimizer_type === 'workspace-optimizer') {
         optimizerTypeEnum = OptimizerType.WORKSPACE_OPTIMIZER;
+      } else if (optimizer_type === 'optimizer') {
+        optimizerTypeEnum = OptimizerType.OPTIMIZER;
       } else {
-        res.status(400).json({ error: 'Invalid optimizer type. Must be "rust-optimizer" or "workspace-optimizer"' });
+        res.status(400).json({ error: 'Invalid optimizer type. Must be "rust-optimizer", "workspace-optimizer", or "optimizer"' });
         return;
       }
       
@@ -166,8 +168,10 @@ export class VerificationController {
         optimizerTypeEnum = OptimizerType.RUST_OPTIMIZER;
       } else if (optimizer_type === 'workspace-optimizer') {
         optimizerTypeEnum = OptimizerType.WORKSPACE_OPTIMIZER;
+      } else if (optimizer_type === 'optimizer') {
+        optimizerTypeEnum = OptimizerType.OPTIMIZER;
       } else {
-        res.status(400).json({ error: 'Invalid optimizer type. Must be "rust-optimizer" or "workspace-optimizer"' });
+        res.status(400).json({ error: 'Invalid optimizer type. Must be "rust-optimizer", "workspace-optimizer", or "optimizer"' });
         return;
       }
       
