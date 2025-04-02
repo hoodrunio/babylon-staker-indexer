@@ -43,7 +43,22 @@ export class CosmWasmStateService {
    */
   public async getState(network = 'mainnet'): Promise<any> {
     try {
-      const state = await WasmState.getOrCreate(network);
+      // Get the existing state document or create it if it doesn't exist
+      let state = await WasmState.getOrCreate(network);
+      
+      // Get real counts from the database
+      const { Code, Contract } = await import('../../database/models/cosmwasm');
+      const totalCodes = await Code.countDocuments();
+      const totalContracts = await Contract.countDocuments();
+      
+      // Update the state with current counts
+      if (state.totalCodes !== totalCodes || state.totalContracts !== totalContracts) {
+        state.totalCodes = totalCodes;
+        state.totalContracts = totalContracts;
+        state.updatedAt = new Date();
+        await state.save();
+      }
+      
       return state;
     } catch (error) {
       logger.error('Error fetching CosmWasm state:', error);

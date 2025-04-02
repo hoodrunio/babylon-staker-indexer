@@ -12,7 +12,7 @@ export class ContractController {
    */
   public async getContracts(req: Request, res: Response): Promise<void> {
     try {
-      const { code_id, admin, limit = 20, skip = 0 } = req.query;
+      const { code_id, admin, limit = 20, page = 1, skip = 0 } = req.query;
       
       // Build query based on filters
       const query: any = {};
@@ -25,20 +25,26 @@ export class ContractController {
         query.admin = admin;
       }
       
+      // Calculate skip value from page if provided
+      const skipValue = page && Number(page) > 0 ? (Number(page) - 1) * Number(limit) : Number(skip);
+      
       // Execute query with pagination
       const contracts = await Contract.find(query)
-        .sort({ created_at: -1 })
-        .skip(Number(skip))
+        .sort({ code_id: 1 })
+        .skip(skipValue)
         .limit(Number(limit));
       
       const totalCount = await Contract.countDocuments(query);
+      const totalPages = Math.ceil(totalCount / Number(limit));
       
       res.status(200).json({
         contracts,
         pagination: {
           total: totalCount,
+          total_pages: totalPages,
+          current_page: page ? Number(page) : Math.floor(skipValue / Number(limit)) + 1,
           limit: Number(limit),
-          skip: Number(skip)
+          skip: skipValue
         }
       });
     } catch (error) {
@@ -102,12 +108,15 @@ export class ContractController {
   public async getContractsByCreator(req: Request, res: Response): Promise<void> {
     try {
       const { creator } = req.params;
-      const { limit = 20, skip = 0 } = req.query;
+      const { limit = 20, page = 1, skip = 0 } = req.query;
       
       if (!creator) {
         res.status(400).json({ error: 'Invalid creator address' });
         return;
       }
+      
+      // Calculate skip value from page if provided
+      const skipValue = page && Number(page) > 0 ? (Number(page) - 1) * Number(limit) : Number(skip);
       
       // First we need to find all codes created by this address
       const { Code } = await import('../../../database/models/cosmwasm');
@@ -116,7 +125,13 @@ export class ContractController {
       if (!codes.length) {
         res.status(200).json({ 
           contracts: [], 
-          pagination: { total: 0, limit: Number(limit), skip: Number(skip) } 
+          pagination: { 
+            total: 0, 
+            total_pages: 0,
+            current_page: 1,
+            limit: Number(limit), 
+            skip: skipValue 
+          } 
         });
         return;
       }
@@ -126,18 +141,21 @@ export class ContractController {
       
       // Now find all contracts with those code IDs
       const contracts = await Contract.find({ code_id: { $in: codeIds } })
-        .sort({ created_at: -1 })
-        .skip(Number(skip))
+        .sort({ code_id: 1 })
+        .skip(skipValue)
         .limit(Number(limit));
         
       const totalCount = await Contract.countDocuments({ code_id: { $in: codeIds } });
+      const totalPages = Math.ceil(totalCount / Number(limit));
       
       res.status(200).json({
         contracts,
         pagination: {
           total: totalCount,
+          total_pages: totalPages,
+          current_page: page ? Number(page) : Math.floor(skipValue / Number(limit)) + 1,
           limit: Number(limit),
-          skip: Number(skip)
+          skip: skipValue
         }
       });
     } catch (error) {
