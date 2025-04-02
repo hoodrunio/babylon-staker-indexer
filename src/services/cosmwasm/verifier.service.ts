@@ -7,6 +7,8 @@ import { logger } from '../../utils/logger';
 import { Code, Contract, Verification } from '../../database/models/cosmwasm';
 import { SchemaParserService } from './schema-parser.service';
 import { GitHubService } from './github.service';
+import { SourceCodeParserService } from './source-code-parser.service';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 const execPromise = promisify(exec);
 
@@ -101,6 +103,26 @@ export class VerifierService {
             execute_methods: executeMethods
           }
         );
+        
+        // Parse and store source code for frontend display
+        try {
+          // Get current network from BabylonClient
+          const network = BabylonClient.getInstance().getNetwork().toLowerCase();
+          
+          await SourceCodeParserService.parseAndStoreSourceCode(
+            codeId,
+            verificationId,
+            extractPath,
+            null, // No repository URL for ZIP uploads
+            null, // No commit hash for ZIP uploads
+            network
+          );
+          
+          logger.info(`Source code for code ID ${codeId} has been stored for frontend display (network: ${network})`);
+        } catch (sourceCodeError) {
+          logger.error(`Error storing source code for code ID ${codeId}:`, sourceCodeError);
+          // Continue even if source code storage fails - verification itself succeeded
+        }
         
         logger.info(`Verification ${verificationId} for code ${codeId} succeeded`);
         logger.info(`Found ${queryMethods.length} query methods and ${executeMethods.length} execute methods`);
@@ -233,6 +255,29 @@ export class VerifierService {
             execute_methods: executeMethods
           }
         );
+        
+        // Parse and store source code for frontend display
+        try {
+          // Extract commit hash from the repository
+          const { stdout: commitHash } = await execPromise(`cd "${repoPath}" && git rev-parse HEAD`);
+          
+          // Get current network from BabylonClient
+          const network = BabylonClient.getInstance().getNetwork().toLowerCase();
+          
+          await SourceCodeParserService.parseAndStoreSourceCode(
+            codeId,
+            verificationId,
+            repoPath,
+            repoUrl,
+            commitHash.trim(), // Trim to remove newlines
+            network
+          );
+          
+          logger.info(`Source code for code ID ${codeId} has been stored for frontend display (network: ${network})`);
+        } catch (sourceCodeError) {
+          logger.error(`Error storing source code for code ID ${codeId}:`, sourceCodeError);
+          // Continue even if source code storage fails - verification itself succeeded
+        }
         
         logger.info(`Verification ${verificationId} for code ${codeId} succeeded`);
         logger.info(`Found ${queryMethods.length} query methods and ${executeMethods.length} execute methods`);

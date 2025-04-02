@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { CodeController, ContractController, VerificationController, HistoryController, upload } from '../../controllers/cosmwasm';
+import { CodeController, ContractController, VerificationController, HistoryController, SourceCodeController, upload } from '../../controllers/cosmwasm';
 
 const router = Router();
 const codeController = new CodeController();
 const contractController = new ContractController();
 const verificationController = new VerificationController();
 const historyController = new HistoryController();
+const sourceCodeController = new SourceCodeController();
 
 // Code routes
 router.get('/codes', codeController.getCodes);
@@ -35,5 +36,10 @@ router.get('/codes/:code_id/verifications', verificationController.getVerificati
 
 // State and history routes
 router.get('/state', historyController.getState);
+
+// Source code routes
+router.get('/codes/:codeId/source-code', sourceCodeController.getCodeSourceCode);
+router.get('/contracts/:address/source-code', sourceCodeController.getContractSourceCode);
+router.get('/codes/:codeId/source-code/file', sourceCodeController.getFileContent);
 
 export default router;
