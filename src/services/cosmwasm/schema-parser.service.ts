@@ -12,14 +12,24 @@ export class SchemaParserService {
    */
   public static extractQueryMethods(schemaPath: string): string[] {
     try {
+      // Try standard location first
       const querySchemaPath = path.join(schemaPath, 'query.json');
       
-      if (!fs.existsSync(querySchemaPath)) {
-        logger.warn(`Query schema file not found at ${querySchemaPath}`);
+      // Try schema/raw/ location if standard doesn't exist
+      const rawQuerySchemaPath = path.join(schemaPath, 'raw', 'query.json');
+      
+      let schemaFilePath = '';
+      
+      if (fs.existsSync(querySchemaPath)) {
+        schemaFilePath = querySchemaPath;
+      } else if (fs.existsSync(rawQuerySchemaPath)) {
+        schemaFilePath = rawQuerySchemaPath;
+      } else {
+        logger.warn(`Query schema file not found at ${querySchemaPath} or ${rawQuerySchemaPath}`);
         return [];
       }
       
-      const querySchema = JSON.parse(fs.readFileSync(querySchemaPath, 'utf8'));
+      const querySchema = JSON.parse(fs.readFileSync(schemaFilePath, 'utf8'));
       
       // First try to handle oneOf structure
       if (querySchema.oneOf && Array.isArray(querySchema.oneOf)) {
@@ -45,14 +55,24 @@ export class SchemaParserService {
    */
   public static extractExecuteMethods(schemaPath: string): string[] {
     try {
+      // Try standard location first
       const executeSchemaPath = path.join(schemaPath, 'execute.json');
       
-      if (!fs.existsSync(executeSchemaPath)) {
-        logger.warn(`Execute schema file not found at ${executeSchemaPath}`);
+      // Try schema/raw/ location if standard doesn't exist
+      const rawExecuteSchemaPath = path.join(schemaPath, 'raw', 'execute.json');
+      
+      let schemaFilePath = '';
+      
+      if (fs.existsSync(executeSchemaPath)) {
+        schemaFilePath = executeSchemaPath;
+      } else if (fs.existsSync(rawExecuteSchemaPath)) {
+        schemaFilePath = rawExecuteSchemaPath;
+      } else {
+        logger.warn(`Execute schema file not found at ${executeSchemaPath} or ${rawExecuteSchemaPath}`);
         return [];
       }
       
-      const executeSchema = JSON.parse(fs.readFileSync(executeSchemaPath, 'utf8'));
+      const executeSchema = JSON.parse(fs.readFileSync(schemaFilePath, 'utf8'));
       
       // First try to handle oneOf structure
       if (executeSchema.oneOf && Array.isArray(executeSchema.oneOf)) {
