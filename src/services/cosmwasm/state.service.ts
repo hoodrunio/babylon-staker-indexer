@@ -51,10 +51,26 @@ export class CosmWasmStateService {
       const totalCodes = await Code.countDocuments();
       const totalContracts = await Contract.countDocuments();
       
+      // Get verified contract count
+      const verifiedCodesIds = await Code.find({ verified: true }, { code_id: 1 }).lean();
+      const verifiedCodeIds = verifiedCodesIds.map(code => code.code_id);
+      const verifiedContractsCount = await Contract.countDocuments({ code_id: { $in: verifiedCodeIds } });
+      
       // Update the state with current counts
-      if (state.totalCodes !== totalCodes || state.totalContracts !== totalContracts) {
+      if (state.totalCodes !== totalCodes || 
+          state.totalContracts !== totalContracts || 
+          state.additionalData?.verifiedContractsCount !== verifiedContractsCount) {
+        
         state.totalCodes = totalCodes;
         state.totalContracts = totalContracts;
+        
+        // Initialize additionalData if it doesn't exist
+        if (!state.additionalData) {
+          state.additionalData = {};
+        }
+        
+        // Update verified contract count
+        state.additionalData.verifiedContractsCount = verifiedContractsCount;
         state.updatedAt = new Date();
         await state.save();
       }
