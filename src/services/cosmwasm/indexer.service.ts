@@ -20,7 +20,7 @@ interface CodeInfo {
   };
 }
 
-// CosmWasm State dokument ID
+// CosmWasm State document ID
 const WASM_STATE_ID = 'cosmwasm_state';
 
 /**
@@ -102,7 +102,8 @@ export class CosmWasmIndexerService {
         const response = await this.client.getCodes({
           pagination: {
             key: nextKey || undefined,
-            limit: pageLimit
+            limit: pageLimit,
+            reverse: true
           }
         });
 
@@ -427,6 +428,43 @@ export class CosmWasmIndexerService {
       
       const startTime = Date.now();
       
+      // First, let's check the latest code ID on the chain
+      const latestCodeResponse = await this.client.getCodes({
+        pagination: {
+          limit: 1,
+          reverse: true // We reverse the order to get the latest code
+        }
+      });
+      
+      let newCodesIndexed = 0;
+      
+      if (latestCodeResponse?.code_infos && latestCodeResponse.code_infos.length > 0) {
+        // The latest code ID on the chain
+        const latestChainCodeId = parseInt(latestCodeResponse.code_infos[0].code_id);
+        
+        // The latest code ID in our database
+        const latestDbCode = await Code.findOne().sort({ code_id: -1 }).limit(1);
+        const latestDbCodeId = latestDbCode ? latestDbCode.code_id : 0;
+        
+        // If there are new codes on the chain, let's index them
+        if (latestChainCodeId > latestDbCodeId) {
+          logger.info(`Found new codes on chain: ${latestDbCodeId + 1} to ${latestChainCodeId}`);
+          
+          // Let's index the new codes
+          for (let codeId = latestDbCodeId + 1; codeId <= latestChainCodeId; codeId++) {
+            try {
+              await this.processCode(codeId);
+              newCodesIndexed++;
+            } catch (error) {
+              logger.error(`Error indexing new code ${codeId}:`, error);
+              // Let's continue with the other codes
+            }
+          }
+          
+          logger.info(`Indexed ${newCodesIndexed} new codes`);
+        }
+      }
+      
       // Fetch all existing codes from our database
       const existingCodes = await Code.find({});
       
@@ -466,12 +504,13 @@ export class CosmWasmIndexerService {
         totalCodes,
         totalContracts,
         additionalData: {
-          lastIndexedContracts: indexedContracts
+          lastIndexedContracts: indexedContracts,
+          lastIndexedCodes: newCodesIndexed
         }
       });
       
       const duration = (Date.now() - startTime) / 1000;
-      logger.info(`Completed incremental CosmWasm indexing in ${duration.toFixed(2)} seconds (${indexedContracts} new contracts)`);
+      logger.info(`Completed incremental CosmWasm indexing in ${duration.toFixed(2)} seconds (${newCodesIndexed} new codes, ${indexedContracts} new contracts)`);
     } catch (error) {
       logger.error('Error during incremental CosmWasm indexing:', error);
       throw error;
