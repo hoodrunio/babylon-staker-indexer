@@ -9,6 +9,10 @@ export class CodeController {
 
   /**
    * Get all indexed codes
+   * Supports filtering by:
+   * - verified (true/false): Filter codes by verification status
+   * - creator: Filter codes by creator address
+   * Supports pagination with 'page' or 'skip' and 'limit' parameters
    */
   public async getCodes(req: Request, res: Response): Promise<void> {
     try {
