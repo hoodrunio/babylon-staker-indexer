@@ -41,6 +41,10 @@ const contractSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  execute_schema_details: {
+    type: Array,
+    default: []
+  },
   latest_migration_code_id: {
     type: Number,
     default: null

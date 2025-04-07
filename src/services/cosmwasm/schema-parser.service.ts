@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../../utils/logger';
+import { SchemaExecuteParserService } from './schema-execute-parser.service';
 
 /**
  * Service for parsing CosmWasm schema files to extract query and execute methods
@@ -88,6 +89,21 @@ export class SchemaParserService {
       return [];
     } catch (error) {
       logger.error('Error extracting execute methods from schema:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * Extract execute schema details for frontend form generation
+   * @param schemaPath Path to the schema directory
+   * @returns Detailed execute schema information
+   */
+  public static extractExecuteSchemaDetails(schemaPath: string): any[] {
+    try {
+      // Use the new SchemaExecuteParserService to get detailed schema
+      return SchemaExecuteParserService.parseExecuteSchema(schemaPath);
+    } catch (error) {
+      logger.error('Error extracting execute schema details:', error);
       return [];
     }
   }

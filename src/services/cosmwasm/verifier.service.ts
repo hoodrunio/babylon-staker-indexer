@@ -81,6 +81,9 @@ export class VerifierService {
         const queryMethods = SchemaParserService.extractQueryMethods(schemaPath);
         const executeMethods = SchemaParserService.extractExecuteMethods(schemaPath);
         
+        // Get detailed execute schema for frontend
+        const executeSchemaDetails = SchemaParserService.extractExecuteSchemaDetails(schemaPath);
+        
         // Update verification record
         verification.status = 'success';
         await verification.save();
@@ -100,7 +103,8 @@ export class VerifierService {
           { code_id: codeId },
           { 
             query_methods: queryMethods,
-            execute_methods: executeMethods
+            execute_methods: executeMethods,
+            execute_schema_details: executeSchemaDetails
           }
         );
         
@@ -233,6 +237,9 @@ export class VerifierService {
         const queryMethods = SchemaParserService.extractQueryMethods(schemaPath);
         const executeMethods = SchemaParserService.extractExecuteMethods(schemaPath);
         
+        // Get detailed execute schema for frontend
+        const executeSchemaDetails = SchemaParserService.extractExecuteSchemaDetails(schemaPath);
+        
         // Update verification record
         verification.status = 'success';
         await verification.save();
@@ -252,7 +259,8 @@ export class VerifierService {
           { code_id: codeId },
           { 
             query_methods: queryMethods,
-            execute_methods: executeMethods
+            execute_methods: executeMethods,
+            execute_schema_details: executeSchemaDetails
           }
         );
         
@@ -373,7 +381,7 @@ export class VerifierService {
     // Set appropriate timeouts based on optimizer type
     const timeout = optimizerType === OptimizerType.WORKSPACE_OPTIMIZER || optimizerType === OptimizerType.OPTIMIZER 
       ? 300000 // 5 min for workspace or optimizer
-      : 120000; // 2 min for rust-optimizer
+      : 300000; // 2 min for rust-optimizer
     
     // Get project directory name for cache naming
     const projectName = path.basename(projectPath).replace(/[^a-zA-Z0-9]/g, '_');

@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { Contract } from '../../../database/models/cosmwasm';
 import { logger } from '../../../utils/logger';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * Controller for managing CosmWasm contract-related endpoints
@@ -304,7 +306,7 @@ export class ContractController {
         return;
       }
       
-      // Temizleme işlemi - boşlukları ve çift tırnakları kaldır
+      // Cleaning process - remove spaces and double quotes
       const cleanKey = key.trim().replace(/^"|"$/g, '');
       
       const { BabylonClient } = await import('../../../clients/BabylonClient');
@@ -313,20 +315,20 @@ export class ContractController {
       try {
         const result = await client.cosmWasmClient.rawQueryContract(address, cleanKey);
         
-        // Base64 olarak gelen veriyi decode etmeyi dene
+        // Try to decode the data received as Base64
         let decodedData = null;
         if (result.data && typeof result.data === 'string') {
           try {
             const decoded = Buffer.from(result.data, 'base64').toString('utf-8');
-            // JSON olarak parse etmeyi dene
+            // Try to parse as JSON
             try {
               decodedData = JSON.parse(decoded);
             } catch {
-              // JSON değilse düz string olarak kullan
+              // If not JSON, use as plain string
               decodedData = decoded;
             }
           } catch (e) {
-            // Decode edilemezse, raw veriyi kullan
+            // If it cannot be decoded, use the raw data
             decodedData = result.data;
           }
         }
@@ -350,4 +352,101 @@ export class ContractController {
       res.status(500).json({ error: 'Failed to execute raw contract query' });
     }
   }
+
+  /**
+   * Get a list of execute methods for the contract with detailed schema information
+   */
+  public getExecuteSchemaDetails = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { address } = req.params;
+      
+      if (!address) {
+        res.status(400).json({ error: 'Contract address is required' });
+        return;
+      }
+      
+      // Find the contract - use contract_address instead of address
+      const contract = await Contract.findOne({ contract_address: address });
+      
+      if (!contract) {
+        res.status(404).json({ error: 'Contract not found' });
+        return;
+      }
+      
+      // Get the associated code
+      const { Code, Verification } = await import('../../../database/models/cosmwasm');
+      const code = await Code.findOne({ code_id: contract.code_id });
+      
+      if (!code) {
+        res.status(404).json({ error: 'Associated code not found' });
+        return;
+      }
+      
+      // Check if code is verified
+      if (!code.verified) {
+        res.status(400).json({ 
+          error: 'Contract code is not verified, detailed schema information is unavailable',
+          execute_methods: contract.execute_methods || []
+        });
+        return;
+      }
+      
+      // If execute_schema_details exists in the database, return it directly
+      if (contract.execute_schema_details && contract.execute_schema_details.length > 0) {
+        res.status(200).json({
+          contract_address: address,
+          code_id: contract.code_id,
+          execute_schema: contract.execute_schema_details
+        });
+        return;
+      }
+      
+      // If it doesn't exist in the database, create and save it
+      // Import parser service
+      const { SchemaExecuteParserService } = await import('../../../services/cosmwasm/schema-execute-parser.service');
+      
+      // Get verification to find schema path
+      const verification = await Verification.findOne({ 
+        code_id: contract.code_id,
+        status: 'success'
+      });
+      
+      if (!verification || !verification.source_path) {
+        res.status(400).json({ 
+          error: 'Verification source path not found',
+          execute_methods: contract.execute_methods || []
+        });
+        return;
+      }
+      
+      // Get schema path
+      const schemaPath = path.join(verification.source_path, 'schema');
+      
+      if (!fs.existsSync(schemaPath)) {
+        res.status(400).json({ 
+          error: 'Schema directory not found',
+          execute_methods: contract.execute_methods || []
+        });
+        return;
+      }
+      
+      // Parse execute schema
+      const executeSchema = SchemaExecuteParserService.parseExecuteSchema(schemaPath);
+      
+      // Cache in database for future requests
+      if (executeSchema && executeSchema.length > 0) {
+        contract.execute_schema_details = executeSchema;
+        await contract.save();
+      }
+      
+      res.status(200).json({
+        contract_address: address,
+        code_id: contract.code_id,
+        execute_schema: executeSchema
+      });
+    } catch (error) {
+      logger.error(`Error getting execute schema details:`, error);
+      res.status(500).json({ error: 'Failed to retrieve execute schema details' });
+    }
+  };
 }

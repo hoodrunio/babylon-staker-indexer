@@ -18,6 +18,7 @@ router.get('/codes/:id/transactions', historyController.getCodeTransactions);
 router.get('/contracts', contractController.getContracts);
 router.get('/contracts/:address', contractController.getContractByAddress);
 router.get('/contracts/:address/methods', contractController.getContractMethods);
+router.get('/contracts/:address/execute-schema', contractController.getExecuteSchemaDetails);
 router.get('/contracts/:address/suggestions/queries', contractController.getSuggestedQueries);
 router.get('/contracts/creator/:creator', contractController.getContractsByCreator);
 router.get('/contracts/:address/transactions', historyController.getContractTransactions);
