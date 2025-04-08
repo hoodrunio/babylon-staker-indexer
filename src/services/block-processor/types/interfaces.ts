@@ -9,6 +9,10 @@ export interface IBlockProcessorService {
   processBlock(blockData: any): Promise<BaseBlock>;
   processBlockFromWebsocket(blockEvent: WebsocketBlockEvent): Promise<BaseBlock>;
   getBlockByHeight(height: string | number): Promise<BaseBlock | null>;
+  getBlockByHash(blockHash: string): Promise<BaseBlock | null>;
+  setNetwork(network: Network): void;
+  getNetwork(): Network;
+  isNetworkConfigured(): boolean;
 }
 
 export interface ITransactionProcessorService {

@@ -65,7 +65,8 @@ export class FetcherService implements IFetcherService {
       
       const client = this.babylonClients.get(network);
       if (!client) {
-        throw new Error(`[FetcherService] No client configured for network ${network}`);
+        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
+        return null;
       }
       
       const txDetails = await client.getTransaction(txHash);
@@ -102,7 +103,8 @@ export class FetcherService implements IFetcherService {
       
       const client = this.babylonClients.get(network);
       if (!client) {
-        throw new Error(`[FetcherService] No client configured for network ${network}`);
+        logger.warn(`[FetcherService] No client configured for network ${network}, returning empty array`);
+        return [];
       }
       
       // Use the getTxSearch method from BlockClient through BabylonClient
@@ -133,7 +135,8 @@ export class FetcherService implements IFetcherService {
       
       const client = this.babylonClients.get(network);
       if (!client) {
-        throw new Error(`[FetcherService] No client configured for network ${network}`);
+        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
+        return null;
       }
       
       const blockData = await client.getBlockByHeight(Number(height));
@@ -189,7 +192,8 @@ export class FetcherService implements IFetcherService {
       
       const client = this.babylonClients.get(network);
       if (!client) {
-        throw new Error(`[FetcherService] No client configured for network ${network}`);
+        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
+        return null;
       }
       
       const blockData = await client.getBlockByHash(blockHash);
@@ -218,7 +222,8 @@ export class FetcherService implements IFetcherService {
       
       const client = this.babylonClients.get(network);
       if (!client) {
-        throw new Error(`[FetcherService] No client configured for network ${network}`);
+        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
+        return null;
       }
       
       const blockData = await client.getLatestBlock();

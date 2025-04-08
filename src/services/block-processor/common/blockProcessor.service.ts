@@ -188,6 +188,12 @@ export class BlockProcessorService implements IBlockProcessorService {
    */
   private async enrichBlockWithHash(blockData: any, height: number): Promise<void> {
     try {
+      // Eğer client yapılandırılmamışsa, bu ağ için blok işlemeyi atla
+      if (!this.babylonClient || !this.blockFetcherAdapter.isNetworkConfigured(this.network)) {
+        logger.warn(`[BlockProcessorService] Network ${this.network} is not configured, skipping block processing`);
+        return;
+      }
+      
       const fetchedBlock = await this.blockFetcherAdapter.fetchBlockByHeight(height, this.network);
       
       if (fetchedBlock && fetchedBlock.result && fetchedBlock.result.block_id) {
@@ -200,6 +206,13 @@ export class BlockProcessorService implements IBlockProcessorService {
         throw new BlockProcessorError(`Could not get block hash info: ${height}`);
       }
     } catch (error) {
+      // If error is about unconfigured network, skip processing
+      if (error instanceof Error && 
+          error.message.includes('No client configured for network')) {
+        logger.warn(`[BlockProcessorService] Network ${this.network} is not configured, skipping block processing`);
+        return;
+      }
+      
       logger.error(`[BlockProcessorService] Error enriching block with hash: ${this.formatError(error)}`);
       throw new BlockProcessorError(`Failed to enrich block with hash: ${this.formatError(error)}`);
     }
@@ -311,6 +324,13 @@ export class BlockProcessorService implements IBlockProcessorService {
    */
   getNetwork(): Network {
     return this.network;
+  }
+
+  /**
+   * Check if current network is configured
+   */
+  isNetworkConfigured(): boolean {
+    return this.blockFetcherAdapter.isNetworkConfigured(this.network);
   }
 
   /**

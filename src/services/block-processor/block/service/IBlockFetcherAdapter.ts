@@ -20,4 +20,9 @@ export interface IBlockFetcherAdapter {
    * Fetches latest block
    */
   fetchLatestBlock(network: Network): Promise<any>;
+
+  /**
+   * Checks if a network is configured
+   */
+  isNetworkConfigured(network: Network): boolean;
 } 

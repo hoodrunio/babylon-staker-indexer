@@ -60,6 +60,13 @@ export class BlockTransactionHandler {
     public async handleNewBlock(blockData: any, network: Network): Promise<void> {
         try {
             this.validateInitialization();
+            
+            // Check if network is configured
+            if (!this.isNetworkConfigured(network)) {
+                logger.warn(`[BlockHandler] Network ${network} is not configured, skipping block processing`);
+                return;
+            }
+            
             this.validateBlockData(blockData);
 
             let block;
@@ -450,6 +457,26 @@ export class BlockTransactionHandler {
         logger.error(`${prefix}: ${error instanceof Error ? error.message : String(error)}`);
         if (error instanceof Error && error.stack) {
             logger.debug(`${prefix} stack: ${error.stack}`);
+        }
+    }
+
+    /**
+     * Checks if a network is configured
+     */
+    private isNetworkConfigured(network: Network): boolean {
+        try {
+            if (!this.blockProcessor) {
+                return false;
+            }
+            
+            // Set network on block processor to ensure it's using the correct network
+            this.blockProcessor.setNetwork(network);
+            
+            // Check if the network is supported by the processor
+            return this.blockProcessor.isNetworkConfigured();
+        } catch (error) {
+            logger.error(`[BlockHandler] Error checking if network ${network} is configured: ${error instanceof Error ? error.message : String(error)}`);
+            return false;
         }
     }
 }

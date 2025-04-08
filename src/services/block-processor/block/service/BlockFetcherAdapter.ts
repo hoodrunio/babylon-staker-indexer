@@ -96,4 +96,22 @@ export class BlockFetcherAdapter implements IBlockFetcherAdapter {
       return null;
     }
   }
+
+  /**
+   * Checks if a network is configured
+   */
+  public isNetworkConfigured(network: Network): boolean {
+    if (!this.fetcherService) {
+      logger.error(`[BlockFetcherAdapter] FetcherService is not available`);
+      return false;
+    }
+    
+    try {
+      const supportedNetworks = this.fetcherService.getSupportedNetworks();
+      return supportedNetworks.includes(network);
+    } catch (error) {
+      logger.error(`[BlockFetcherAdapter] Error checking if network is configured: ${this.formatError(error)}`);
+      return false;
+    }
+  }
 } 
