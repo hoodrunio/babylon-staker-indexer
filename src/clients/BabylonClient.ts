@@ -450,7 +450,7 @@ export class BabylonClient {
         throw new Error(`[BabylonClient] Unexpected error in failover logic for ${this.network}`);
     }
 
-    public static getInstance(network: Network = Network.TESTNET): BabylonClient {
+    public static getInstance(network: Network = Network.MAINNET): BabylonClient {
         if (!BabylonClient.instances.has(network)) {
             BabylonClient.instances.set(network, new BabylonClient(network));
         }

@@ -18,8 +18,8 @@ export class FinalityBlockProcessor {
     private readonly MAX_RETRY_DELAY = 10000;
     private readonly MAX_RETRIES = 5;
     private readonly INITIAL_RETRY_DELAY = 2000;
-    private readonly DEFAULT_LAST_N_BLOCKS = 101;
     private readonly UPDATE_INTERVAL = 1000;
+    private readonly FINALITY_ACTIVATION_HEIGHT: number;
     private babylonClient: BabylonClient;
     private cacheManager: FinalityCacheManager;
     private epochService: FinalityEpochService;
@@ -35,6 +35,8 @@ export class FinalityBlockProcessor {
         this.cacheManager = FinalityCacheManager.getInstance();
         this.epochService = FinalityEpochService.getInstance();
         this.sseManager = FinalitySSEManager.getInstance();
+        this.FINALITY_ACTIVATION_HEIGHT = parseInt(process.env.FINALITY_ACTIVATION_HEIGHT || '0', 10);
+        logger.info(`[BlockProcessor] Finality activation height set to: ${this.FINALITY_ACTIVATION_HEIGHT}`);
     }
 
     public static getInstance(): FinalityBlockProcessor {
@@ -52,7 +54,57 @@ export class FinalityBlockProcessor {
         
         logger.info('[BlockProcessor] Starting block processor service...');
         this.isRunning = true;
-        this.startPeriodicUpdate();
+        
+        try {
+            const currentHeight = await this.babylonClient.getCurrentHeight();
+            
+            if (currentHeight < this.FINALITY_ACTIVATION_HEIGHT) {
+                logger.info(`[BlockProcessor] Current height (${currentHeight}) is below finality activation height (${this.FINALITY_ACTIVATION_HEIGHT}). Waiting for activation...`);
+                
+                // Don't start periodic updates yet, instead set up a check for activation
+                this.scheduleActivationCheck();
+            } else {
+                // We are already past activation height, start periodic updates
+                logger.info(`[BlockProcessor] Current height (${currentHeight}) is above finality activation height (${this.FINALITY_ACTIVATION_HEIGHT}). Starting normal processing.`);
+                this.startPeriodicUpdate();
+            }
+        } catch (error) {
+            logger.error('[BlockProcessor] Error checking current height:', error);
+            // Start periodic updates anyway (fallback)
+            this.startPeriodicUpdate();
+        }
+    }
+
+    private scheduleActivationCheck(): void {
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+            this.updateInterval = null;
+        }
+        
+        logger.info(`[BlockProcessor] Scheduled a check for finality activation height (${this.FINALITY_ACTIVATION_HEIGHT})`);
+        
+        // Check every 30 seconds instead of 1 second to reduce load
+        this.updateInterval = setInterval(async () => {
+            if (!this.isRunning) return;
+            
+            try {
+                const currentHeight = await this.babylonClient.getCurrentHeight();
+                
+                if (currentHeight >= this.FINALITY_ACTIVATION_HEIGHT) {
+                    logger.info(`[BlockProcessor] Finality activation height (${this.FINALITY_ACTIVATION_HEIGHT}) reached at height ${currentHeight}. Starting normal processing.`);
+                    
+                    // Clear this interval and start normal processing
+                    if (this.updateInterval) {
+                        clearInterval(this.updateInterval);
+                        this.updateInterval = null;
+                    }
+                    this.lastProcessedHeight = this.FINALITY_ACTIVATION_HEIGHT - 1; // Start from activation height
+                    this.startPeriodicUpdate();
+                }
+            } catch (error) {
+                logger.error('[BlockProcessor] Error checking for activation height:', error);
+            }
+        }, 30000); // Check every 30 seconds
     }
 
     public stop(): void {
@@ -136,6 +188,13 @@ export class FinalityBlockProcessor {
             return;
         }
 
+        // Skip if height is below activation height
+        if (height < this.FINALITY_ACTIVATION_HEIGHT) {
+            // Process block with empty signatures to avoid retrying
+            await this.cacheManager.processBlock(height, new Set());
+            return;
+        }
+
         this.requestLocks.set(requestKey, true);
         this.processingBlocks.add(height);
 
@@ -158,10 +217,15 @@ export class FinalityBlockProcessor {
 
             const votes = await this.babylonClient.getVotesAtHeight(height);
             
-            // Retry if no votes on first attempt
+            // Retry if no votes on first attempt and block is above activation height
             if (votes.length === 0 && retryCount < this.MAX_RETRIES && !this.cacheManager.hasSignatureData(height)) {
                 this.requestLocks.delete(requestKey);
-                logger.debug(`[Cache] No votes found for block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms`);
+                
+                // Only log the first retry attempt
+                if (retryCount === 0) {
+                    logger.debug(`[Cache] No votes found for block ${height}, will retry ${this.MAX_RETRIES} times`);
+                }
+                
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
@@ -170,6 +234,7 @@ export class FinalityBlockProcessor {
                 const signers = new Set(votes.map(v => v.fp_btc_pk_hex.toLowerCase()));
                 await this.cacheManager.processBlock(height, signers);
                 
+                // Only log if signatures were found
                 logger.info(`[Cache] ✅ Block ${height} processed, signers: ${signers.size}, cache size: ${this.cacheManager.getCacheSize()}`);
                 
                 // Retry if new signatures found and max retries not reached
@@ -179,7 +244,10 @@ export class FinalityBlockProcessor {
                     return this.fetchAndCacheSignatures(height, retryCount + 1);
                 }
             } else if (!this.cacheManager.hasSignatureData(height)) {
-                logger.debug(`[Cache] No votes found for block ${height} after ${this.MAX_RETRIES} attempts`);
+                // Only log the final attempt failure
+                if (retryCount === this.MAX_RETRIES - 1) {
+                    logger.debug(`[Cache] No votes found for block ${height} after ${this.MAX_RETRIES} attempts`);
+                }
             }
         } catch (error) {
             if (retryCount < this.MAX_RETRIES && !this.cacheManager.hasSignatureData(height)) {
@@ -197,11 +265,20 @@ export class FinalityBlockProcessor {
                 }
                 
                 this.requestLocks.delete(requestKey);
-                logger.warn(`[Cache] Error processing block ${height}, retry ${retryCount + 1}/${this.MAX_RETRIES} after ${retryDelay}ms:`, error);
+                
+                // Only log the first retry error
+                if (retryCount === 0) {
+                    logger.warn(`[Cache] Error processing block ${height}, will retry ${this.MAX_RETRIES} times:`, error);
+                }
+                
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 return this.fetchAndCacheSignatures(height, retryCount + 1);
             }
-            logger.error(`[Cache] ❌ Error processing block ${height} after ${this.MAX_RETRIES} attempts:`, error);
+            
+            // Only log the final error
+            if (retryCount === this.MAX_RETRIES - 1) {
+                logger.error(`[Cache] ❌ Error processing block ${height} after ${this.MAX_RETRIES} attempts:`, error);
+            }
         } finally {
             this.requestLocks.delete(requestKey);
             this.processingBlocks.delete(height);
@@ -213,8 +290,10 @@ export class FinalityBlockProcessor {
             // Process previous block (finalized)
             const previousHeight = height - 1;
             
-            // Skip if block is already processed
-            if (previousHeight <= this.lastProcessedHeight || this.cacheManager.isProcessed(previousHeight)) {
+            // Skip if block is already processed or below activation height
+            if (previousHeight <= this.lastProcessedHeight || 
+                this.cacheManager.isProcessed(previousHeight) || 
+                previousHeight < this.FINALITY_ACTIVATION_HEIGHT) {
                 return;
             }
 
@@ -223,14 +302,17 @@ export class FinalityBlockProcessor {
 
             // Check and process missing blocks
             const missingBlocks = [];
-            for (let h = this.lastProcessedHeight + 1; h <= previousHeight; h++) {
+            for (let h = Math.max(this.lastProcessedHeight + 1, this.FINALITY_ACTIVATION_HEIGHT); h <= previousHeight; h++) {
                 if (!this.cacheManager.isProcessed(h)) {
                     missingBlocks.push(h);
                 }
             }
 
             if (missingBlocks.length > 0) {
-                logger.debug(`[BlockProcessor] Processing ${missingBlocks.length} missing blocks before ${previousHeight}`);
+                // Only log if there are more than 1 missing blocks or debug mode is enabled
+                if (missingBlocks.length > 1) {
+                    logger.info(`[BlockProcessor] Processing ${missingBlocks.length} missing blocks before ${previousHeight}`);
+                }
                 // Process blocks sequentially
                 for (const blockHeight of missingBlocks) {
                     // Wait for block finalization

@@ -29,7 +29,7 @@ export class BlockProcessorInitializer {
     private rpcClient: BabylonClient | null = null;
     private historicalSyncService: HistoricalSyncService | null = null;
     private fetcherService: FetcherService | null = null;
-    private defaultNetwork: Network = Network.TESTNET;
+    private defaultNetwork: Network = Network.MAINNET;
     
     private constructor() {
         // Private constructor

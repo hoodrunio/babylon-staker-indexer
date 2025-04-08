@@ -33,7 +33,7 @@ export class FinalityProviderService {
     };
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance();
+        this.babylonClient = BabylonClient.getInstance(Network.MAINNET);
         this.cache = CacheService.getInstance();
     }
 

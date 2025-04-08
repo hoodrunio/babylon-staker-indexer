@@ -16,11 +16,17 @@ export class StatsController {
     private static refreshIntervals: Map<string, NodeJS.Timeout> = new Map();
 
     public static initialize() {
-        // Setup background refresh for all supported networks
+        // Setup background refresh for mainnet
         this.setupBackgroundRefresh(Network.MAINNET);
-        this.setupBackgroundRefresh(Network.TESTNET);
         
-        logger.info('Stats controller initialized with background cache refresh');
+        // Try to setup testnet if configured
+        try {
+            this.setupBackgroundRefresh(Network.TESTNET);
+            logger.info('Stats controller initialized with background cache refresh for both networks');
+        } catch (error) {
+            logger.warn('Testnet not configured, skipping stats refresh for testnet');
+            logger.info('Stats controller initialized with background cache refresh for mainnet only');
+        }
     }
 
     private static setupBackgroundRefresh(network: Network) {
