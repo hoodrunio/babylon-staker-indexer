@@ -9,12 +9,12 @@ class ParamsService {
 
   private static getClient(network?: Network): BabylonClient {
     try {
-      return BabylonClient.getInstance(network || Network.TESTNET);
+      return BabylonClient.getInstance(network || Network.MAINNET);
     } catch (error) {
       if (!network) {
         // If no specific network was requested, try testnet as fallback
         try {
-          return BabylonClient.getInstance(Network.TESTNET);
+          return BabylonClient.getInstance(Network.MAINNET);
         } catch (error) {
           throw new Error('Neither mainnet nor testnet is configured. Please configure at least one network in your environment variables.');
         }

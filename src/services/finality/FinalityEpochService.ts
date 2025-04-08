@@ -62,12 +62,12 @@ export class FinalityEpochService {
             }
             
             // Return testnet as default (even if not configured, will be checked later)
-            logger.warn('[FinalityEpochService] No configured networks found, defaulting to TESTNET');
-            return Network.TESTNET;
+            logger.warn('[FinalityEpochService] No configured networks found, defaulting to MAINNET');
+            return Network.MAINNET;
         } catch (err) {
             logger.error(`[FinalityEpochService] Error determining default network: ${err instanceof Error ? err.message : String(err)}`);
             // As a last resort, return testnet
-            return Network.TESTNET;
+            return Network.MAINNET;
         }
     }
     
