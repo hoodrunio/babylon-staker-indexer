@@ -58,7 +58,7 @@ function extractInputAddress(script: Buffer): string | null {
         // Check for P2TR (Taproot) addresses
         if (isTaprootOutput(script)) {
             const pubKey = script.slice(2); // Skip first 2 bytes (OP_1 and 0x20)
-            const address = encodeBech32('tb', pubKey, 1); // witness_v1 for Taproot
+            const address = encodeBech32('bc', pubKey, 1); // witness_v1 for Taproot
             return address;
         }
 
@@ -80,19 +80,19 @@ function extractOutputAddress(script: Buffer): string | null {
         // Check for P2TR (Taproot) addresses
         if (isTaprootOutput(script)) {
             const pubKey = script.slice(2); // Skip first 2 bytes (OP_1 and 0x20)
-            return encodeBech32('tb', pubKey, 1); // for witness_v1
+            return encodeBech32('bc', pubKey, 1); // for witness_v1
         }
 
         // P2WPKH addresses
         if (isP2WPKHOutput(script)) {
             const pubKeyHash = script.slice(2);
-            return encodeBech32('tb', pubKeyHash, 0); // for witness_v0
+            return encodeBech32('bc', pubKeyHash, 0); // for witness_v0
         }
 
         // P2WSH addresses
         if (isP2WSHOutput(script)) {
             const scriptHash = script.slice(2);
-            return encodeBech32('tb', scriptHash, 0); // for witness_v0
+            return encodeBech32('bc', scriptHash, 0); // for witness_v0
         }
 
         // P2PKH addresses
@@ -395,7 +395,7 @@ function extractSenderFromInput(buffer: Buffer, offset: number): { sender: strin
                 // Create P2WPKH address from public key
                 const pubKeyHash = hash160(pubKey);
                 return {
-                    sender: encodeBech32('tb', pubKeyHash, 0),
+                    sender: encodeBech32('bc', pubKeyHash, 0),
                     newOffset: offset + scriptLength
                 };
             }
