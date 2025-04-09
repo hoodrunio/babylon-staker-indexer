@@ -143,6 +143,7 @@ export class TxRepository implements ITxRepository {
         }
       )
       .sort(sortOptions)
+      .collation({ locale: 'en_US', numericOrdering: true })
       .skip(skip)
       .limit(limit)
       .lean();
@@ -212,6 +213,7 @@ export class TxRepository implements ITxRepository {
         }
       )
       .sort({ height: -1, time: -1 })
+      .collation({ locale: 'en_US', numericOrdering: true })
       .limit(limit)
       .lean();
       
