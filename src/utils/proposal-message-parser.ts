@@ -52,6 +52,11 @@ export class ProposalMessageParser {
             authority: msg.authority,
             fp_pks_hex: msg.fp_pks_hex,
             halting_height: msg.halting_height
+        }),
+        
+        '/cosmwasm.wasm.v1.MsgAddCodeUploadParamsAddresses': (msg: any) => ({
+            authority: msg.authority,
+            addresses: msg.addresses
         })
     };
 
