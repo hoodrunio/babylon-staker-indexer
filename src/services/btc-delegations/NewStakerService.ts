@@ -87,7 +87,9 @@ export class NewStakerService {
                     state,  
                     networkType,
                     totalSat,
-                    stakingTime
+                    stakingTime,
+                    createdAt: delegation.createdAt ? new Date(delegation.createdAt) : new Date(),
+                    updatedAt: new Date()
                 };
                 this.stakerManagementService.updateRecentDelegations(staker, recentDelegation);
 
@@ -96,6 +98,9 @@ export class NewStakerService {
 
                 // Update staker statistics
                 await this.stakerStatsService.updateStakerStats(staker, delegation, phase);
+
+                // Recalculate totals to ensure consistency
+                this.recalculateTotals(staker);
 
                 // Set last updated time
                 staker.lastUpdated = new Date();
@@ -121,6 +126,95 @@ export class NewStakerService {
                 logger.error(`Error updating staker from delegation: ${error}`);
                 throw error;
             }
+        }
+    }
+
+    /**
+     * Recalculates total statistics for a staker to ensure consistency
+     * @param staker Staker document
+     */
+    private recalculateTotals(staker: any): void {
+        try {
+            // Reset counters
+            staker.totalDelegationsCount = 0;
+            staker.activeDelegationsCount = 0;
+            staker.totalStakedSat = 0;
+            staker.activeStakedSat = 0;
+            
+            // Reset delegation states
+            if (!staker.delegationStates) {
+                staker.delegationStates = {
+                    PENDING: 0,
+                    VERIFIED: 0,
+                    ACTIVE: 0,
+                    UNBONDED: 0
+                };
+            } else {
+                staker.delegationStates.PENDING = 0;
+                staker.delegationStates.VERIFIED = 0;
+                staker.delegationStates.ACTIVE = 0;
+                staker.delegationStates.UNBONDED = 0;
+            }
+            
+            // Reset network stats
+            if (!staker.networkStats) {
+                staker.networkStats = {
+                    mainnet: {
+                        totalDelegations: 0,
+                        activeDelegations: 0,
+                        totalStakedSat: 0,
+                        activeStakedSat: 0
+                    },
+                    testnet: {
+                        totalDelegations: 0,
+                        activeDelegations: 0,
+                        totalStakedSat: 0,
+                        activeStakedSat: 0
+                    }
+                };
+            } else {
+                Object.keys(staker.networkStats).forEach(network => {
+                    staker.networkStats[network].totalDelegations = 0;
+                    staker.networkStats[network].activeDelegations = 0;
+                    staker.networkStats[network].totalStakedSat = 0;
+                    staker.networkStats[network].activeStakedSat = 0;
+                });
+            }
+            
+            // Recalculate based on delegations array
+            if (staker.delegations && Array.isArray(staker.delegations)) {
+                staker.delegations.forEach((delegation: any) => {
+                    // Update total counts
+                    staker.totalDelegationsCount += 1;
+                    staker.totalStakedSat += delegation.totalSat || 0;
+                    staker.delegationStates[delegation.state] = (staker.delegationStates[delegation.state] || 0) + 1;
+                    
+                    // Update network stats
+                    if (staker.networkStats && staker.networkStats[delegation.networkType]) {
+                        staker.networkStats[delegation.networkType].totalDelegations += 1;
+                        staker.networkStats[delegation.networkType].totalStakedSat += delegation.totalSat || 0;
+                    }
+                    
+                    // Update active counts
+                    if (delegation.state === 'ACTIVE') {
+                        staker.activeDelegationsCount += 1;
+                        staker.activeStakedSat += delegation.totalSat || 0;
+                        
+                        // Update network stats for active
+                        if (staker.networkStats && staker.networkStats[delegation.networkType]) {
+                            staker.networkStats[delegation.networkType].activeDelegations += 1;
+                            staker.networkStats[delegation.networkType].activeStakedSat += delegation.totalSat || 0;
+                        }
+                    }
+                });
+            }
+            
+            logger.info(`Recalculated totals for staker ${staker.stakerAddress}: 
+                Total Delegations: ${staker.totalDelegationsCount}, 
+                Active Delegations: ${staker.activeDelegationsCount}`);
+        } catch (error) {
+            logger.error(`Error recalculating totals for staker: ${error}`);
+            // We don't throw here to allow the main update to continue
         }
     }
 
