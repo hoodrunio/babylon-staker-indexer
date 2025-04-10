@@ -35,56 +35,92 @@ export class NewStakerService {
      * @param delegation Delegation data
      */
     public async updateStakerFromDelegation(delegation: any): Promise<void> {
-        try {
-            const { 
-                stakerAddress, 
-                stakerBtcAddress, 
-                stakerBtcPkHex, 
-                state, 
-                networkType, 
-                totalSat, 
-                stakingTime, 
-                stakingTxIdHex, 
-                txHash,
-                paramsVersion
-            } = delegation;
+        const maxRetries = 3;
+        let retryCount = 0;
+        let success = false;
+        let stakerId: any = null;
 
-            // Calculate phase
-            const phase = StakerUtils.calculatePhase(paramsVersion);
+        while (!success && retryCount < maxRetries) {
+            try {
+                const { 
+                    stakerAddress, 
+                    stakerBtcAddress, 
+                    stakerBtcPkHex, 
+                    state, 
+                    networkType, 
+                    totalSat, 
+                    stakingTime, 
+                    stakingTxIdHex, 
+                    txHash,
+                    paramsVersion
+                } = delegation;
 
-            // Find or create staker
-            let staker = await this.stakerManagementService.findOrCreateStaker(
-                stakerAddress,
-                stakerBtcAddress,
-                stakerBtcPkHex,
-                stakingTime
-            );
+                // Calculate phase
+                const phase = StakerUtils.calculatePhase(paramsVersion);
 
-            // Update recent delegations
-            const recentDelegation: RecentDelegation = {
-                stakingTxIdHex,
-                txHash: StakerUtils.formatTxHash(txHash, stakingTxIdHex),
-                state,  
-                networkType,
-                totalSat,
-                stakingTime
-            };
-            this.stakerManagementService.updateRecentDelegations(staker, recentDelegation);
+                // Find or create staker - on first attempt or if we don't have stakerId yet
+                let staker;
+                if (retryCount === 0 || !stakerId) {
+                    staker = await this.stakerManagementService.findOrCreateStaker(
+                        stakerAddress,
+                        stakerBtcAddress,
+                        stakerBtcPkHex,
+                        stakingTime
+                    );
+                    if (staker._id) {
+                        stakerId = staker._id;
+                    }
+                } else {
+                    // On retry attempts, fetch the fresh document directly by ID to avoid version conflicts
+                    const NewStaker = require('../../database/models/NewStaker').NewStaker;
+                    staker = await NewStaker.findById(stakerId);
+                    
+                    if (!staker) {
+                        throw new Error(`Failed to find staker with ID ${stakerId} during retry`);
+                    }
+                }
 
-            // Update delegation details
-            await this.delegationDetailsService.updateDelegationDetails(staker, delegation, phase);
+                // Update recent delegations
+                const recentDelegation: RecentDelegation = {
+                    stakingTxIdHex,
+                    txHash: StakerUtils.formatTxHash(txHash, stakingTxIdHex),
+                    state,  
+                    networkType,
+                    totalSat,
+                    stakingTime
+                };
+                this.stakerManagementService.updateRecentDelegations(staker, recentDelegation);
 
-            // Update staker statistics
-            await this.stakerStatsService.updateStakerStats(staker, delegation, phase);
+                // Update delegation details
+                await this.delegationDetailsService.updateDelegationDetails(staker, delegation, phase);
 
-            // Set last updated time
-            staker.lastUpdated = new Date();
+                // Update staker statistics
+                await this.stakerStatsService.updateStakerStats(staker, delegation, phase);
 
-            // Save staker
-            await staker.save();
-        } catch (error) {
-            logger.error(`Error updating staker from delegation: ${error}`);
-            throw error;
+                // Set last updated time
+                staker.lastUpdated = new Date();
+
+                // Save staker with optimistic concurrency control handling
+                await staker.save();
+                success = true;
+            } catch (error: any) {
+                retryCount++;
+                
+                // If it's a version error, we should retry with a fresh document
+                if (error.name === 'VersionError' && retryCount < maxRetries) {
+                    logger.warn(`Staker version conflict detected (attempt ${retryCount}/${maxRetries}), retrying with fresh document...`);
+                    
+                    // Add a small delay before retrying to reduce contention
+                    await new Promise(resolve => setTimeout(resolve, 100 * retryCount));
+                    
+                    // Continue to next retry attempt
+                    continue;
+                }
+                
+                // For other errors or if we've exceeded max retries, log and throw
+                logger.error(`Error updating staker from delegation: ${error}`);
+                throw error;
+            }
         }
     }
 
