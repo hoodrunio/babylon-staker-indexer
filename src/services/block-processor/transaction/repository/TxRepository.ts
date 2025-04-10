@@ -42,23 +42,33 @@ export class TxRepository implements ITxRepository {
       // Extract firstMessageType from meta data
       const firstMessageType = TxMapper.extractFirstMessageType(tx);
       
-      // Save to database
-      await BlockchainTransaction.findOneAndUpdate(
-        {
-          txHash: tx.txHash,
-          network: network
-        },
-        {
-          ...tx,
-          network: network,
-          firstMessageType: firstMessageType
-        },
-        {
-          upsert: true,
-          new: true,
-          setDefaultsOnInsert: true
+      try {
+        // Save to database
+        await BlockchainTransaction.findOneAndUpdate(
+          {
+            txHash: tx.txHash,
+            network: network
+          },
+          {
+            ...tx,
+            network: network,
+            firstMessageType: firstMessageType
+          },
+          {
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true
+          }
+        );
+      } catch (dbError: any) {
+        // Handle duplicate key errors gracefully
+        if (dbError.code === 11000) {  // MongoDB duplicate key error code
+          logger.info(`[TxRepository] Transaction ${tx.txHash} already exists in network ${network}, skipping save operation`);
+          return;  // Exit without throwing an error since this is an expected case
         }
-      );
+        // Re-throw other errors
+        throw dbError;
+      }
     } catch (error) {
       logger.error(`[TxRepository] Error saving transaction to database: ${this.formatError(error)}`);
       throw error;
