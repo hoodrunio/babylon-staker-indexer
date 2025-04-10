@@ -10,6 +10,18 @@ export class CovenantSignatureService {
         blockHeight: number
     ): Promise<void> {
         try {
+            // Check if record already exists
+            const existingRecord = await CovenantSignature.findOne({
+                stakingTxIdHex,
+                networkType,
+                txType: 'STAKING'
+            });
+
+            if (existingRecord) {
+                logger.info(`[Covenant] Signatures already exist for staking tx: ${stakingTxIdHex}, skipping creation`);
+                return;
+            }
+
             const signatures = covenantMembers.map(memberPkHex => ({
                 covenantBtcPkHex: memberPkHex,
                 signatureHex: '',
