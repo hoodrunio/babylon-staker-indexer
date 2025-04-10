@@ -5,9 +5,9 @@
     "website": "https://babylonlabs.io",
     "logoUrl": "/assets/images/babylon-labs.png",
     "mainnetPublicKeys": [
-      "fa9d882d45f4060bdb8042183828cd87544f1ea997380e586cab77d5fd698737",
-      "0aee0509b16db71c999238a4827db945526859b13c95487ab46725357c9a9f25",
-      "17921cf156ccb4e73d428f996ed11b245313e37e27c978ac4d2cc21eca4672e4"
+      "03d45c70d28f169e1f0c7f4a78e2bc73497afe585b70aa897955989068f3350aaa",
+      "034b15848e495a3a62283daaadb3f458a00859fe48e321f0121ebabbdd6698f9fa",
+      "0223b29f89b45f4af41588dcaf0ca572ada32872a88224f311373917f1b37d08d1"
     ],
     "testnetPublicKeys": [
       "fa9d882d45f4060bdb8042183828cd87544f1ea997380e586cab77d5fd698737",
@@ -21,7 +21,7 @@
     "website": "https://cubist.dev",
     "logoUrl": "/assets/images/cubist.png",
     "mainnetPublicKeys": [
-      "113c3a32a9d320b72190a04a020a0db3976ef36972673258e9a38a364f3dc3b0"
+      "03de13fc96ea6899acbdc5db3afaa683f62fe35b60ff6eb723dad28a11d2b12f8c"
     ],
     "testnetPublicKeys": [
       "113c3a32a9d320b72190a04a020a0db3976ef36972673258e9a38a364f3dc3b0"
@@ -29,11 +29,11 @@
   },
   {
     "organization": "Informal Systems",
-    "details": "Research and development company focused on distributed systems and formal verification",
+    "details": "Informal Systems was founded with a mission to foster trust in software and monetary systems.",
     "website": "https://informal.systems",
     "logoUrl": "/assets/images/informal.png",
     "mainnetPublicKeys": [
-      "79a71ffd71c503ef2e2f91bccfc8fcda7946f4653cef0d9f3dde20795ef3b9f0"
+      "03e36200aaa8dce9453567bba108bdc51f7f1174b97a65e4dc4402fc5de779d41c"
     ],
     "testnetPublicKeys": [
       "79a71ffd71c503ef2e2f91bccfc8fcda7946f4653cef0d9f3dde20795ef3b9f0"
@@ -45,7 +45,7 @@
     "website": "https://zellic.io",
     "logoUrl": "/assets/images/zellic.png",
     "mainnetPublicKeys": [
-      "3bb93dfc8b61887d771f3630e9a63e97cbafcfcc78556a474df83a31a0ef899c"
+      "03cbdd028cfe32c1c1f2d84bfec71e19f92df509bba7b8ad31ca6c1a134fe09204"
     ],
     "testnetPublicKeys": [
       "3bb93dfc8b61887d771f3630e9a63e97cbafcfcc78556a474df83a31a0ef899c"
@@ -57,7 +57,7 @@
     "website": "https://rockx.com",
     "logoUrl": "/assets/images/rockx.png",
     "mainnetPublicKeys": [
-      "d21faf78c6751a0d38e6bd8028b907ff07e9a869a43fc837d6b3f8dff6119a36"
+      "03f178fcce82f95c524b53b077e6180bd2d779a9057fdff4255a0af95af918cee0"
     ],
     "testnetPublicKeys": [
       "d21faf78c6751a0d38e6bd8028b907ff07e9a869a43fc837d6b3f8dff6119a36"
@@ -69,7 +69,7 @@
     "website": "https://altlayer.io",
     "logoUrl": "/assets/images/altlayer.png",
     "mainnetPublicKeys": [
-      "f5199efae3f28bb82476163a7e458c7ad445d9bffb0682d10d3bdb2cb41f8e8e"
+      "038242640732773249312c47ca7bdb50ca79f15f2ecc32b9c83ceebba44fb74df7"
     ],
     "testnetPublicKeys": [
       "f5199efae3f28bb82476163a7e458c7ad445d9bffb0682d10d3bdb2cb41f8e8e"
@@ -81,7 +81,7 @@
     "website": "https://coinsummer.io/",
     "logoUrl": "/assets/images/coinsummer.png",
     "mainnetPublicKeys": [
-      "40afaf47c4ffa56de86410d8e47baa2bb6f04b604f4ea24323737ddc3fe092df"
+      "02d3c79b99ac4d265c2f97ac11e3232c07a598b020cf56c6f055472c893c0967ae"
     ],
     "testnetPublicKeys": [
       "40afaf47c4ffa56de86410d8e47baa2bb6f04b604f4ea24323737ddc3fe092df"
