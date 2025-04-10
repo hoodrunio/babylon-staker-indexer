@@ -12,11 +12,12 @@ export class CodeController {
    * Supports filtering by:
    * - verified (true/false): Filter codes by verification status
    * - creator: Filter codes by creator address
+   * - search: Filter codes by code_id or creator (exact match)
    * Supports pagination with 'page' or 'skip' and 'limit' parameters
    */
   public async getCodes(req: Request, res: Response): Promise<void> {
     try {
-      const { verified, creator, limit = 20, page = 1, skip = 0 } = req.query;
+      const { verified, creator, limit = 20, page = 1, skip = 0, search } = req.query;
       
       // Build query based on filters
       const query: any = {};
@@ -27,6 +28,17 @@ export class CodeController {
       
       if (creator) {
         query.creator = creator;
+      }
+      
+      // Add search parameter for code_id or creator
+      if (search) {
+        // If search looks like a number, it's likely a code ID
+        if (/^\d+$/.test(search as string)) {
+          query.code_id = Number(search);
+        } else {
+          // Otherwise treat it as a creator address
+          query.creator = search;
+        }
       }
       
       // Calculate skip value from page if provided

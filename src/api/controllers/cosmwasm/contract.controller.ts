@@ -14,7 +14,7 @@ export class ContractController {
    */
   public async getContracts(req: Request, res: Response): Promise<void> {
     try {
-      const { code_id, admin, limit = 20, page = 1, skip = 0 } = req.query;
+      const { code_id, admin, limit = 20, page = 1, skip = 0, search } = req.query;
       
       // Build query based on filters
       const query: any = {};
@@ -25,6 +25,17 @@ export class ContractController {
       
       if (admin) {
         query.admin = admin;
+      }
+      
+      // Add search parameter - exact match for contract address
+      if (search) {
+        // If search looks like a number, try searching by code ID
+        if (/^\d+$/.test(search as string)) {
+          query.code_id = Number(search);
+        } else {
+          // Otherwise search by contract address
+          query.contract_address = search;
+        }
       }
       
       // Calculate skip value from page if provided
