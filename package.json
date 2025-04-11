@@ -24,8 +24,8 @@
   "dependencies": {
     "@cosmjs/crypto": "^0.33.0",
     "@cosmjs/encoding": "^0.33.0",
-    "@cosmjs/proto-signing": "^0.33.0",
-    "@cosmjs/stargate": "^0.33.0",
+    "@cosmjs/proto-signing": "^0.33.1",
+    "@cosmjs/stargate": "^0.33.1",
     "@types/bitcoinjs-lib": "^4.0.1",
     "@types/cors": "^2.8.17",
     "@types/eventsource": "^1.1.15",

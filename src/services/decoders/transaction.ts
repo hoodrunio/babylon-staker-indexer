@@ -103,7 +103,7 @@ export function decodeTx(txBase64: string): DecodedTx {
     return {
       tx: processedTx,
       messages: processedMessages,
-      rawBytes: txBytes
+      //rawBytes: txBytes
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -112,7 +112,7 @@ export function decodeTx(txBase64: string): DecodedTx {
     return {
       tx: null,
       messages: [],
-      rawBytes: txBytes,
+      //rawBytes: txBytes,
       error: `Failed to decode transaction: ${errorMessage}`
     };
   }
