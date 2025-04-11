@@ -10,8 +10,9 @@ import { ITransaction } from '../../../../database/models/blockchain/Transaction
 export interface ITxRepository {
   /**
    * Saves transaction to database
+   * firstMessageType is the first message type extracted from the transaction content
    */
-  saveTx(tx: BaseTx, network: Network): Promise<void>;
+  saveTx(tx: BaseTx, network: Network, firstMessageType?: string): Promise<void>;
   
   /**
    * Finds transaction by hash
@@ -63,4 +64,14 @@ export interface ITxRepository {
     network: Network,
     batchSize: number
   ): Promise<number>;
-} 
+
+  /**
+   * Returns the number of transactions created within a certain period, of a certain type and with full content
+   * (non-lite-mode)
+   */
+  countRecentFullTxsByType(
+    messageType: string,
+    network: Network,
+    hoursAgo: number
+  ): Promise<number>;
+}

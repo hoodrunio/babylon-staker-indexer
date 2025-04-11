@@ -14,12 +14,14 @@ import { TxMapper } from '../mapper/TxMapper';
 import { TxCacheManager } from '../cache/TxCacheManager';
 import { logger } from '../../../../utils/logger';
 import { ITransaction } from '../../../../database/models/blockchain/Transaction';
+import { DEFAULT_LITE_STORAGE_CONFIG, LITE_STORAGE_TX_TYPES, LiteStorageConfig } from '../../types/common';
 
 export class TxService implements ITxService {
   private static instance: TxService | null = null;
   private txRepository: ITxRepository;
   private fetcherAdapter: IFetcherAdapter;
   private cacheManager: TxCacheManager;
+  private liteStorageConfig: LiteStorageConfig;
   
   private constructor(
     txRepository: ITxRepository,
@@ -29,6 +31,7 @@ export class TxService implements ITxService {
     this.txRepository = txRepository;
     this.fetcherAdapter = fetcherAdapter;
     this.cacheManager = cacheManager;
+    this.liteStorageConfig = DEFAULT_LITE_STORAGE_CONFIG;
   }
   
   /**
@@ -71,6 +74,12 @@ export class TxService implements ITxService {
       const tx = await this.txRepository.findTxByHash(txHash, network);
       
       if (tx) {
+        // If transaction is stored in lite mode and has no metadata,
+        // we need to fetch the full version from the blockchain
+        if (tx.isLite && (!tx.meta || tx.meta.length === 0)) {
+          logger.info(`[TxService] Transaction ${txHash} is stored in lite mode, fetching full data from blockchain`);
+          return await this.fetchAndPopulateLiteTx(tx, network);
+        }
         return TxMapper.mapToBaseTx(tx);
       }
       
@@ -282,15 +291,131 @@ export class TxService implements ITxService {
   }
   
   /**
-   * Saves transaction
+   * Saves a transaction
+   * Decides whether to store it in full or lite mode based on transaction type
    */
   public async saveTx(tx: BaseTx, network: Network): Promise<void> {
     try {
-      await this.txRepository.saveTx(tx, network);
+      // Extract firstMessageType from meta data
+      const firstMessageType = TxMapper.extractFirstMessageType(tx);
+      
+      // Determine if this tx type should be stored in lite mode
+      const shouldStoreLite = this.shouldStoreTxInLiteMode(tx);
+
+      // Clone the transaction to avoid modifying the original
+      const txToSave: BaseTx = { ...tx };
+      
+      // Evaluate lite mode only for specific tx types
+      // All other txs are always stored with full content
+      if (shouldStoreLite) {
+        const canStoreFullContent = await this.canStoreFullContent(txToSave, network);
+        
+        if (!canStoreFullContent) {
+          // If we shouldn't store full content, remove meta data
+          delete txToSave.meta;
+        }
+      }
+      try {
+        // Save to database with isLite flag if needed
+        await this.txRepository.saveTx({
+          ...txToSave,
+          isLite: shouldStoreLite && !txToSave.meta
+        }, network, firstMessageType);
+      } catch (dbError) {
+        // Handle database errors
+        throw dbError;
+      }
     } catch (error) {
       logger.error(`[TxService] Error saving transaction: ${this.formatError(error)}`);
       throw error;
     }
+  }
+  
+  /**
+   * Determines if a transaction should be stored in lite mode based on its type
+   */
+  private shouldStoreTxInLiteMode(tx: BaseTx): boolean {
+    if (!tx.meta || tx.meta.length === 0) return false;
+    
+    // Decide based on the first message type
+    const messageType = tx.meta[0]?.typeUrl;
+    
+    // Apply lite mode for specific tx types
+    // This list is directly defined in the code and does not change (LITE_STORAGE_TX_TYPES)
+    // "/babylon.finality.v1.MsgAddFinalitySig" and "/ibc.core.client.v1.MsgUpdateClient"
+    return LITE_STORAGE_TX_TYPES.includes(messageType);
+  }
+  
+  /**
+   * Checks if we should store the full content for a transaction
+   * This is based on how many full versions we already have and retention policy
+   */
+  private async canStoreFullContent(tx: BaseTx, network: Network): Promise<boolean> {
+    if (!tx.meta || tx.meta.length === 0) return false;
+    
+    try {
+      const messageType = tx.meta[0]?.typeUrl;
+      
+      // If it's not a filtered type, always store full content
+      if (!LITE_STORAGE_TX_TYPES.includes(messageType)) {
+        return true;
+      }
+      
+      // Count the full records within a specific period
+      const recentCount = await this.txRepository.countRecentFullTxsByType(
+        messageType,
+        network,
+        this.liteStorageConfig.fullContentRetentionHours
+      );
+      
+      // If it's less than the maximum number, make a full record
+      return recentCount < this.liteStorageConfig.maxStoredFullInstances;
+    } catch (error) {
+      logger.error(`[TxService] Error checking if can store full content: ${this.formatError(error)}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Fetches full transaction data for a lite transaction and returns it in the expected format
+   */
+  private async fetchAndPopulateLiteTx(liteTx: ITransaction, network: Network): Promise<BaseTx | null> {
+    try {
+      // Pull full data from the blockchain
+      const rawTx = await this.fetcherAdapter.fetchTxDetails(liteTx.txHash, network);
+      if (!rawTx) {
+        return TxMapper.mapToBaseTx(liteTx); // If raw tx is not found, return the lite version we have
+      }
+      
+      // Convert raw data to BaseTx format
+      const baseTx = TxMapper.convertRawTxToBaseTx(rawTx);
+      
+      // We do not save and update the full data in the database, we only return it for temporary use
+      // This way we do not fill the database with unnecessary data
+      return baseTx;
+    } catch (error) {
+      logger.error(`[TxService] Error fetching full data for lite tx: ${this.formatError(error)}`);
+      // Return the current lite data in case of error
+      return TxMapper.mapToBaseTx(liteTx);
+    }
+  }
+  
+  /**
+   * Updates lite storage configuration
+   */
+  public updateLiteStorageConfig(config: Partial<LiteStorageConfig>): void {
+    this.liteStorageConfig = {
+      ...this.liteStorageConfig,
+      ...config
+    };
+    logger.info(`[TxService] Updated lite storage config: ${JSON.stringify(this.liteStorageConfig)}`);
+  }
+  
+  /**
+   * Gets current lite storage configuration
+   */
+  public getLiteStorageConfig(): LiteStorageConfig {
+    return { ...this.liteStorageConfig };
   }
   
   /**
@@ -376,4 +501,4 @@ export class TxService implements ITxService {
       return [];
     }
   }
-} 
+}

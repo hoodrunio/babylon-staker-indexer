@@ -37,10 +37,10 @@ export class TxRepository implements ITxRepository {
   /**
    * Saves transaction to database
    */
-  public async saveTx(tx: BaseTx, network: Network): Promise<void> {
+  public async saveTx(tx: BaseTx, network: Network, firstMessageType?: string): Promise<void> {
     try {
-      // Extract firstMessageType from meta data
-      const firstMessageType = TxMapper.extractFirstMessageType(tx);
+      // If firstMessageType is not provided, extract from meta data
+      const txFirstMessageType = firstMessageType || TxMapper.extractFirstMessageType(tx);
       
       try {
         // Save to database
@@ -52,7 +52,8 @@ export class TxRepository implements ITxRepository {
           {
             ...tx,
             network: network,
-            firstMessageType: firstMessageType
+            firstMessageType: txFirstMessageType,
+            isLite: tx.isLite || false // add isLite field
           },
           {
             upsert: true,
@@ -311,6 +312,32 @@ export class TxRepository implements ITxRepository {
     } catch (error) {
       logger.error(`[TxRepository] Error updating transactions with firstMessageType: ${this.formatError(error)}`);
       throw error;
+    }
+  }
+  
+  /**
+   * Returns the number of full-content transactions of a specific type created within a certain period
+   */
+  public async countRecentFullTxsByType(
+    messageType: string,
+    network: Network,
+    hoursAgo: number
+  ): Promise<number> {
+    try {
+      // Calculate the date for a certain number of hours ago from now
+      const date = new Date();
+      date.setHours(date.getHours() - hoursAgo);
+      
+      // Count transactions with metadata of a specific type
+      return await BlockchainTransaction.countDocuments({
+        network,
+        'meta.typeUrl': messageType,
+        isLite: { $ne: true }, // Not in lite mode
+        createdAt: { $gte: date }
+      });
+    } catch (error) {
+      logger.error(`[TxRepository] Error counting recent full txs by type: ${this.formatError(error)}`);
+      return 0;
     }
   }
 } 

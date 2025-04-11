@@ -9,6 +9,9 @@ import { BlockProcessorInitializer } from './integration/BlockProcessorInitializ
 import { BlockTransactionHandler } from './handlers/BlockTransactionHandler';
 import { IMessageProcessor } from '../websocket/interfaces';
 import { FetcherService } from './common/fetcher.service';
+import { BlockProcessorError } from './types/common';
+import { LiteStorageConfig } from './types/common';
+import { TxService } from './transaction/service/TxService';
 
 /**
  * Main module for the block processing system
@@ -49,10 +52,43 @@ export class BlockProcessorModule {
             this.initializer.initialize();
             this.isInitialized = true;
             
+            // Configure transaction service's lite storage if enabled
+            this.configureTxLiteStorage();
+            
             logger.info('[BlockProcessorModule] Block Processor Module initialized successfully');
         } catch (error) {
-            logger.error(`[BlockProcessorModule] Error initializing Block Processor Module: ${error instanceof Error ? error.message : String(error)}`);
-            throw error;
+            logger.error(`[BlockProcessorModule] Error initializing Block Processor Module: ${this.formatError(error)}`);
+            throw new BlockProcessorError(`Failed to initialize BlockProcessorModule: ${this.formatError(error)}`);
+        }
+    }
+    
+    /**
+     * Configures TxService's lite storage based on environment variables
+     */
+    private configureTxLiteStorage(): void {
+        const txService = TxService.getInstance();
+        
+        // Check if lite storage is enabled
+        const isEnabled = process.env.TX_LITE_STORAGE_ENABLED === 'true';
+        
+        if (isEnabled) {
+            logger.info('[BlockProcessorModule] Configuring TxService lite storage...');
+            
+            // Read configuration from environment variables or use defaults
+            const maxFullInstances = parseInt(process.env.TX_LITE_MAX_FULL_INSTANCES || '5');
+            const retentionHours = parseInt(process.env.TX_LITE_RETENTION_HOURS || '24');
+            
+            const config: LiteStorageConfig = {
+                maxStoredFullInstances: maxFullInstances,
+                fullContentRetentionHours: retentionHours
+            };
+            
+            // Update TxService configuration
+            txService.updateLiteStorageConfig(config);
+            
+            logger.info(`[BlockProcessorModule] TxService lite storage configured: maxInstances=${maxFullInstances}, retentionHours=${retentionHours}`);
+        } else {
+            logger.info('[BlockProcessorModule] TxService lite storage is disabled');
         }
     }
     
@@ -138,5 +174,20 @@ export class BlockProcessorModule {
         }
         
         await this.initializer.startHistoricalSync(network, fromHeight, blockCount);
+    }
+
+    /**
+     * Formats the error message for logging
+     * @param error The error object
+     * @returns Formatted error message
+     */
+    private formatError(error: unknown): string {
+        if (error instanceof Error) {
+            return error.message;
+        } else if (typeof error === 'string') {
+            return error;
+        } else {
+            return 'An unknown error occurred';
+        }
     }
 }
