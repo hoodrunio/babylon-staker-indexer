@@ -1,7 +1,7 @@
 import { Tx } from '../../generated/proto/cosmos/tx/v1beta1/tx';
 import { base64ToBytes } from '../../utils/base64';
-import { decodeAnyMessage, convertBuffersToHex } from './messageDecoders';
-
+import { decodeAnyMessage } from './messageDecoders';
+import { convertBuffersToHex } from './utils/bufferUtils';
 /**
  * Transaction decoder result type
  */
