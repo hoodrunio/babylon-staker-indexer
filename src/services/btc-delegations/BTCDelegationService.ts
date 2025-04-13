@@ -440,7 +440,7 @@ export class BTCDelegationService {
                 stakingTime: chainDel.duration,
                 unbondingTime: chainDel.unbonding_time,
                 blockHeight: currentHeight,
-                txHash: chainDel.transaction_id_hex,
+                txHash: "",
                 finalityProviderBtcPksHex: chainDel.finality_provider_btc_pks_hex || [],
                 unbondingTxHex: chainDel.unbonding?.transaction_id,
                 unbondingTxIdHex: chainDel.unbonding?.transaction_id_hex,
