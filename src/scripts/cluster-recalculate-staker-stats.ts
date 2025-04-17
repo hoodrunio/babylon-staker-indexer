@@ -8,7 +8,20 @@ import { StakerStatsService } from '../services/btc-delegations/StakerStatsServi
 import { DelegationDetailsService } from '../services/btc-delegations/DelegationDetailsService';
 import { StakerUtils } from '../services/btc-delegations/utils/StakerUtils';
 import { RecentDelegation } from '../services/btc-delegations/interfaces/StakerInterfaces';
-import { logger } from '../utils/logger';
+
+// Create a simple logger that works in all environments
+const simpleLogger = {
+    info: (message: string) => console.log(`${new Date().toISOString()} INFO: ${message}`),
+    warn: (message: string) => console.warn(`${new Date().toISOString()} WARN: ${message}`),
+    error: (message: string, error?: any) => {
+        console.error(`${new Date().toISOString()} ERROR: ${message}`);
+        if (error && error.stack) console.error(error.stack);
+    },
+    debug: (message: string) => console.debug(`${new Date().toISOString()} DEBUG: ${message}`)
+};
+
+// Use the simple logger directly to avoid Winston compatibility issues
+const logger = simpleLogger;
 
 // Load .env file
 dotenv.config();
