@@ -5,6 +5,7 @@ import { BabylonIndexer } from './services/BabylonIndexer';
 import { FinalitySignatureService } from './services/finality/FinalitySignatureService';
 import { WebsocketService } from './services/WebsocketService';
 import { BTCDelegationService } from './services/btc-delegations/BTCDelegationService';
+import { BTCTransactionCrawlerService } from './services/btc-delegations/BTCTransactionCrawlerService';
 import cors from 'cors';
 import compression from 'compression';
 import { logger } from './utils/logger';
@@ -73,6 +74,15 @@ async function startServer() {
     // Initialize BTCDelegationService (this will start initial sync)
     logger.info('Initializing BTCDelegationService...');
     BTCDelegationService.getInstance();
+    
+    // Initialize BTCTransactionCrawlerService (this will start periodic crawling)
+    if (process.env.BTC_TX_CRAWLER_ENABLED !== 'false') {
+        logger.info('Initializing BTCTransactionCrawlerService...');
+        BTCTransactionCrawlerService.getInstance();
+        logger.info('BTCTransactionCrawlerService initialized and started successfully');
+    } else {
+        logger.info('BTCTransactionCrawlerService is disabled by configuration');
+    }
     
     // Initialize BlockProcessorModule
     logger.info('Initializing BlockProcessorModule...');
