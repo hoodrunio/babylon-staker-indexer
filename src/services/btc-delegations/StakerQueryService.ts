@@ -88,37 +88,43 @@ export class StakerQueryService {
     }
 
     /**
-     * Gets a staker by ID
-     * @param stakerAddress Staker address
+     * Gets a staker by address (supports both Babylon and BTC addresses)
+     * @param address Staker address (can be either Babylon or BTC address)
      */
-    public async getStakerByAddress(stakerAddress: string): Promise<any> {
+    public async getStakerByAddress(address: string): Promise<any> {
         try {
-            return NewStaker.findOne({ stakerAddress }).lean();
+            // First try to find by Babylon address
+            let staker = await NewStaker.findOne({ stakerAddress: address }).lean();
+            
+            // If not found and the address doesn't start with 'bbn1', try finding by BTC address
+            if (!staker && !address.startsWith('bbn1')) {
+                staker = await NewStaker.findOne({ stakerBtcAddress: address }).lean();
+            }
+            
+            return staker;
         } catch (error) {
-            StakerUtils.logError(`Error getting staker by address: ${stakerAddress}`, error);
+            StakerUtils.logError(`Error getting staker by address: ${address}`, error);
             throw error;
         }
     }
 
     /**
      * Gets a staker's delegations
-     * @param stakerAddress Staker address
+     * @param address Staker address (can be either Babylon or BTC address)
      * @param limit Limit
      * @param skip Number of records to skip
      * @param sortField Sort field
      * @param sortOrder Sort order (asc/desc)
      */
     public async getStakerDelegations(
-        stakerAddress: string, 
+        address: string, 
         limit = 10, 
         skip = 0, 
         sortField = 'stakingTime', 
         sortOrder = 'desc'
     ): Promise<any[]> {
         try {
-            const staker = await NewStaker.findOne(
-                { stakerAddress }
-            ).lean();
+            const staker = await this.getStakerByAddress(address);
             
             if (!staker || !staker.delegations || staker.delegations.length === 0) {
                 return [];
@@ -139,19 +145,19 @@ export class StakerQueryService {
             // Apply pagination
             return sortedDelegations.slice(skip, skip + limit);
         } catch (error) {
-            StakerUtils.logError(`Error getting staker delegations: ${stakerAddress}`, error);
+            StakerUtils.logError(`Error getting staker delegations: ${address}`, error);
             throw error;
         }
     }
 
     /**
      * Gets a staker's phase-based statistics
-     * @param stakerAddress Staker address
+     * @param address Staker address (can be either Babylon or BTC address)
      * @param phase Phase value (optional)
      */
-    public async getStakerPhaseStats(stakerAddress: string, phase?: number): Promise<any[]> {
+    public async getStakerPhaseStats(address: string, phase?: number): Promise<any[]> {
         try {
-            const staker = await NewStaker.findOne({ stakerAddress }).lean();
+            const staker = await this.getStakerByAddress(address);
             
             if (!staker || !staker.phaseStats) {
                 return [];
@@ -164,18 +170,18 @@ export class StakerQueryService {
             
             return staker.phaseStats;
         } catch (error) {
-            StakerUtils.logError(`Error getting staker phase stats: ${stakerAddress}`, error);
+            StakerUtils.logError(`Error getting staker phase stats: ${address}`, error);
             throw error;
         }
     }
 
     /**
      * Gets a staker's unique finality providers
-     * @param stakerAddress Staker address
+     * @param address Staker address (can be either Babylon or BTC address)
      */
-    public async getStakerUniqueFinalityProviders(stakerAddress: string): Promise<any[]> {
+    public async getStakerUniqueFinalityProviders(address: string): Promise<any[]> {
         try {
-            const staker = await NewStaker.findOne({ stakerAddress }).lean();
+            const staker = await this.getStakerByAddress(address);
             
             if (!staker || !staker.uniqueFinalityProviders) {
                 return [];
@@ -183,7 +189,7 @@ export class StakerQueryService {
             
             return staker.uniqueFinalityProviders;
         } catch (error) {
-            StakerUtils.logError(`Error getting staker unique finality providers: ${stakerAddress}`, error);
+            StakerUtils.logError(`Error getting staker unique finality providers: ${address}`, error);
             throw error;
         }
     }

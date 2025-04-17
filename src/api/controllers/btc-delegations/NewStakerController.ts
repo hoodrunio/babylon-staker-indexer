@@ -91,7 +91,10 @@ export class NewStakerController {
             const staker = await this.stakerService.getStakerByAddress(stakerAddress);
 
             if (!staker) {
-                res.status(404).json({ error: 'Staker not found' });
+                res.status(404).json({ 
+                    error: 'Staker not found', 
+                    message: 'No staker found with the provided Babylon or BTC address'
+                });
                 return;
             }
 
@@ -112,15 +115,23 @@ export class NewStakerController {
             const sortField = (req.query.sort_by as string) || 'stakingTime';
             const sortOrder = (req.query.order as string) || 'desc';
 
-            const [delegations, staker] = await Promise.all([
-                this.stakerService.getStakerDelegations(stakerAddress, limit, skip, sortField, sortOrder),
-                this.stakerService.getStakerByAddress(stakerAddress)
-            ]);
+            const staker = await this.stakerService.getStakerByAddress(stakerAddress);
 
             if (!staker) {
-                res.status(404).json({ error: 'Staker not found' });
+                res.status(404).json({ 
+                    error: 'Staker not found', 
+                    message: 'No staker found with the provided Babylon or BTC address' 
+                });
                 return;
             }
+
+            const delegations = await this.stakerService.getStakerDelegations(
+                stakerAddress, 
+                limit, 
+                skip, 
+                sortField, 
+                sortOrder
+            );
 
             res.json({
                 data: delegations,
@@ -133,6 +144,7 @@ export class NewStakerController {
                     },
                     staker: {
                         address: staker.stakerAddress,
+                        btcAddress: staker.stakerBtcAddress,
                         totalDelegationsCount: staker.totalDelegationsCount,
                         activeDelegationsCount: staker.activeDelegationsCount,
                         totalStakedSat: staker.totalStakedSat
@@ -150,6 +162,16 @@ export class NewStakerController {
             const { stakerAddress } = req.params;
             const phase = req.query.phase ? parseInt(req.query.phase as string) : undefined;
 
+            // First check if staker exists
+            const staker = await this.stakerService.getStakerByAddress(stakerAddress);
+            if (!staker) {
+                res.status(404).json({ 
+                    error: 'Staker not found', 
+                    message: 'No staker found with the provided Babylon or BTC address' 
+                });
+                return;
+            }
+
             const phaseStats = await this.stakerService.getStakerPhaseStats(stakerAddress, phase);
 
             res.json({
@@ -164,6 +186,16 @@ export class NewStakerController {
     public async getStakerUniqueFinalityProviders(req: Request, res: Response): Promise<void> {
         try {
             const { stakerAddress } = req.params;
+
+            // First check if staker exists
+            const staker = await this.stakerService.getStakerByAddress(stakerAddress);
+            if (!staker) {
+                res.status(404).json({ 
+                    error: 'Staker not found', 
+                    message: 'No staker found with the provided Babylon or BTC address' 
+                });
+                return;
+            }
 
             const finalityProviders = await this.stakerService.getStakerUniqueFinalityProviders(stakerAddress);
 
