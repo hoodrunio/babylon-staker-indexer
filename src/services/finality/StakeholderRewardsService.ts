@@ -246,98 +246,125 @@ export class StakeholderRewardsService {
      * @returns Summary of rewards for all finality providers
      */
     public async getAllFinalityProviderRewardsSummary(network: Network = Network.MAINNET): Promise<any> {
-        const cacheKey = `fp:rewards:summary:${network}`;
-        return this.getWithRevalidate(
-            cacheKey,
-            this.CACHE_TTL.REWARDS_SUMMARY,
-            async () => {
-                const finalityProviderService = FinalityProviderService.getInstance();
+        // Ensure we're only using supported networks
+        if (network !== Network.MAINNET && network !== Network.TESTNET) {
+            logger.warn(`[Rewards] Invalid network parameter, defaulting to MAINNET: ${network}`);
+            network = Network.MAINNET;
+        }
+        
+        // Create a cache key with explicit network name to avoid confusion
+        const cacheKey = `rewards:fp:summary:${network}`;
+        
+        // logger.info(`[Rewards] Checking cache for key: ${cacheKey}`);
+        
+        // Check if we have a direct cache hit first
+        const cachedData = await this.cache.get(cacheKey);
+        if (cachedData) {
+            // logger.info(`[Rewards] Cache hit for key: ${cacheKey}`);
+            return cachedData;
+        }
+        
+        // logger.info(`[Rewards] Cache miss for key: ${cacheKey}, fetching fresh data`);
+        
+        try {
+            // Fetch active providers and their rewards
+            const finalityProviderService = FinalityProviderService.getInstance();
+            
+            // Log which network we're querying
+            // logger.info(`[Rewards] Getting rewards summary for network: ${network}`);
+            
+            // Fetch active providers
+            const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+            // logger.info(`[Rewards] Found ${activeProviders.length} active finality providers`);
+            
+            // If no active providers, return empty result
+            if (!activeProviders || activeProviders.length === 0) {
+                logger.warn(`[Rewards] No active finality providers found for network: ${network}`);
+                const emptyResult = { rewards: [] };
+                await this.cache.set(cacheKey, emptyResult, this.CACHE_TTL.REWARDS_SUMMARY);
+                return emptyResult;
+            }
+            
+            // Log the first provider for debugging purposes
+            if (activeProviders.length > 0) {
+                // logger.info(`[Rewards] First provider sample: ${JSON.stringify(activeProviders[0])}`);
+            }
+            
+            const rewardsArray: any[] = [];
+            
+            // Process providers in batches to avoid overwhelming the node
+            const batchSize = 10;
+            const batches = Math.ceil(activeProviders.length / batchSize);
+            
+            // // logger.info(`[Rewards] Processing ${activeProviders.length} providers in ${batches} batches`);
+            
+            for (let i = 0; i < batches; i++) {
+                const start = i * batchSize;
+                const end = Math.min(start + batchSize, activeProviders.length);
+                const batch = activeProviders.slice(start, end);
                 
-                // Log which network we're querying
-                logger.info(`[Rewards] Getting rewards summary for network: ${network}`);
+                //// logger.info(`[Rewards] Processing batch ${i+1}/${batches}, providers ${start+1}-${end}`);
                 
-                // Fetch active providers
-                const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
-                logger.info(`[Rewards] Found ${activeProviders.length} active finality providers`);
-                
-                // If no active providers, return empty map
-                if (!activeProviders || activeProviders.length === 0) {
-                    logger.warn(`[Rewards] No active finality providers found for network: ${network}`);
-                    return { rewards: [] };
-                }
-                
-                // Log the first provider for debugging purposes
-                if (activeProviders.length > 0) {
-                    logger.info(`[Rewards] First provider sample: ${JSON.stringify(activeProviders[0])}`);
-                }
-                
-                const rewardsArray: any[] = [];
-                
-                // Process providers in batches to avoid overwhelming the node
-                const batchSize = 10;
-                const batches = Math.ceil(activeProviders.length / batchSize);
-                
-                logger.info(`[Rewards] Processing ${activeProviders.length} providers in ${batches} batches`);
-                
-                for (let i = 0; i < batches; i++) {
-                    const start = i * batchSize;
-                    const end = Math.min(start + batchSize, activeProviders.length);
-                    const batch = activeProviders.slice(start, end);
-                    
-                    logger.info(`[Rewards] Processing batch ${i+1}/${batches}, providers ${start+1}-${end}`);
-                    
-                    // Process each provider in the batch
-                    const batchResults = await Promise.all(
-                        batch.map(async (provider) => {
-                            try {
-                                // If provider has a Babylon address
-                                if (provider.addr) {
-                                    logger.info(`[Rewards] Fetching rewards for provider ${provider.btc_pk} with address ${provider.addr}`);
-                                    
-                                    const rewards = await this.getStakeholderRewards(
-                                        provider.addr,
-                                        network
-                                    );
-                                    
-                                    logger.info(`[Rewards] Got rewards for provider ${provider.btc_pk}: ${JSON.stringify(Object.keys(rewards.reward_gauges || {}))}`);
-                                    
-                                    // Return provider info with rewards
-                                    return {
-                                        btc_pk: provider.btc_pk,
-                                        babylon_address: provider.addr,
-                                        rewards: this.formatRewards(rewards)
-                                    };
-                                } else {
-                                    logger.warn(`[Rewards] Provider ${provider.btc_pk} has no Babylon address`);
-                                    return null;
-                                }
-                            } catch (error) {
-                                logger.error(`[Rewards] Error fetching rewards for provider ${provider.btc_pk}:`, error);
-                                // Return provider with empty rewards
+                // Process each provider in the batch
+                const batchResults = await Promise.all(
+                    batch.map(async (provider) => {
+                        try {
+                            // If provider has a Babylon address
+                            if (provider.addr) {
+                                // logger.info(`[Rewards] Fetching rewards for provider ${provider.btc_pk} with address ${provider.addr}`);
+                                
+                                const rewards = await this.getStakeholderRewards(
+                                    provider.addr,
+                                    network
+                                );
+                                
+                                // logger.info(`[Rewards] Got rewards for provider ${provider.btc_pk}: ${JSON.stringify(Object.keys(rewards.reward_gauges || {}))}`);
+                                
+                                // Return provider info with rewards
                                 return {
                                     btc_pk: provider.btc_pk,
                                     babylon_address: provider.addr,
-                                    rewards: {}
+                                    rewards: this.formatRewards(rewards)
                                 };
+                            } else {
+                                logger.warn(`[Rewards] Provider ${provider.btc_pk} has no Babylon address`);
+                                return null;
                             }
-                        })
-                    );
-                    
-                    // Add non-null results to the array
-                    rewardsArray.push(...batchResults.filter(r => r !== null));
-                    
-                    // Add a small delay between batches to avoid rate limiting
-                    if (i < batches - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
+                        } catch (error) {
+                            logger.error(`[Rewards] Error fetching rewards for provider ${provider.btc_pk}:`, error);
+                            // Return provider with empty rewards
+                            return {
+                                btc_pk: provider.btc_pk,
+                                babylon_address: provider.addr,
+                                rewards: {}
+                            };
+                        }
+                    })
+                );
+                
+                // Add non-null results to the array
+                rewardsArray.push(...batchResults.filter(r => r !== null));
+                
+                // Add a small delay between batches to avoid rate limiting
+                if (i < batches - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
-                
-                logger.info(`[Rewards] Final summary contains ${rewardsArray.length} providers with rewards`);
-                
-                // Return an object with the rewards array
-                return { rewards: rewardsArray };
             }
-        );
+            
+           // // logger.info(`[Rewards] Final summary contains ${rewardsArray.length} providers with rewards`);
+            
+            // Create the result object
+            const result = { rewards: rewardsArray };
+            
+            // Store in cache
+            await this.cache.set(cacheKey, result, this.CACHE_TTL.REWARDS_SUMMARY);
+            // // logger.info(`[Rewards] Stored results in cache with key: ${cacheKey}`);
+            
+            return result;
+        } catch (error) {
+            logger.error(`[Rewards] Error fetching rewards summary for ${network}:`, error);
+            return { rewards: [] };
+        }
     }
 }
 

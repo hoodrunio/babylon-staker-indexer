@@ -117,10 +117,15 @@ export class StakeholderRewardsController {
      */
     public async getRewardsSummary(req: any, res: any) {
         try {
-            const network = req.network || Network.MAINNET;
+            // Make sure we're explicitly passing a valid network parameter
+            const network = req.network === 'testnet' ? Network.TESTNET : Network.MAINNET;
+            
+            // logger.info(`Getting rewards summary for network: ${network}`);
             
             // Get rewards summary for all providers
             const result = await this.stakeholderRewardsService.getAllFinalityProviderRewardsSummary(network);
+            
+            // logger.info(`Got rewards summary with ${result.rewards ? result.rewards.length : 0} providers`);
             
             // Return the formatted response
             return res.json({
