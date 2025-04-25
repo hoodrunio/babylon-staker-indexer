@@ -5,6 +5,7 @@ import { Network } from '../../../types/finality';
 import { v4 as uuidv4 } from 'uuid';
 import { FinalityEpochService } from '../../../services/finality/FinalityEpochService';
 import { FinalityDelegationService } from '../../../services/finality/FinalityDelegationService';
+import { StakeholderRewardsController } from '../../controllers/finality/StakeholderRewardsController';
 import { BTCDelegationStatus } from '../../../types/finality/btcstaking';
 import { SortField, SortOrder } from '../../../services/finality/FinalityDelegationService';
 import { logger } from '../../../utils/logger';
@@ -463,5 +464,9 @@ router.get('/epoch/current/stats/:fpBtcPkHex', async (req, res) => {
         });
     }
 });
+
+// Initialize the stakeholder rewards controller and register its routes
+const stakeholderRewardsController = StakeholderRewardsController.getInstance();
+stakeholderRewardsController.registerRoutes(router);
 
 export default router;

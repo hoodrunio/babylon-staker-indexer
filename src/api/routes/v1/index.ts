@@ -14,6 +14,7 @@ import blockProcessorRouter from './block-processor';
 import newStakersRouter from './new-stakers';
 import statsRouter from './stats';
 import cosmwasmRouter from './cosmwasm.routes';
+import rewardsRouter from './rewards';
 
 const v1Router = Router();
 
@@ -35,5 +36,6 @@ v1Router.use('/block-processor', blockProcessorRouter);
 v1Router.use('/stakers', newStakersRouter);
 v1Router.use('/stats', statsRouter);
 v1Router.use('/cosmwasm', cosmwasmRouter);
+v1Router.use('/rewards', rewardsRouter);
 
 export default v1Router;
