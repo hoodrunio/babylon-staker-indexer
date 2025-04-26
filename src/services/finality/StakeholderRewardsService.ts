@@ -227,9 +227,9 @@ export class StakeholderRewardsService {
         try {
             // Handle different token denominations
             if (denom === 'ubbn') {
-                // Convert from micro BBN to BBN (divide by 1,000,000)
+                // Convert from micro BABY to BABY (divide by 1,000,000)
                 const bbnAmount = Number(amount) / 1_000_000;
-                return `${bbnAmount.toFixed(6)} BBN`;
+                return `${bbnAmount.toFixed(6)} BABY`;
             }
             
             // For other denominations, return as is with denom
