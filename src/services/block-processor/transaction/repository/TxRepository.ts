@@ -113,33 +113,189 @@ export class TxRepository implements ITxRepository {
   }
   
   /**
-   * Gets paginated transactions
+   * Gets paginated transactions using optimized cursor-based pagination
    */
   public async getPaginatedTransactions(
     network: Network,
     page: number = 1,
     limit: number = 50,
-    sortOptions: Record<string, any> = { height: -1, time: -1 }
+    sortOptions: Record<string, any> = { height: -1, time: -1 },
+    cursor: string | null = null
+  ): Promise<{
+    transactions: ITransaction[],
+    total: number,
+    pages: number,
+    nextCursor: string | null
+  }> {
+    try {
+      // Start timing for performance measurement
+      const startTime = process.hrtime();
+      
+      // Ensure limit is valid
+      limit = Math.min(100, Math.max(1, limit));
+      
+      // Get total count for pagination
+      const totalPromise = this.getTxCount(network);
+      
+      // Prepare query
+      let query: any = { network };
+      
+      // If we have a cursor, decode it and use it as a reference point
+      if (cursor) {
+        try {
+          const decodedCursor = JSON.parse(Buffer.from(cursor, 'base64').toString('utf-8'));
+          if (decodedCursor.height && decodedCursor.time) {
+            // Use $or for proper sorting based on both height and time
+            query.$or = [
+              { height: { $lt: decodedCursor.height } },
+              { 
+                height: decodedCursor.height,
+                time: { $lt: decodedCursor.time }
+              }
+            ];
+          }
+        } catch (error) {
+          logger.warn(`[TxRepository] Invalid cursor format: ${cursor}`);
+          // If cursor is invalid, proceed without it
+        }
+      } else if (page > 1) {
+        // If a specific page is requested without cursor, we need to use skip/limit
+        // This is less efficient but maintains backwards compatibility
+        logger.warn(`[TxRepository] Using skip/limit pagination for page ${page} without cursor`);
+      }
+      
+      // Get transactions
+      const projection = { 
+        _id: 0,
+        txHash: 1, 
+        height: 1, 
+        status: 1, 
+        type: 1, 
+        time: 1, 
+        messageCount: 1, 
+        firstMessageType: 1 
+      };
+      
+      let txQuery = BlockchainTransaction.find(query, projection)
+        .sort(sortOptions)
+        .collation({ locale: 'en_US', numericOrdering: true })
+        .limit(limit + 1) // Get one extra to determine if there's a next page
+        .lean();
+      
+      // Only use skip if we absolutely need to (i.e., no cursor but specific page requested)
+      if (!cursor && page > 1) {
+        const skip = (page - 1) * limit;
+        txQuery = txQuery.skip(skip);
+      }
+      
+      // Execute query
+      const transactions = await txQuery;
+      
+      // Determine if we have next page and remove the extra item
+      const hasNextPage = transactions.length > limit;
+      if (hasNextPage) {
+        transactions.pop(); // Remove the extra item
+      }
+      
+      // Create next cursor if we have more pages
+      let nextCursor: string | null = null;
+      if (hasNextPage && transactions.length > 0) {
+        const lastItem = transactions[transactions.length - 1];
+        const cursorData = {
+          height: lastItem.height,
+          time: lastItem.time
+        };
+        nextCursor = Buffer.from(JSON.stringify(cursorData)).toString('base64');
+      }
+      
+      // Get total count (await the promise we started earlier)
+      const total = await totalPromise;
+      const pages = Math.ceil(total / limit);
+      
+      // Calculate performance metrics
+      const hrend = process.hrtime(startTime);
+      const executionTimeMs = hrend[0] * 1000 + hrend[1] / 1000000;
+      logger.debug(`[TxRepository] getPaginatedTransactions completed in ${executionTimeMs.toFixed(2)}ms`);
+      
+      return {
+        transactions,
+        total,
+        pages,
+        nextCursor
+      };
+    } catch (error) {
+      logger.error(`[TxRepository] Error getting paginated transactions: ${this.formatError(error)}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Find transactions using a custom query
+   * This is used for bidirectional cursor pagination
+   * @param query MongoDB query object
+   * @param sortOptions Sort options
+   * @param limit Maximum number of documents to return
+   * @returns Array of transaction documents
+   */
+  public async findTransactionsWithQuery(
+    query: Record<string, any>,
+    sortOptions: any = { height: -1, time: -1 },
+    limit: number = 1
+  ): Promise<ITransaction[]> {
+    try {
+      // Ensure limit is valid
+      limit = Math.min(100, Math.max(1, limit));
+      
+      // Standard projection for transactions
+      const projection = { 
+        _id: 0,
+        txHash: 1, 
+        height: 1, 
+        status: 1, 
+        type: 1, 
+        time: 1, 
+        messageCount: 1, 
+        firstMessageType: 1,
+        network: 1
+      };
+      
+      // Execute query with sort and limit
+      const transactions = await BlockchainTransaction.find(query, projection)
+        .sort(sortOptions)
+        .collation({ locale: 'en_US', numericOrdering: true })
+        .limit(limit)
+        .lean();
+      
+      return transactions;
+    } catch (error) {
+      logger.error(`[TxRepository] Error in findTransactionsWithQuery: ${this.formatError(error)}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Gets latest transactions with optimized range-based pagination
+   * This function should be used for getting the most recent transactions
+   */
+  public async getLatestTransactions(
+    network: Network,
+    limit: number = 50
   ): Promise<{
     transactions: ITransaction[],
     total: number,
     pages: number
   }> {
     try {
-      // Ensure page and limit are valid
-      page = Math.max(1, page); // Minimum page is 1
-      limit = Math.min(100, Math.max(1, limit)); // limit between 1 and 100
+      // Start timing for performance measurement
+      const startTime = process.hrtime();
+      
+      // Ensure limit is valid
+      limit = Math.min(100, Math.max(1, limit));
       
       // Get total count for pagination
-      const total = await this.getTxCount(network);
+      const totalPromise = this.getTxCount(network);
       
-      // Calculate total pages
-      const pages = Math.ceil(total / limit);
-      
-      // Calculate skip value for pagination
-      const skip = (page - 1) * limit;
-      
-      // Get transactions
+      // Use the network-specific index to get the latest transactions
       const transactions = await BlockchainTransaction.find(
         { network },
         { 
@@ -153,80 +309,19 @@ export class TxRepository implements ITxRepository {
           firstMessageType: 1 
         }
       )
-      .sort(sortOptions)
+      .sort({ height: -1, time: -1 }) // Sort by height and time descending
       .collation({ locale: 'en_US', numericOrdering: true })
-      .skip(skip)
       .limit(limit)
       .lean();
       
-      return {
-        transactions,
-        total,
-        pages
-      };
-    } catch (error) {
-      logger.error(`[TxRepository] Error getting paginated transactions: ${this.formatError(error)}`);
-      throw error;
-    }
-  }
-  
-  /**
-   * Gets transactions with range-based pagination
-   * This is an alternative pagination method that uses a reference point instead of skip/limit
-   */
-  public async getTransactionsWithRangePagination(
-    network: Network,
-    limit: number = 50,
-    lastItem: any = null
-  ): Promise<{
-    transactions: ITransaction[],
-    total: number,
-    pages: number
-  }> {
-    try {
-      // Ensure limit is valid
-      limit = Math.min(100, Math.max(1, limit)); // limit between 1 and 100
-      
-      // Get total count for pagination
-      const total = await this.getTxCount(network);
-      
-      // Calculate total pages
+      // Get total count (await the promise we started earlier)
+      const total = await totalPromise;
       const pages = Math.ceil(total / limit);
       
-      // Prepare query
-      let query: any = { network };
-      
-      // If we have a last item, use it as a reference point
-      if (lastItem) {
-        query.$or = [
-          // First sort by height
-          { height: { $lt: lastItem.height } },
-          // If same height, sort by time
-          { 
-            height: lastItem.height,
-            time: { $lt: lastItem.time }
-          }
-        ];
-      }
-      
-      // Get transactions
-      const transactions = await BlockchainTransaction.find(
-        query,
-        { 
-          _id: 0,
-          txHash: 1, 
-          height: 1, 
-          status: 1, 
-          type: 1, 
-          time: 1, 
-          messageCount: 1, 
-          firstMessageType: 1 
-        }
-      )
-      .sort({ height: -1, time: -1 })
-      .collation({ locale: 'en_US', numericOrdering: true })
-      .limit(limit)
-      .lean();
+      // Calculate performance metrics
+      const hrend = process.hrtime(startTime);
+      const executionTimeMs = hrend[0] * 1000 + hrend[1] / 1000000;
+      logger.debug(`[TxRepository] getLatestTransactions completed in ${executionTimeMs.toFixed(2)}ms`);
       
       return {
         transactions,
@@ -234,7 +329,7 @@ export class TxRepository implements ITxRepository {
         pages
       };
     } catch (error) {
-      logger.error(`[TxRepository] Error getting transactions with range pagination: ${this.formatError(error)}`);
+      logger.error(`[TxRepository] Error getting latest transactions: ${this.formatError(error)}`);
       throw error;
     }
   }

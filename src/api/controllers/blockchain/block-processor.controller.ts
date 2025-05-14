@@ -151,10 +151,11 @@ export class BlockProcessorController {
 
   /**
    * Get latest transactions with pagination
+   * Supports both traditional page-based and cursor-based pagination
    */
   public getLatestTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { network } = req.query;
+      const { network, cursor } = req.query;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 50;
       
@@ -198,11 +199,18 @@ export class BlockProcessorController {
       const startTime = Date.now();
       
       // Get latest transactions with pagination
-      const result = await this.txStorage.getLatestTransactions(network as Network, page, limit);
+      // Use cursor if provided, otherwise use traditional page-based pagination
+      const cursorStr = cursor ? cursor.toString() : null;
+      const result = await this.txStorage.getLatestTransactions(network as Network, page, limit, cursorStr);
       
       // Calculate processing duration
       const processingTime = Date.now() - startTime;
       logger.debug(`[BlockProcessorController] getLatestTransactions completed in ${processingTime}ms`);
+      
+      // Construct response metadata with pagination links
+      const metadata: Record<string, any> = {
+        processingTime: `${processingTime}ms`
+      };
       
       // Set HTTP response
       res.status(200).json({
@@ -211,9 +219,7 @@ export class BlockProcessorController {
           transactions: result.transactions,
           pagination: result.pagination
         },
-        meta: {
-          processingTime: `${processingTime}ms`
-        }
+        meta: metadata
       });
     } catch (error) {
       logger.error(`[BlockProcessorController] Error getting latest transactions: ${error instanceof Error ? error.message : String(error)}`);

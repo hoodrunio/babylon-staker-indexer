@@ -30,13 +30,28 @@ export interface ITxRepository {
   getTxCount(network: Network): Promise<number>;
   
   /**
-   * Gets paginated transactions
+   * Gets paginated transactions using optimized cursor-based pagination
    */
   getPaginatedTransactions(
     network: Network,
     page: number,
     limit: number,
-    sortOptions?: Record<string, any>
+    sortOptions?: Record<string, any>,
+    cursor?: string | null
+  ): Promise<{
+    transactions: ITransaction[],
+    total: number,
+    pages: number,
+    nextCursor: string | null
+  }>;
+  
+  /**
+   * Gets latest transactions with optimized range-based pagination
+   * This function should be used for getting the most recent transactions
+   */
+  getLatestTransactions(
+    network: Network,
+    limit: number
   ): Promise<{
     transactions: ITransaction[],
     total: number,
@@ -44,18 +59,18 @@ export interface ITxRepository {
   }>;
   
   /**
-   * Gets transactions with range-based pagination
-   * This is an alternative pagination method that uses a reference point instead of skip/limit
+   * Find transactions using a custom query
+   * This is used for bidirectional cursor pagination
+   * @param query MongoDB query object
+   * @param sortOptions Sort options
+   * @param limit Maximum number of documents to return
+   * @returns Array of transaction documents
    */
-  getTransactionsWithRangePagination(
-    network: Network,
-    limit: number,
-    lastItem: any
-  ): Promise<{
-    transactions: ITransaction[],
-    total: number,
-    pages: number
-  }>;
+  findTransactionsWithQuery(
+    query: Record<string, any>,
+    sortOptions: Record<string, number>,
+    limit: number
+  ): Promise<ITransaction[]>;
   
   /**
    * Updates existing transactions with firstMessageType field

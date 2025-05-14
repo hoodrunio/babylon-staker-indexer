@@ -76,6 +76,8 @@ export interface PaginatedTxsResponse {
     page: number;
     limit: number;
     pages: number;
+    nextCursor?: string | null;
+    prevCursor?: string | null;
   };
 }
 

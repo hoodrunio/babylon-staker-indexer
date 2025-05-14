@@ -118,15 +118,17 @@ export class TxStorage implements ITxStorage {
      * @param network Network type
      * @param page Page number (1-based, default: 1)
      * @param limit Number of transactions per page (default: 50)
+     * @param cursor Optional cursor for optimized pagination
      * @returns Paginated transactions response
      */
     public async getLatestTransactions(
         network: Network,
         page: number = 1,
-        limit: number = 50
+        limit: number = 50,
+        cursor: string | null = null
     ): Promise<PaginatedTxsResponse> {
         try {
-            return await this.txService.getLatestTransactions(network, page, limit);
+            return await this.txService.getLatestTransactions(network, page, limit, cursor);
         } catch (error) {
             logger.error(`[TxStorage] Error getting latest transactions: ${this.formatError(error)}`);
             throw error;

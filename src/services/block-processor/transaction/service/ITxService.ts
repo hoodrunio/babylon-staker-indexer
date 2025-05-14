@@ -26,11 +26,17 @@ export interface ITxService {
   
   /**
    * Gets latest transactions with pagination
+   * @param network Network to query
+   * @param page Page number (optional)
+   * @param limit Results per page (optional)
+   * @param cursor Optional cursor for optimized pagination
+   * @returns Paginated transaction response
    */
   getLatestTransactions(
     network: Network,
     page?: number,
-    limit?: number
+    limit?: number,
+    cursor?: string | null
   ): Promise<PaginatedTxsResponse>;
   
   /**

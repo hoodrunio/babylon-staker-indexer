@@ -132,40 +132,59 @@ export class TxService implements ITxService {
   }
   
   /**
-   * Gets latest transactions with pagination
+   * Gets the latest transactions with optimized caching and pagination
+   * Implements a dual-layer caching strategy with background refresh
    */
   public async getLatestTransactions(
     network: Network,
     page: number = 1,
-    limit: number = 50
+    limit: number = 50,
+    cursor: string | null = null
   ): Promise<PaginatedTxsResponse> {
     try {
       // Ensure page and limit are valid
       page = Math.max(1, page); // Minimum page is 1
       limit = Math.min(100, Math.max(1, limit)); // limit between 1 and 100
       
-      // Cache key
-      const cacheKey = `${network}-${page}-${limit}`;
+      // Generate cache key based on parameters
+      const cacheKey = cursor ? 
+        `${network}-cursor-${cursor}-${limit}` : 
+        `${network}-page-${page}-${limit}`;
       
-      // Check cache
-      const cachedData = this.cacheManager.getCachedTransactions(cacheKey);
+      // For first page requests, use isFirstPage=true to prioritize hot cache
+      const isFirstPage = page === 1 && !cursor;
+      
+      // Check cache first
+      const cachedData = this.cacheManager.getCachedTransactions(cacheKey, isFirstPage);
       if (cachedData) {
+        // If we have cache data, use it immediately
+        // For first page (most frequently accessed page), asynchronously refresh the cache in background
+        if (isFirstPage && this.cacheManager.markRefreshInProgress(cacheKey)) {
+          // Don't await this - it refreshes cache in background without blocking response
+          this.refreshFirstPageCache(network, limit, cacheKey).catch(error => {
+            logger.error(`[TxService] Background cache refresh error: ${this.formatError(error)}`);
+          });
+        }
         return cachedData;
       }
       
       // Start time for performance measurement
       const startTime = Date.now();
       
-      // If page is 1, use standard pagination
-      if (page === 1) {
-        const { transactions, total, pages } = await this.txRepository.getPaginatedTransactions(
+      let result;
+      
+      // For first page, use the optimized getLatestTransactions method
+      if (isFirstPage) {
+        const { transactions, total, pages } = await this.txRepository.getLatestTransactions(
           network,
-          page,
           limit
         );
         
         // Map to SimpleTx
         const simpleTxs: SimpleTx[] = transactions.map((tx: ITransaction) => TxMapper.mapToSimpleTx(tx));
+        
+        // Generate next cursor for first page
+        const nextCursor = transactions.length > 0 ? this.generateCursor(transactions[transactions.length - 1]) : null;
         
         // Create response
         const response: PaginatedTxsResponse = {
@@ -174,104 +193,194 @@ export class TxService implements ITxService {
             total,
             page,
             limit,
-            pages
+            pages,
+            // First page doesn't need a previous cursor
+            nextCursor,
+            prevCursor: null
           }
         };
         
-        // Cache the last item for range-based pagination
-        if (transactions.length > 0) {
-          const lastItem = transactions[transactions.length - 1];
-          this.cacheManager.cachePaginationMarker(`${network}-page1-${limit}`, lastItem);
+        // Store cursor history for first page's next cursor
+        if (nextCursor) {
+          // For the next cursor of first page, the prev is null (no previous page)
+          this.cacheManager.storeCursorHistory(nextCursor, null, null);
+          logger.debug(`[TxService] Stored first page next cursor history: ${nextCursor}`);
         }
         
-        // Cache the response
-        this.cacheManager.cacheTransactions(cacheKey, response);
+        // Cache in hot tier
+        this.cacheManager.cacheTransactions(cacheKey, response, true);
         
-        // Log performance
-        const processingTime = Date.now() - startTime;
-        logger.debug(`[TxService] getLatestTransactions completed in ${processingTime}ms`);
+        // If we have results, store the latest block height for change detection
+        if (transactions.length > 0 && transactions[0].height) {
+          this.cacheManager.updateLatestBlockHeight(network, parseInt(transactions[0].height, 10));
+        }
         
-        return response;
+        result = response;
       } else {
-        // For subsequent pages, try to use range-based pagination
-        // Get the last item from the previous page
-        const previousPageKey = `${network}-page${page-1}-${limit}`;
-        const lastItem = this.cacheManager.getCachedPaginationMarker(previousPageKey);
+        // For other pages, use cursor-based pagination
+        const { transactions, total, pages, nextCursor } = await this.txRepository.getPaginatedTransactions(
+          network,
+          page,
+          limit,
+          { height: -1, time: -1 },
+          cursor
+        );
         
-        if (lastItem) {
-          // Use range-based pagination
-          const { transactions, total, pages } = await this.txRepository.getTransactionsWithRangePagination(
-            network,
-            limit,
-            lastItem
-          );
-          
-          // Map to SimpleTx
-          const simpleTxs: SimpleTx[] = transactions.map((tx: ITransaction) => TxMapper.mapToSimpleTx(tx));
-          
-          // Create response
-          const response: PaginatedTxsResponse = {
-            transactions: simpleTxs,
-            pagination: {
-              total,
-              page,
-              limit,
-              pages
+        // Map to SimpleTx
+        const simpleTxs: SimpleTx[] = transactions.map((tx: ITransaction) => TxMapper.mapToSimpleTx(tx));
+        
+        // Get previous and next cursor information
+        let prevCursor: string | null = null;
+        
+        // Check if we have cursor history for the current cursor
+        if (cursor) {
+          const history = this.cacheManager.getCursorHistory(cursor);
+          if (history) {
+            // Use saved prev cursor from history if available
+            prevCursor = history.prevCursor;
+            logger.debug(`[TxService] Using previous cursor from history: ${prevCursor}`);
+          } else {
+            // If we have transactions in the current page,
+            // calculate a possible previous cursor based on the first transaction
+            if (transactions.length > 0) {
+              // Get the first transaction of the current page
+              const firstTransaction = transactions[0];
+              
+              // Find transactions right before this one for the previous page
+              try {
+                // Use a different query to find items that would appear before the first item of the current page
+                const previousPageQuery = {
+                  network,
+                  $or: [
+                    { height: { $gt: firstTransaction.height } },
+                    { 
+                      height: firstTransaction.height,
+                      time: { $gt: firstTransaction.time } 
+                    }
+                  ]
+                };
+                
+                // Get one item before the current page's first item to calculate prev cursor
+                const prevPageItem = await this.txRepository.findTransactionsWithQuery(
+                  previousPageQuery,
+                  { height: -1, time: -1 },
+                  1
+                );
+                
+                if (prevPageItem && prevPageItem.length > 0) {
+                  prevCursor = this.generateCursor(prevPageItem[0]);
+                  logger.debug(`[TxService] Generated previous cursor from query: ${prevCursor}`);
+                }
+              } catch (err) {
+                logger.warn(`[TxService] Failed to generate prev cursor: ${this.formatError(err)}`);
+              }
             }
-          };
-          
-          // Cache the last item for range-based pagination
-          if (transactions.length > 0) {
-            const newLastItem = transactions[transactions.length - 1];
-            this.cacheManager.cachePaginationMarker(`${network}-page${page}-${limit}`, newLastItem);
           }
-          
-          // Cache the response
-          this.cacheManager.cacheTransactions(cacheKey, response);
-          
-          // Log performance
-          const processingTime = Date.now() - startTime;
-          logger.debug(`[TxService] getLatestTransactions with range pagination completed in ${processingTime}ms`);
-          
-          return response;
-        } else {
-          // Fall back to standard pagination if no last item found
-          logger.warn(`[TxService] No pagination marker found for ${previousPageKey}, falling back to standard pagination`);
-          
-          const { transactions, total, pages } = await this.txRepository.getPaginatedTransactions(
-            network,
-            page,
-            limit
-          );
-          
-          // Map to SimpleTx
-          const simpleTxs: SimpleTx[] = transactions.map((tx: ITransaction) => TxMapper.mapToSimpleTx(tx));
-          
-          // Create response
-          const response: PaginatedTxsResponse = {
-            transactions: simpleTxs,
-            pagination: {
-              total,
-              page,
-              limit,
-              pages
-            }
-          };
-          
-          // Cache the response
-          this.cacheManager.cacheTransactions(cacheKey, response);
-          
-          // Log performance
-          const processingTime = Date.now() - startTime;
-          logger.debug(`[TxService] getLatestTransactions with standard pagination completed in ${processingTime}ms`);
-          
-          return response;
         }
+        
+        // Create response
+        const response: PaginatedTxsResponse = {
+          transactions: simpleTxs,
+          pagination: {
+            total,
+            page,
+            limit,
+            pages,
+            nextCursor,
+            prevCursor
+          }
+        };
+        
+        // Store cursor history for bidirectional navigation
+        if (nextCursor) {
+          // For next cursor, current cursor is the previous
+          this.cacheManager.storeCursorHistory(nextCursor, cursor, null);
+          logger.debug(`[TxService] Stored next cursor history: ${nextCursor} with prev=${cursor}`);
+        }
+        
+        // For current cursor, store both previous and next
+        if (cursor) {
+          this.cacheManager.storeCursorHistory(cursor, prevCursor, nextCursor);
+          logger.debug(`[TxService] Updated cursor history: ${cursor} with prev=${prevCursor}, next=${nextCursor}`);
+        }
+        
+        // Cache in warm tier (not first page)
+        this.cacheManager.cacheTransactions(cacheKey, response, false);
+        
+        result = response;
       }
+      
+      // Log performance
+      const processingTime = Date.now() - startTime;
+      logger.debug(`[TxService] getLatestTransactions completed in ${processingTime}ms`);
+      
+      return result;
     } catch (error) {
-      logger.error(`[TxService] Error getting latest transactions: ${this.formatError(error)}`);
+      logger.error(`[TxService] Error in getLatestTransactions: ${this.formatError(error)}`);
       throw error;
     }
+  }
+  
+  /**
+   * Background refresh function for first page cache
+   * This runs asynchronously without blocking the response
+   */
+  private async refreshFirstPageCache(
+    network: Network,
+    limit: number,
+    cacheKey: string
+  ): Promise<void> {
+    try {
+      // Get fresh data
+      const { transactions, total, pages } = await this.txRepository.getLatestTransactions(
+        network,
+        limit
+      );
+      
+      // Map to SimpleTx
+      const simpleTxs: SimpleTx[] = transactions.map((tx: ITransaction) => TxMapper.mapToSimpleTx(tx));
+      
+      // Create response
+      const response: PaginatedTxsResponse = {
+        transactions: simpleTxs,
+        pagination: {
+          total,
+          page: 1,
+          limit,
+          pages,
+          nextCursor: transactions.length > 0 ? this.generateCursor(transactions[transactions.length - 1]) : null
+        }
+      };
+      
+      // Update the cache
+      this.cacheManager.cacheTransactions(cacheKey, response, true);
+      
+      // If we have results, store the latest block height
+      if (transactions.length > 0 && transactions[0].height) {
+        this.cacheManager.updateLatestBlockHeight(network, parseInt(transactions[0].height, 10));
+      }
+      
+      // Mark refresh as complete
+      this.cacheManager.completeRefresh(cacheKey);
+      
+    } catch (error) {
+      // Log error but don't propagate it since this is a background operation
+      logger.error(`[TxService] Error in refreshFirstPageCache: ${this.formatError(error)}`);
+      // Still mark as complete to avoid lock
+      this.cacheManager.completeRefresh(cacheKey);
+    }
+  }
+  
+  /**
+   * Generate a cursor from a transaction
+   * @param tx Transaction to generate cursor from
+   */
+  private generateCursor(tx: ITransaction): string {
+    const cursorData = {
+      height: tx.height,
+      time: tx.time
+    };
+    return Buffer.from(JSON.stringify(cursorData)).toString('base64');
   }
   
   /**
