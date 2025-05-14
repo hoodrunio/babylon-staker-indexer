@@ -9,6 +9,7 @@ import { BlockchainTransaction, ITransaction } from '../../../../database/models
 import { ITxRepository } from './ITxRepository';
 import { logger } from '../../../../utils/logger';
 import { TxMapper } from '../mapper/TxMapper';
+import { TransactionStatsService } from '../stats/TransactionStatsService';
 
 export class TxRepository implements ITxRepository {
   private static instance: TxRepository | null = null;
@@ -35,7 +36,7 @@ export class TxRepository implements ITxRepository {
   }
   
   /**
-   * Saves transaction to database
+   * Saves transaction to database and updates statistics
    */
   public async saveTx(tx: BaseTx, network: Network, firstMessageType?: string): Promise<void> {
     try {
@@ -44,7 +45,7 @@ export class TxRepository implements ITxRepository {
       
       try {
         // Save to database
-        await BlockchainTransaction.findOneAndUpdate(
+        const result = await BlockchainTransaction.findOneAndUpdate(
           {
             txHash: tx.txHash,
             network: network
@@ -61,6 +62,14 @@ export class TxRepository implements ITxRepository {
             setDefaultsOnInsert: true
           }
         );
+        
+        // Check if this was a new transaction (not an update)
+        const isNewTransaction = !result || result.isNew;
+        
+        if (isNewTransaction) {
+          // Update transaction stats (don't await to avoid blocking)
+          this.updateTransactionStats(network, tx.type, tx.height);
+        }
       } catch (dbError: any) {
         // Handle duplicate key errors gracefully
         if (dbError.code === 11000) {  // MongoDB duplicate key error code
@@ -74,6 +83,20 @@ export class TxRepository implements ITxRepository {
       logger.error(`[TxRepository] Error saving transaction to database: ${this.formatError(error)}`);
       throw error;
     }
+  }
+  
+  /**
+   * Updates transaction statistics after saving a new transaction
+   * This runs asynchronously to avoid blocking the main operation
+   * @private
+   */
+  private updateTransactionStats(network: Network, txType?: string, height?: string | number): void {
+    // Don't await to avoid blocking
+    TransactionStatsService.getInstance()
+      .incrementCount(network, txType, height)
+      .catch(error => {
+        logger.warn(`[TxRepository] Failed to update transaction stats: ${this.formatError(error)}`);
+      });
   }
   
   /**
@@ -102,13 +125,29 @@ export class TxRepository implements ITxRepository {
   
   /**
    * Gets total transaction count
+   * Uses pre-computed statistics to avoid expensive count operation
    */
   public async getTxCount(network: Network): Promise<number> {
     try {
-      return await BlockchainTransaction.countDocuments({ network });
+      // Use the stats service to get pre-computed count
+      const statsService = TransactionStatsService.getInstance();
+      const count = await statsService.getTotalCount(network);
+      
+      // Log the source of the count for debugging
+      logger.debug(`[TxRepository] Got transaction count from stats service: ${count}`);
+      
+      return count;
     } catch (error) {
       logger.error(`[TxRepository] Error getting transaction count: ${this.formatError(error)}`);
-      throw error;
+      
+      // Fall back to direct count only if stats service fails
+      logger.warn('[TxRepository] Falling back to direct count due to stats service error');
+      try {
+        return await BlockchainTransaction.countDocuments({ network });
+      } catch (fallbackError) {
+        logger.error(`[TxRepository] Fallback count failed: ${this.formatError(fallbackError)}`);
+        throw fallbackError;
+      }
     }
   }
   

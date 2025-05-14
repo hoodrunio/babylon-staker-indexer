@@ -16,6 +16,7 @@ import { Network } from './types/finality';
 import { StatsController } from './api/controllers/stats.controller';
 import { CosmWasmScheduler } from './services/cosmwasm/scheduler.service';
 import { errorHandler } from './api/errorHandlers';
+import { initializeTransactionStats } from './services/block-processor/transaction/stats/initializeStats';
 
 // Load environment variables
 dotenv.config();
@@ -88,6 +89,13 @@ async function startServer() {
     logger.info('Initializing BlockProcessorModule...');
     const blockProcessorModule = BlockProcessorModule.getInstance();
     blockProcessorModule.initialize();
+    
+    // Initialize transaction statistics (prevents expensive counts on requests)
+    logger.info('Initializing transaction statistics...');
+    initializeTransactionStats().catch(error => {
+        logger.error(`Error initializing transaction statistics: ${error instanceof Error ? error.message : String(error)}`);
+        // Non-fatal error, continue application startup
+    });
     
     // Initialize StatsController to start background cache refresh
     logger.info('Initializing StatsController with background cache refresh...');

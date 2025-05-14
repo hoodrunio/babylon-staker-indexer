@@ -7,13 +7,14 @@ import { BaseTx, PaginatedTxsResponse, SimpleTx } from '../../types/common';
 import { Network } from '../../../../types/finality';
 import { ITxService } from './ITxService';
 import { ITxRepository } from '../repository/ITxRepository';
-import { TxRepository } from '../repository/TxRepository';
+import { TxRepository } from '../repository/TxRepository'; 
 import { IFetcherAdapter } from './IFetcherAdapter';
 import { FetcherAdapter } from './FetcherAdapter';
-import { TxMapper } from '../mapper/TxMapper';
-import { TxCacheManager } from '../cache/TxCacheManager';
-import { logger } from '../../../../utils/logger';
 import { ITransaction } from '../../../../database/models/blockchain/Transaction';
+import { TxMapper } from '../mapper/TxMapper';
+import { logger } from '../../../../utils/logger';
+import { TxCacheManager } from '../cache/TxCacheManager';
+import { TransactionStatsService } from '../stats/TransactionStatsService';
 import { DEFAULT_LITE_STORAGE_CONFIG, LITE_STORAGE_TX_TYPES, LiteStorageConfig } from '../../types/common';
 
 export class TxService implements ITxService {
@@ -175,10 +176,18 @@ export class TxService implements ITxService {
       
       // For first page, use the optimized getLatestTransactions method
       if (isFirstPage) {
-        const { transactions, total, pages } = await this.txRepository.getLatestTransactions(
+        // Get transactions from repository
+        const { transactions } = await this.txRepository.getLatestTransactions(
           network,
           limit
         );
+        
+        // Use TransactionStatsService for total count (much faster than counting each time)
+        const statsService = TransactionStatsService.getInstance();
+        const total = await statsService.getTotalCount(network);
+        
+        // Calculate pages using the pre-computed total
+        const pages = Math.ceil(total / limit);
         
         // Map to SimpleTx
         const simpleTxs: SimpleTx[] = transactions.map((tx: ITransaction) => TxMapper.mapToSimpleTx(tx));
