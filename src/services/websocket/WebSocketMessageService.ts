@@ -184,9 +184,9 @@ export class WebSocketMessageService {
     private static instance: WebSocketMessageService | null = null;
     private messageProcessors: IMessageProcessor[] = [];
     private subscriptions: ISubscription[] = [];
+    private initialized: boolean = false;
     
     private constructor() {
-        this.initializeMessageProcessors();
         this.initializeSubscriptions();
     }
     
@@ -198,6 +198,10 @@ export class WebSocketMessageService {
     }
     
     private initializeMessageProcessors(): void {
+        if (this.initialized) {
+            return;
+        }
+        
         const eventHandler = BTCDelegationEventHandler.getInstance();
         const covenantEventHandler = CovenantEventHandler.getInstance();
         const governanceEventHandler = GovernanceEventHandler.getInstance();
@@ -227,6 +231,8 @@ export class WebSocketMessageService {
             // Add block and transaction processors
             ...blockTxProcessors
         ];
+        
+        this.initialized = true;
     }
     
     private initializeSubscriptions(): void {
@@ -244,6 +250,11 @@ export class WebSocketMessageService {
     }
     
     public async processMessage(message: any, network: Network): Promise<void> {
+        // Initialize message processors before processing the first message
+        if (!this.initialized) {
+            this.initializeMessageProcessors();
+        }
+        
         try {
             // Check if this is a subscription confirmation message
             if (message.result && !message.result.data) {

@@ -414,8 +414,12 @@ export class BTCDelegationService {
 
             if (existingDelegation) {
                 if (existingDelegation.state !== chainDel.status) {
-                    existingDelegation.state = this.mapStatusToEnum(chainDel.status);
-                    return await existingDelegation.save();
+                    await this.delegationModel.updateOne(
+                        { _id: existingDelegation._id },
+                        { state: this.mapStatusToEnum(chainDel.status) }
+                    );
+                    
+                    return await this.delegationModel.findById(existingDelegation._id);
                 }
                 return existingDelegation;
             }
@@ -436,7 +440,7 @@ export class BTCDelegationService {
                 stakingTime: chainDel.duration,
                 unbondingTime: chainDel.unbonding_time,
                 blockHeight: currentHeight,
-                txHash: chainDel.transaction_id_hex,
+                txHash: "",
                 finalityProviderBtcPksHex: chainDel.finality_provider_btc_pks_hex || [],
                 unbondingTxHex: chainDel.unbonding?.transaction_id,
                 unbondingTxIdHex: chainDel.unbonding?.transaction_id_hex,
@@ -475,7 +479,7 @@ export class BTCDelegationService {
                     stakingTxIdHex,
                     networkType: network.toLowerCase()
                 },
-                { state },
+                { state: this.mapStatusToEnum(state) },
                 { new: true }
             );
 

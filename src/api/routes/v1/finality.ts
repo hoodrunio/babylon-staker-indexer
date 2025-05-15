@@ -5,6 +5,7 @@ import { Network } from '../../../types/finality';
 import { v4 as uuidv4 } from 'uuid';
 import { FinalityEpochService } from '../../../services/finality/FinalityEpochService';
 import { FinalityDelegationService } from '../../../services/finality/FinalityDelegationService';
+import { StakeholderRewardsController } from '../../controllers/finality/StakeholderRewardsController';
 import { BTCDelegationStatus } from '../../../types/finality/btcstaking';
 import { SortField, SortOrder } from '../../../services/finality/FinalityDelegationService';
 import { logger } from '../../../utils/logger';
@@ -125,7 +126,153 @@ router.get('/signatures/:fpBtcPkHex/stream', async (req, res) => {
     }
 });
 
-// Get active finality providers
+// Get finality providers with optional status filter
+router.get('/providers', async (req, res) => {
+    try {
+        const network = req.network || Network.MAINNET;
+        const status = req.query.status as string || 'all';
+        const sortBy = req.query.sortBy as string || 'active_tvl'; // Default sorting by active_tvl
+        const sortOrder = req.query.sortOrder as string || 'desc'; // Default sort order is descending
+        
+        // Validate status parameter
+        if (status && !['active', 'inactive', 'all'].includes(status.toLowerCase())) {
+            return res.status(400).json({
+                error: 'Invalid status parameter. Must be one of: active, inactive, all'
+            });
+        }
+        
+        // Validate sortBy parameter
+        const validSortFields = ['active_tvl', 'total_tvl', 'delegation_count', 'power', 'commission'];
+        if (sortBy && !validSortFields.includes(sortBy.toLowerCase())) {
+            return res.status(400).json({
+                error: `Invalid sortBy parameter. Must be one of: ${validSortFields.join(', ')}`
+            });
+        }
+        
+        // Validate sortOrder parameter
+        if (sortOrder && !['asc', 'desc'].includes(sortOrder.toLowerCase())) {
+            return res.status(400).json({
+                error: 'Invalid sortOrder parameter. Must be one of: asc, desc'
+            });
+        }
+        
+        let providers;
+        
+        // Get providers based on status parameter
+        if (status.toLowerCase() === 'active') {
+            providers = await finalityProviderService.getActiveFinalityProviders(network);
+            logger.info(`Retrieved ${providers.length} active finality providers for ${network}`);
+        } else if (status.toLowerCase() === 'inactive') {
+            // Get all providers first
+            const allProviders = await finalityProviderService.getAllFinalityProviders(network);
+            // Then get active providers
+            const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+            
+            // Create a set of active provider keys for efficient lookup
+            const activePkSet = new Set(activeProviders.map(p => p.btc_pk));
+            
+            // Filter out active providers to get inactive ones
+            providers = allProviders.filter(p => !activePkSet.has(p.btc_pk));
+            logger.info(`Retrieved ${providers.length} inactive finality providers for ${network}`);
+        } else {
+            // Default to all providers
+            providers = await finalityProviderService.getAllFinalityProviders(network);            
+            logger.info(`Retrieved ${providers.length} total finality providers for ${network}`);
+        }
+
+        // ALWAYS get the latest active providers from the node
+        // Finality providers' active status can change over time
+        // We should not rely on the status query parameter for determining actual active status
+        const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+        const activePkSet = new Set(activeProviders.map(p => p.btc_pk));
+
+        // Get all delegation stats in a single query for better performance
+        const allDelegationStats = await finalityProviderService.getAllFinalityProviderDelegationStats(network);
+        
+        // Enhance providers with TVL and delegation count information
+        const providersWithStats = providers.map(provider => {
+            const delegationStats = allDelegationStats[provider.btc_pk] || {
+                active_tvl: "0 BTC",
+                active_tvl_sat: 0,
+                total_tvl: "0 BTC",
+                total_tvl_sat: 0,
+                delegation_count: 0
+            };
+            
+            // Add TVL, delegation count and status to provider data
+            return {
+                ...provider,
+                active_tvl: delegationStats.active_tvl,
+                active_tvl_sat: delegationStats.active_tvl_sat,
+                total_tvl: delegationStats.total_tvl,
+                total_tvl_sat: delegationStats.total_tvl_sat,
+                delegation_count: delegationStats.delegation_count,
+                status: {
+                    is_active: activePkSet.has(provider.btc_pk),
+                    jailed: provider.jailed || false
+                }
+            };
+        });
+
+        // Sort providers based on the specified field and order
+        const sortedProviders = [...providersWithStats].sort((a, b) => {
+            let aValue, bValue;
+            
+            switch(sortBy.toLowerCase()) {
+                case 'active_tvl':
+                    aValue = a.active_tvl_sat || 0;
+                    bValue = b.active_tvl_sat || 0;
+                    break;
+                case 'total_tvl':
+                    aValue = a.total_tvl_sat || 0;
+                    bValue = b.total_tvl_sat || 0;
+                    break;
+                case 'delegation_count':
+                    aValue = a.delegation_count || 0;
+                    bValue = b.delegation_count || 0;
+                    break;
+                case 'power':
+                    // Provider power can be calculated from voting_power in BabylonClient
+                    // But for now we'll use the TVL as a proxy since we don't have direct access
+                    aValue = a.active_tvl_sat || 0;
+                    bValue = b.active_tvl_sat || 0;
+                    break;
+                case 'commission':
+                    // Commission can be a string with a percentage, parse it
+                    aValue = parseFloat(a.commission || '0');
+                    bValue = parseFloat(b.commission || '0');
+                    break;
+                default:
+                    aValue = a.active_tvl_sat || 0;
+                    bValue = b.active_tvl_sat || 0;
+            }
+            
+            // Apply sort order
+            return sortOrder.toLowerCase() === 'asc' 
+                ? aValue - bValue 
+                : bValue - aValue;
+        });
+
+        return res.json({
+            providers: sortedProviders,
+            count: sortedProviders.length,
+            status: status.toLowerCase(),
+            sort: {
+                by: sortBy.toLowerCase(),
+                order: sortOrder.toLowerCase()
+            },
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        logger.error('Error getting finality providers:', error);
+        return res.status(500).json({
+            error: 'Internal server error',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+
+// For backward compatibility - redirect to filtered active providers
 router.get('/providers/active', async (req, res) => {
     try {
         const network = req.network || Network.MAINNET;
@@ -144,32 +291,29 @@ router.get('/providers/active', async (req, res) => {
     }
 });
 
-// Get all finality providers
-router.get('/providers', async (req, res) => {
-    try {
-        const network = req.network || Network.MAINNET;
-        const providers = await finalityProviderService.getAllFinalityProviders(network);
-        return res.json({
-            providers,
-            count: providers.length,
-            timestamp: Date.now()
-        });
-    } catch (error) {
-        logger.error('Error getting all finality providers:', error);
-        return res.status(500).json({
-            error: 'Internal server error',
-            message: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
-
 // Get finality provider details
 router.get('/providers/:fpBtcPkHex', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
         const network = req.network || Network.MAINNET;
-        const provider = await finalityProviderService.getFinalityProvider(fpBtcPkHex, network);
-        return res.json(provider);
+        
+        // Get the provider details and delegation statistics in parallel
+        const [provider, delegationStats] = await Promise.all([
+            finalityProviderService.getFinalityProvider(fpBtcPkHex, network),
+            finalityProviderService.getFinalityProviderDelegationStats(fpBtcPkHex, network)
+        ]);
+        
+        // Combine provider details with delegation statistics
+        const enrichedProvider = {
+            ...provider,
+            active_tvl: delegationStats.active_tvl,
+            active_tvl_sat: delegationStats.active_tvl_sat,
+            total_tvl: delegationStats.total_tvl,
+            total_tvl_sat: delegationStats.total_tvl_sat,
+            delegation_count: delegationStats.delegation_count
+        };
+        
+        return res.json(enrichedProvider);
     } catch (error) {
         logger.error('Error getting finality provider:', error);
         return res.status(500).json({
@@ -320,5 +464,9 @@ router.get('/epoch/current/stats/:fpBtcPkHex', async (req, res) => {
         });
     }
 });
+
+// Initialize the stakeholder rewards controller and register its routes
+const stakeholderRewardsController = StakeholderRewardsController.getInstance();
+stakeholderRewardsController.registerRoutes(router);
 
 export default router;

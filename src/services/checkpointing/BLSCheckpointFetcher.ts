@@ -45,91 +45,192 @@ export class BLSCheckpointFetcher {
     }
 
     public async fetchCheckpointForEpoch(epochNum: number, network: Network): Promise<void> {
-        try {
-            const height = await this.calculateBlockHeightForEpoch(epochNum, network);
-            await this.fetchCheckpointFromHeight(height, network);
-        } catch (error: any) {
-            const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
-            logger.error(`[BLSCheckpoint] Error fetching checkpoint for epoch ${epochNum}: ${errorMessage}`);
-            throw error;
+        const MAX_RETRIES = 3;
+        const INITIAL_RETRY_DELAY = 2000; // 2 seconds
+        const MAX_RETRY_DELAY = 10000; // 10 seconds
+        let retryCount = 0;
+
+        while (retryCount < MAX_RETRIES) {
+            try {
+                const height = await this.calculateBlockHeightForEpoch(epochNum, network);
+                await this.fetchCheckpointFromHeight(height, network);
+                // If successful, exit the loop
+                return;
+            } catch (error: any) {
+                const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+                
+                // Check if the error is about invalid height (future block)
+                const isHeightError = 
+                    errorMessage.includes('invalid height') || 
+                    errorMessage.includes('height must not be less than') ||
+                    errorMessage.includes('must be less than or equal to the current blockchain height');
+                
+                if (isHeightError) {
+                    logger.warn(`[BLSCheckpoint] Future block error when fetching checkpoint for epoch ${epochNum}. Will retry in a moment.`);
+                    
+                    // If it's a height error, retry after a delay
+                    retryCount++;
+                    
+                    // If we've hit the max retries, throw the error
+                    if (retryCount >= MAX_RETRIES) {
+                        logger.error(`[BLSCheckpoint] Max retries (${MAX_RETRIES}) exceeded for epoch ${epochNum}`);
+                        throw error;
+                    }
+                    
+                    // Calculate backoff delay with exponential increase
+                    const retryDelay = Math.min(
+                        MAX_RETRY_DELAY,
+                        INITIAL_RETRY_DELAY * Math.pow(2, retryCount)
+                    );
+                    
+                    logger.info(`[BLSCheckpoint] Retrying (${retryCount}/${MAX_RETRIES}) in ${retryDelay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    
+                    // Also rotate to the next node before retrying
+                    const client = this.validatorInfoService.getBabylonClient(network);
+                    if (client) {
+                        const newUrl = client.rotateNodeUrl();
+                        logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
+                    }
+                    
+                    // Continue to the next iteration
+                    continue;
+                }
+                
+                // For other errors, log and throw
+                logger.error(`[BLSCheckpoint] Error fetching checkpoint for epoch ${epochNum}: ${errorMessage}`);
+                throw error;
+            }
         }
     }
 
     private async fetchCheckpointFromHeight(height: number, network: Network): Promise<void> {
-        try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
-            }
+        const MAX_RETRIES = 3;
+        const INITIAL_RETRY_DELAY = 2000; // 2 seconds
+        const MAX_RETRY_DELAY = 10000; // 10 seconds
+        let retryCount = 0;
 
-            const baseUrl = client.getBaseUrl();
-            logger.info(`[BLSCheckpoint] Fetching checkpoint from height ${height} on ${network}`);
+        while (retryCount < MAX_RETRIES) {
+            try {
+                const client = this.validatorInfoService.getBabylonClient(network);
+                if (!client) {
+                    throw new Error(`No Babylon client found for network ${network}`);
+                }
 
-            const timestamp = await this.getTimestampForHeight(height, network);
-            const response = await axios.get(`${baseUrl}/cosmos/tx/v1beta1/txs/block/${height}`);
-            const txs = response.data.txs || [];
+                const baseUrl = client.getBaseUrl();
+                logger.info(`[BLSCheckpoint] Fetching checkpoint from height ${height} on ${network}`);
 
-            // Find checkpoint transactions
-            const checkpointTxs = txs.filter((tx: any) => {
-                const messages = tx.body?.messages || [];
-                return messages.some((msg: any) => 
-                    msg['@type'] === '/babylon.checkpointing.v1.MsgInjectedCheckpoint'
-                );
-            });
+                const timestamp = await this.getTimestampForHeight(height, network);
+                const response = await axios.get(`${baseUrl}/cosmos/tx/v1beta1/txs/block/${height}`);
+                const txs = response.data.txs || [];
 
-            if (checkpointTxs.length === 0) {
-                logger.info(`[BLSCheckpoint] No checkpoint transactions found at height ${height}`);
-                return;
-            }
+                // Find checkpoint transactions
+                const checkpointTxs = txs.filter((tx: any) => {
+                    const messages = tx.body?.messages || [];
+                    return messages.some((msg: any) => 
+                        msg['@type'] === '/babylon.checkpointing.v1.MsgInjectedCheckpoint'
+                    );
+                });
 
-            // Process each checkpoint transaction
-            for (const tx of checkpointTxs) {
-                const checkpointMsgs = tx.body.messages.filter(
-                    (msg: any) => msg['@type'] === '/babylon.checkpointing.v1.MsgInjectedCheckpoint'
-                );
+                if (checkpointTxs.length === 0) {
+                    logger.info(`[BLSCheckpoint] No checkpoint transactions found at height ${height}`);
+                    return;
+                }
 
-                for (const msg of checkpointMsgs) {
-                    try {
-                        // Store checkpoint in MongoDB
-                        const checkpoint = {
-                            epoch_num: parseInt(msg.ckpt.ckpt.epoch_num),
-                            block_hash: convertBase64AddressToHex(msg.ckpt.ckpt.block_hash),
-                            bitmap: msg.ckpt.ckpt.bitmap,
-                            bls_multi_sig: msg.ckpt.ckpt.bls_multi_sig,
-                            status: msg.ckpt.status,
-                            bls_aggr_pk: msg.ckpt.bls_aggr_pk,
-                            power_sum: msg.ckpt.power_sum,
-                            network,
-                            lifecycle: msg.ckpt.lifecycle || [],
-                            timestamp: timestamp
-                        };
+                // Process each checkpoint transaction
+                for (const tx of checkpointTxs) {
+                    const checkpointMsgs = tx.body.messages.filter(
+                        (msg: any) => msg['@type'] === '/babylon.checkpointing.v1.MsgInjectedCheckpoint'
+                    );
 
-                        await BLSCheckpoint.findOneAndUpdate(
-                            { 
-                                epoch_num: checkpoint.epoch_num,
-                                network 
-                            },
-                            checkpoint,
-                            { upsert: true, new: true }
-                        );
+                    for (const msg of checkpointMsgs) {
+                        try {
+                            // Store checkpoint in MongoDB
+                            const checkpoint = {
+                                epoch_num: parseInt(msg.ckpt.ckpt.epoch_num),
+                                block_hash: convertBase64AddressToHex(msg.ckpt.ckpt.block_hash),
+                                bitmap: msg.ckpt.ckpt.bitmap,
+                                bls_multi_sig: msg.ckpt.ckpt.bls_multi_sig,
+                                status: msg.ckpt.status,
+                                bls_aggr_pk: msg.ckpt.bls_aggr_pk,
+                                power_sum: msg.ckpt.power_sum,
+                                network,
+                                lifecycle: msg.ckpt.lifecycle || [],
+                                timestamp: timestamp
+                            };
 
-                        // Process validator votes if available
-                        if (msg.extended_commit_info?.votes) {
-                            await this.processValidatorVotes(msg.extended_commit_info.votes, checkpoint.epoch_num, network, timestamp);
+                            await BLSCheckpoint.findOneAndUpdate(
+                                { 
+                                    epoch_num: checkpoint.epoch_num,
+                                    network 
+                                },
+                                checkpoint,
+                                { upsert: true, new: true }
+                            );
+
+                            // Process validator votes if available
+                            if (msg.extended_commit_info?.votes) {
+                                await this.processValidatorVotes(msg.extended_commit_info.votes, checkpoint.epoch_num, network, timestamp);
+                            }
+
+                        } catch (error: any) {
+                            logger.error(`[BLSCheckpoint] Error processing checkpoint message: ${error.message || 'Unknown error'}`);
+                            continue;
                         }
-
-                    } catch (error: any) {
-                        logger.error(`[BLSCheckpoint] Error processing checkpoint message: ${error.message || 'Unknown error'}`);
-                        continue;
                     }
                 }
-            }
 
-            logger.info(`[BLSCheckpoint] Successfully processed ${checkpointTxs.length} checkpoint transaction(s) from height ${height}`);
-        } catch (error: any) {
-            const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
-            logger.error(`[BLSCheckpoint] Error fetching checkpoint from height ${height}: ${errorMessage}`);
-            throw error;
+                logger.info(`[BLSCheckpoint] Successfully processed ${checkpointTxs.length} checkpoint transaction(s) from height ${height}`);
+                // If successful, exit the retry loop
+                return;
+            } catch (error: any) {
+                const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+                
+                // Check if the error is about invalid height (future block)
+                const isHeightError = 
+                    errorMessage.includes('invalid height') || 
+                    errorMessage.includes('height must not be less than') ||
+                    errorMessage.includes('must be less than or equal to the current blockchain height');
+                
+                // Check for HTTP 500 error that could be related to node sync issues
+                const isServerError = error.response?.status === 500;
+                
+                if (isHeightError || isServerError) {
+                    logger.warn(`[BLSCheckpoint] Error fetching checkpoint from height ${height}: ${errorMessage}. Will retry with another node.`);
+                    
+                    // Increment retry counter
+                    retryCount++;
+                    
+                    // If we've hit the max retries, throw the error
+                    if (retryCount >= MAX_RETRIES) {
+                        logger.error(`[BLSCheckpoint] Max retries (${MAX_RETRIES}) exceeded for height ${height}`);
+                        throw error;
+                    }
+                    
+                    // Calculate backoff delay with exponential increase
+                    const retryDelay = Math.min(
+                        MAX_RETRY_DELAY,
+                        INITIAL_RETRY_DELAY * Math.pow(2, retryCount)
+                    );
+                    
+                    logger.info(`[BLSCheckpoint] Retrying (${retryCount}/${MAX_RETRIES}) in ${retryDelay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    
+                    // Rotate to the next node before retrying
+                    const client = this.validatorInfoService.getBabylonClient(network);
+                    if (client) {
+                        const newUrl = client.rotateNodeUrl();
+                        logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
+                    }
+                    
+                    // Continue to the next iteration
+                    continue;
+                }
+                
+                // For other errors, log and throw
+                logger.error(`[BLSCheckpoint] Error fetching checkpoint from height ${height}: ${errorMessage}`);
+                throw error;
+            }
         }
     }
 

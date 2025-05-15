@@ -4,6 +4,9 @@ import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { BlockStorage } from '../../../services/block-processor/storage/BlockStorage';
 import { TxStorage } from '../../../services/block-processor/storage/TxStorage';
+import { BlockTimeService } from '../../../services/BlockTimeService';
+import { FutureBlockError } from '../../../types/errors';
+import { BabylonClient } from '../../../clients/BabylonClient';
 
 /**
  * Block Processor Controller
@@ -148,10 +151,11 @@ export class BlockProcessorController {
 
   /**
    * Get latest transactions with pagination
+   * Supports both traditional page-based and cursor-based pagination
    */
   public getLatestTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { network } = req.query;
+      const { network, cursor } = req.query;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 50;
       
@@ -195,11 +199,18 @@ export class BlockProcessorController {
       const startTime = Date.now();
       
       // Get latest transactions with pagination
-      const result = await this.txStorage.getLatestTransactions(network as Network, page, limit);
+      // Use cursor if provided, otherwise use traditional page-based pagination
+      const cursorStr = cursor ? cursor.toString() : null;
+      const result = await this.txStorage.getLatestTransactions(network as Network, page, limit, cursorStr);
       
       // Calculate processing duration
       const processingTime = Date.now() - startTime;
       logger.debug(`[BlockProcessorController] getLatestTransactions completed in ${processingTime}ms`);
+      
+      // Construct response metadata with pagination links
+      const metadata: Record<string, any> = {
+        processingTime: `${processingTime}ms`
+      };
       
       // Set HTTP response
       res.status(200).json({
@@ -208,9 +219,7 @@ export class BlockProcessorController {
           transactions: result.transactions,
           pagination: result.pagination
         },
-        meta: {
-          processingTime: `${processingTime}ms`
-        }
+        meta: metadata
       });
     } catch (error) {
       logger.error(`[BlockProcessorController] Error getting latest transactions: ${error instanceof Error ? error.message : String(error)}`);
@@ -257,21 +266,124 @@ export class BlockProcessorController {
       
       // Get block with optional raw format
       const useRawFormat = raw === 'true';
-      const block = await this.blockStorage.getBlockByHeight(height, network as Network, useRawFormat);
       
-      if (!block) {
-        res.status(404).json({
+      try {
+        const block = await this.blockStorage.getBlockByHeight(height, network as Network, useRawFormat);
+        
+        if (!block) {
+          try {
+            // Block not found in database, check if it's a future block
+            const heightNum = parseInt(height.toString());
+            const babylonClient = BabylonClient.getInstance(network as Network);
+            const currentHeight = await babylonClient.getCurrentHeight();
+            
+            // If the requested height is greater than current height, it's a future block
+            if (heightNum > currentHeight) {
+              const blockTimeService = BlockTimeService.getInstance(network as Network);
+              const estimate = await blockTimeService.getEstimatedTimeToBlock(heightNum);
+              
+              res.status(404).json({
+                success: false,
+                status: 'future_block',
+                error: 'Block not found yet',
+                message: `Block height ${heightNum} is not available yet. Current height is ${currentHeight}.`,
+                data: {
+                  requestedHeight: heightNum,
+                  currentHeight: currentHeight,
+                  blockDifference: heightNum - currentHeight,
+                  estimatedTimeSeconds: estimate.estimatedSeconds,
+                  estimatedTimeFormatted: this.formatTimeEstimate(estimate.estimatedSeconds || 0)
+                }
+              });
+              return;
+            }
+          } catch (checkError) {
+            // If checking for future block fails, just continue with standard "not found" response
+            logger.debug(`[BlockProcessorController] Error checking if block ${height} is a future block: ${checkError instanceof Error ? checkError.message : String(checkError)}`);
+          }
+          
+          // Standard "not found" response
+          res.status(404).json({
+            success: false,
+            error: `Block at height ${height} not found`
+          });
+          return;
+        }
+
+        res.status(200).json({
+          success: true,
+          data: block,
+          format: useRawFormat ? 'raw' : 'standard'
+        });
+      } catch (error) {
+        // Check if it's a future block error
+        if (error instanceof FutureBlockError) {
+          // Return a special response for future blocks
+          const { targetHeight, currentHeight, blockDifference, estimatedSeconds } = error.details;
+        
+          res.status(404).json({
+            success: false,
+            status: 'future_block',
+            error: 'Block not found yet',
+            message: error.message,
+            data: {
+              requestedHeight: targetHeight,
+              currentHeight: currentHeight,
+              blockDifference: blockDifference,
+              estimatedTimeSeconds: estimatedSeconds ? Math.ceil(estimatedSeconds) : null,
+              estimatedTimeFormatted: this.formatTimeEstimate(estimatedSeconds || 0)
+            }
+          });
+          return;
+        } 
+        // Check if this might be a future block (not caught by error handler yet)
+        else if (error instanceof Error && 
+                (error.message.includes('height') || 
+                 error.message.includes('SPECIAL_ERROR_HEIGHT_NOT_AVAILABLE') || 
+                 error.message.includes('SPECIAL_ERROR_FUTURE_HEIGHT'))) {
+          
+          try {
+            // Get current height from BlockTimeService
+            const blockTimeService = BlockTimeService.getInstance(network as Network);
+            const heightNum = parseInt(height.toString());
+            
+            // Get current height directly from BabylonClient
+            const babylonClient = BabylonClient.getInstance(network as Network);
+            const currentHeight = await babylonClient.getCurrentHeight();
+            
+            // If requested height is in the future
+            if (heightNum > currentHeight) {
+              // Calculate estimated time
+              const estimate = await blockTimeService.getEstimatedTimeToBlock(heightNum);
+              
+              res.status(404).json({
+                success: false,
+                status: 'future_block',
+                error: 'Block not found yet',
+                message: `Block height ${heightNum} is not available yet. Current height is ${currentHeight}.`,
+                data: {
+                  requestedHeight: heightNum,
+                  currentHeight: currentHeight,
+                  blockDifference: heightNum - currentHeight,
+                  estimatedTimeSeconds: estimate.estimatedSeconds,
+                  estimatedTimeFormatted: this.formatTimeEstimate(estimate.estimatedSeconds || 0)
+                }
+              });
+              return;
+            }
+          } catch (innerError) {
+            logger.error(`[BlockProcessorController] Error calculating future block time: ${innerError instanceof Error ? innerError.message : String(innerError)}`);
+          }
+        }
+        
+        // If it's not a future block error or calculation failed, return generic error
+        logger.error(`[BlockProcessorController] Error getting block by height: ${error instanceof Error ? error.message : String(error)}`);
+        res.status(500).json({
           success: false,
-          error: `Block at height ${height} not found`
+          error: 'Failed to get block by height'
         });
         return;
       }
-
-      res.status(200).json({
-        success: true,
-        data: block,
-        format: useRawFormat ? 'raw' : 'standard'
-      });
     } catch (error) {
       logger.error(`[BlockProcessorController] Error getting block by height: ${error instanceof Error ? error.message : String(error)}`);
       res.status(500).json({
@@ -280,6 +392,26 @@ export class BlockProcessorController {
       });
     }
   };
+
+  /**
+   * Format time in seconds to a human-readable string
+   */
+  private formatTimeEstimate(seconds: number): string {
+    if (seconds <= 0) {
+      return 'unknown';
+    }
+    
+    if (seconds < 60) {
+      return `approximately ${Math.ceil(seconds)} seconds`;
+    } else if (seconds < 3600) {
+      const minutes = Math.ceil(seconds / 60);
+      return `approximately ${minutes} minutes`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.ceil((seconds % 3600) / 60);
+      return `approximately ${hours} hours ${minutes > 0 ? `${minutes} minutes` : ''}`;
+    }
+  }
 
   /**
    * Get transactions by block height

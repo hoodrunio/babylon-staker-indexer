@@ -78,6 +78,14 @@ if ! buf export buf.build/cosmwasm/wasmd --output "$PROTO_DIR"; then
 fi
 echo "CosmWasm protos downloaded to $PROTO_DIR"
 
+# Download IBC protos
+echo "Downloading IBC protos..."
+if ! buf export buf.build/cosmos/ibc --output "$PROTO_DIR"; then
+  echo "Error: Failed to download IBC protos"
+  exit 1
+fi
+echo "IBC protos downloaded to $PROTO_DIR"
+
 # Download Babylon protos
 echo "Downloading Babylon protos..."
 if [ ! -d "$PROTO_DIR/babylon" ]; then

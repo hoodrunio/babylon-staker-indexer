@@ -46,6 +46,7 @@ export interface ITransaction extends Document {
   updatedAt: Date;
   reason?: string;
   firstMessageType?: string;
+  isLite?: boolean;
 }
 
 const TransactionSchema = new Schema({
@@ -102,6 +103,12 @@ const TransactionSchema = new Schema({
   firstMessageType: {
     type: String,
     required: false,
+    index: true
+  },
+  isLite: {
+    type: Boolean,
+    required: false,
+    default: false,
     index: true
   }
 }, { 

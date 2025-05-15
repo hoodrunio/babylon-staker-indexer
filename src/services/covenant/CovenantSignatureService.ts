@@ -10,6 +10,18 @@ export class CovenantSignatureService {
         blockHeight: number
     ): Promise<void> {
         try {
+            // Check if record already exists
+            const existingRecord = await CovenantSignature.findOne({
+                stakingTxIdHex,
+                networkType,
+                txType: 'STAKING'
+            });
+
+            if (existingRecord) {
+                logger.info(`[Covenant] Signatures already exist for staking tx: ${stakingTxIdHex}, skipping creation`);
+                return;
+            }
+
             const signatures = covenantMembers.map(memberPkHex => ({
                 covenantBtcPkHex: memberPkHex,
                 signatureHex: '',
@@ -27,8 +39,19 @@ export class CovenantSignatureService {
                 missedCount: 0
             };
 
-            await CovenantSignature.create(newTxSignatures);
-            logger.info(`[Covenant] Created pending signatures for staking tx: ${stakingTxIdHex}`);
+            try {
+                await CovenantSignature.create(newTxSignatures);
+                logger.info(`[Covenant] Created pending signatures for staking tx: ${stakingTxIdHex}`);
+            } catch (createError: any) {
+                // Handle race conditions - another process might have created the record
+                // between our check and the actual creation
+                if (createError.code === 11000) { // MongoDB duplicate key error code
+                    logger.info(`[Covenant] Duplicate entry detected for staking tx: ${stakingTxIdHex}, skipping creation`);
+                    return; // Silently exit as this is an expected case in concurrent environments
+                } else {
+                    throw createError; // Re-throw other errors
+                }
+            }
         } catch (error) {
             logger.error(`[Covenant] Error creating pending signatures: ${error}`);
             throw error;

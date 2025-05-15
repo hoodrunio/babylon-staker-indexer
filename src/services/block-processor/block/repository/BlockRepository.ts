@@ -91,12 +91,13 @@ export class BlockRepository implements IBlockRepository {
   }
   
   /**
-   * Finds latest block
+   * Finds the latest block by height
    */
   public async findLatestBlock(network: Network): Promise<IBlock | null> {
     try {
       return await Block.findOne({ network })
         .sort({ height: -1 })
+        .collation({ locale: 'en_US', numericOrdering: true })
         .populate('proposer', 'moniker valoper_address logo_url')
         .populate('signatures.validator', 'moniker valoper_address logo_url');
     } catch (error) {
@@ -147,6 +148,7 @@ export class BlockRepository implements IBlockRepository {
       // Get blocks
       const blocks = await Block.find({ network })
         .sort(sortOptions)
+        .collation({ locale: 'en_US', numericOrdering: true })
         .skip(skip)
         .limit(limit)
         .populate('proposer', 'moniker valoper_address logo_url')

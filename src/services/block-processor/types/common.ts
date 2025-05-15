@@ -56,6 +56,7 @@ export interface BaseTx {
   meta?: TxMessage[];
   totalCount?: number;
   reason?: string;
+  isLite?: boolean;
 }
 
 export interface SimpleTx {
@@ -75,6 +76,8 @@ export interface PaginatedTxsResponse {
     page: number;
     limit: number;
     pages: number;
+    nextCursor?: string | null;
+    prevCursor?: string | null;
   };
 }
 
@@ -146,4 +149,24 @@ export class TxProcessorError extends Error {
     super(message);
     this.name = 'TxProcessorError';
   }
-} 
+}
+// Constants for filtering transaction types
+// These types will always be stored in lite mode and are not configurable from env
+export const LITE_STORAGE_TX_TYPES = [
+  '/babylon.finality.v1.MsgAddFinalitySig',
+  '/ibc.core.client.v1.MsgUpdateClient'
+];
+
+// Lite mode properties
+export interface LiteStorageConfig {
+  // Maximum number of allowed instances (per tx type)
+  maxStoredFullInstances: number;
+  // Full content retention period (hours)
+  fullContentRetentionHours: number;
+}
+
+// Default lite storage settings
+export const DEFAULT_LITE_STORAGE_CONFIG: LiteStorageConfig = {
+  maxStoredFullInstances: 5,
+  fullContentRetentionHours: 24
+};

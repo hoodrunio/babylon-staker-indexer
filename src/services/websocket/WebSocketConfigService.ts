@@ -52,6 +52,8 @@ export class WebSocketConfigService {
     }
     
     private initializeNetworkConfigs(): void {
+        let configuredNetworkCount = 0;
+        
         // Add mainnet configuration if exists
         try {
             const client = BabylonClient.getInstance(Network.MAINNET);
@@ -63,6 +65,7 @@ export class WebSocketConfigService {
             if (baseUrl && rpcUrl) {
                 const networkConfig = new NetworkConfig(Network.MAINNET, client);
                 this.networkConfigs.set(Network.MAINNET, networkConfig);
+                configuredNetworkCount++;
                 
                 // Log WS URL status
                 if (wsUrl) {
@@ -90,6 +93,7 @@ export class WebSocketConfigService {
             if (baseUrl && rpcUrl) {
                 const networkConfig = new NetworkConfig(Network.TESTNET, client);
                 this.networkConfigs.set(Network.TESTNET, networkConfig);
+                configuredNetworkCount++;
                 
                 // Log WS URL status
                 if (wsUrl) {
@@ -107,7 +111,7 @@ export class WebSocketConfigService {
         }
 
         // At least one network must be configured
-        if (this.networkConfigs.size === 0) {
+        if (configuredNetworkCount === 0) {
             throw new Error('[WebSocketConfig] No network configurations found. Please configure at least one network (MAINNET or TESTNET)');
         }
     }

@@ -160,7 +160,7 @@ export class TransactionClient extends BaseClient {
                         sender: delegateMsg.delegator_address,
                         message: {
                             validatorAddress: delegateMsg.validator_address,
-                            amount: parseFloat(delegateMsg.amount.amount) / 1000000, // Convert from uBBN to BBN
+                            amount: parseFloat(delegateMsg.amount.amount) / 1000000, // Convert from uBBN to BABY
                             denom: delegateMsg.amount.denom
                         }
                     };
@@ -226,7 +226,7 @@ export class TransactionClient extends BaseClient {
                         sender: undelegateMsg.delegator_address,
                         message: {
                             validatorAddress: undelegateMsg.validator_address,
-                            amount: parseFloat(undelegateMsg.amount.amount) / 1000000, // Convert from uBBN to BBN
+                            amount: parseFloat(undelegateMsg.amount.amount) / 1000000, // Convert from uBBN to BABY
                             denom: undelegateMsg.amount.denom
                         }
                     };
@@ -305,7 +305,7 @@ export class TransactionClient extends BaseClient {
                         sender: delegateMsg.delegator_address,
                         message: {
                             validatorAddress: delegateMsg.validator_address,
-                            amount: parseFloat(delegateMsg.amount.amount) / 1000000, // Convert from uBBN to BBN
+                            amount: parseFloat(delegateMsg.amount.amount) / 1000000, // Convert from uBBN to BABY
                             denom: delegateMsg.amount.denom
                         }
                     };
@@ -336,7 +336,7 @@ export class TransactionClient extends BaseClient {
                         sender: undelegateMsg.delegator_address,
                         message: {
                             validatorAddress: undelegateMsg.validator_address,
-                            amount: parseFloat(undelegateMsg.amount.amount) / 1000000, // Convert from uBBN to BBN
+                            amount: parseFloat(undelegateMsg.amount.amount) / 1000000, // Convert from uBBN to BABY
                             denom: undelegateMsg.amount.denom
                         }
                     };

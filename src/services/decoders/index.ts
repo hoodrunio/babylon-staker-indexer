@@ -1,7 +1,8 @@
 /**
- * Main export file for Transaction and Message decoders
+ * Export all decoder functionality
  */
 
-export * from './transaction';
-export * from './messageDecoders';
-export * from './messageTypes';
+// Public API
+export { decodeAnyMessage } from './messageDecoders';
+export { bufferToHex, convertBuffersToHex } from './utils/bufferUtils';
+export { DecodedMessage, MessageDecoder, SpecialCaseHandler } from './types';

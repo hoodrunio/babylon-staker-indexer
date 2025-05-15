@@ -1,7 +1,7 @@
 import { Tx } from '../../generated/proto/cosmos/tx/v1beta1/tx';
 import { base64ToBytes } from '../../utils/base64';
-import { decodeAnyMessage, convertBuffersToHex } from './messageDecoders';
-
+import { decodeAnyMessage } from './messageDecoders';
+import { convertBuffersToHex } from './utils/bufferUtils';
 /**
  * Transaction decoder result type
  */
@@ -97,11 +97,11 @@ export function decodeTx(txBase64: string): DecodedTx {
     }) || [];
     
     // Convert buffers to hex and Long values to normal values
-    // const processedTx = convertLongValues(convertBuffersToHex(tx)) as any;
+    const processedTx = convertLongValues(convertBuffersToHex(tx)) as any;
     const processedMessages = convertLongValues(decodedMessages);
     
     return {
-      //tx: processedTx,
+      tx: processedTx,
       messages: processedMessages,
       //rawBytes: txBytes
     };
@@ -110,7 +110,7 @@ export function decodeTx(txBase64: string): DecodedTx {
     console.error('Transaction decode error:', errorMessage);
     
     return {
-      //tx: null,
+      tx: null,
       messages: [],
       //rawBytes: txBytes,
       error: `Failed to decode transaction: ${errorMessage}`

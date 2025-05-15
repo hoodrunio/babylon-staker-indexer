@@ -5,6 +5,7 @@ import { BabylonIndexer } from './services/BabylonIndexer';
 import { FinalitySignatureService } from './services/finality/FinalitySignatureService';
 import { WebsocketService } from './services/WebsocketService';
 import { BTCDelegationService } from './services/btc-delegations/BTCDelegationService';
+import { BTCTransactionCrawlerService } from './services/btc-delegations/BTCTransactionCrawlerService';
 import cors from 'cors';
 import compression from 'compression';
 import { logger } from './utils/logger';
@@ -12,6 +13,9 @@ import { GovernanceIndexerService } from './services/governance/GovernanceIndexe
 import { BabylonClient } from './clients/BabylonClient';
 import { BlockProcessorModule } from './services/block-processor/BlockProcessorModule';
 import { Network } from './types/finality';
+import { StatsController } from './api/controllers/stats.controller';
+import { CosmWasmScheduler } from './services/cosmwasm/scheduler.service';
+import { errorHandler } from './api/errorHandlers';
 
 // Load environment variables
 dotenv.config();
@@ -56,10 +60,7 @@ async function startServer() {
     });
 
     // Error handling
-    app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        logger.error(err.stack);
-        res.status(500).json({ error: 'Something broke!' });
-    });
+    app.use(errorHandler);
 
     // Start server
     app.listen(port, () => {
@@ -74,10 +75,23 @@ async function startServer() {
     logger.info('Initializing BTCDelegationService...');
     BTCDelegationService.getInstance();
     
+    // Initialize BTCTransactionCrawlerService (this will start periodic crawling)
+    if (process.env.BTC_TX_CRAWLER_ENABLED !== 'false') {
+        logger.info('Initializing BTCTransactionCrawlerService...');
+        BTCTransactionCrawlerService.getInstance();
+        logger.info('BTCTransactionCrawlerService initialized and started successfully');
+    } else {
+        logger.info('BTCTransactionCrawlerService is disabled by configuration');
+    }
+    
     // Initialize BlockProcessorModule
     logger.info('Initializing BlockProcessorModule...');
     const blockProcessorModule = BlockProcessorModule.getInstance();
     blockProcessorModule.initialize();
+    
+    // Initialize StatsController to start background cache refresh
+    logger.info('Initializing StatsController with background cache refresh...');
+    StatsController.initialize();
     
     // Start historical sync if BLOCK_SYNC_ENABLED is true
     if (process.env.BLOCK_SYNC_ENABLED === 'true') {
@@ -117,6 +131,16 @@ async function startServer() {
     // Initialize governance indexer
     const governanceIndexer = new GovernanceIndexerService(babylonClient);
     governanceIndexer.start();
+
+    // Initialize and start CosmWasm indexer if enabled
+    if (process.env.COSMWASM_INDEXER_ENABLED === 'true') {
+        logger.info('Initializing CosmWasm indexer...');
+        // Use the singleton pattern to get the CosmWasm scheduler
+        const cosmWasmScheduler = CosmWasmScheduler.getInstance();
+        
+        cosmWasmScheduler.start();
+        logger.info('CosmWasm indexer started successfully');
+    }
 
     // Special shutdown process for PM2
     const shutdown = async (signal: string) => {

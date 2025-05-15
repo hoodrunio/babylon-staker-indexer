@@ -105,7 +105,7 @@ export class TxMapper {
       }));
       
       // Use timestamp if available, otherwise current time
-      const time = rawTx.timestamp || new Date().toISOString();
+      const time = rawTx.timestamp || rawTx.tx_response.timestamp;
       
       // Create base transaction object
       const baseTx: BaseTx = {

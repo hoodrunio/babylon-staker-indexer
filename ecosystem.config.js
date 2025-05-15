@@ -5,12 +5,12 @@ module.exports = {
     instances: 1,
     autorestart: true,
     watch: false,
-    max_memory_restart: '4G',
+    max_memory_restart: '8G',
     env: {
       NODE_ENV: 'production',
       PM2_USAGE: 'true'
     },
-    kill_timeout: 600,      // Give application 10 minutes to shutdown
+    kill_timeout: 30,      // Give application 10 minutes to shutdown
     wait_ready: true,        // Wait for process.send('ready') message
     listen_timeout: 6000,    // Maximum wait time for ready message
     shutdown_with_message: true,  // Send shutdown message

@@ -5,8 +5,11 @@ import { GovernanceClient } from './GovernanceClient';
 import { FinalityClient } from './FinalityClient';
 import { StakingClient } from './StakingClient';
 import { CosmosClient } from './CosmosClient';
+import { CosmWasmClient } from './CosmWasmClient';
 import { logger } from '../utils/logger';
 import { CustomError } from './BaseClient';
+import { handleFutureBlockError } from '../utils/futureBlockHelper';
+import { FutureBlockError } from '../types/errors';
 
 // New interface and classes for URL management
 export interface EndpointConfig {
@@ -99,6 +102,7 @@ export class BabylonClient {
     private readonly finalityClient: FinalityClient;
     private readonly stakingClient: StakingClient;
     private readonly cosmosClient: CosmosClient;
+    private readonly _cosmWasmClient: CosmWasmClient;
 
     private readonly network: Network;
     private readonly urlManager: UrlManager;
@@ -117,6 +121,7 @@ export class BabylonClient {
         this.finalityClient = this.createFinalityClient();
         this.stakingClient = this.createStakingClient();
         this.cosmosClient = this.createCosmosClient();
+        this._cosmWasmClient = this.createCosmWasmClient();
     }
 
     /**
@@ -257,7 +262,19 @@ export class BabylonClient {
     }
 
     /**
-     * Rotates connection endpoints and creates new clients in case of failure
+     * Creates a CosmWasmClient instance
+     */
+    private createCosmWasmClient(): CosmWasmClient {
+        return new CosmWasmClient(
+            this.network,
+            this.urlManager.getNodeUrl(),
+            this.urlManager.getRpcUrl(),
+            this.urlManager.getWsUrl()
+        );
+    }
+
+    /**
+     * Rotates all clients to use the next URL in their respective endpoint lists
      */
     private rotateClients(): void {
         logger.info(`[BabylonClient] Rotating connection endpoints for ${this.network}`);
@@ -267,28 +284,16 @@ export class BabylonClient {
         this.urlManager.rotateRpcUrl();
         this.urlManager.rotateWsUrl();
 
-        // Create new clients
-        try {
-            const newBlockClient = this.createBlockClient();
-            const newTransactionClient = this.createTransactionClient();
-            const newGovernanceClient = this.createGovernanceClient();
-            const newFinalityClient = this.createFinalityClient();
-            const newStakingClient = this.createStakingClient();
-            const newCosmosClient = this.createCosmosClient();
+        // Recreate clients with Object.defineProperty to reassign readonly properties
+        Object.defineProperty(this, 'blockClient', { value: this.createBlockClient() });
+        Object.defineProperty(this, 'transactionClient', { value: this.createTransactionClient() });
+        Object.defineProperty(this, 'governanceClient', { value: this.createGovernanceClient() });
+        Object.defineProperty(this, 'finalityClient', { value: this.createFinalityClient() });
+        Object.defineProperty(this, 'stakingClient', { value: this.createStakingClient() });
+        Object.defineProperty(this, 'cosmosClient', { value: this.createCosmosClient() });
+        Object.defineProperty(this, '_cosmWasmClient', { value: this.createCosmWasmClient() });
 
-            // If all succeed, update the existing clients
-            Object.defineProperty(this, 'blockClient', { value: newBlockClient });
-            Object.defineProperty(this, 'transactionClient', { value: newTransactionClient });
-            Object.defineProperty(this, 'governanceClient', { value: newGovernanceClient });
-            Object.defineProperty(this, 'finalityClient', { value: newFinalityClient });
-            Object.defineProperty(this, 'stakingClient', { value: newStakingClient });
-            Object.defineProperty(this, 'cosmosClient', { value: newCosmosClient });
-
-            logger.info(`[BabylonClient] Successfully rotated to new endpoints for ${this.network}`);
-        } catch (error) {
-            logger.error(`[BabylonClient] Failed to rotate clients for ${this.network}:`, error);
-            throw error;
-        }
+        logger.info(`[BabylonClient] Successfully rotated to new endpoints for ${this.network}`);
     }
 
     /**
@@ -304,15 +309,24 @@ export class BabylonClient {
             } catch (error) {
                 logger.warn(`[BabylonClient] Operation failed on attempt ${attempt + 1}/${maxRetries} for ${this.network}`);
 
-                // Check special error types
-                // Transaction not found error
-                // If the same error occurred in the previous attempt, terminate
-                // If this is the first time we encounter this error, save it and try with a different URL
-                // Height not available error
-                // If the same error occurred in the previous attempt, terminate
-                // If this is the first time we encounter this error, save it and try with a different URL
-                // Invalid Hex format error
-                // For hex format errors, throw the error directly without any rotation
+                // Check if this is a future block error
+                if (error instanceof Error && error.name === 'HeightNotAvailableError') {
+                    try {
+                        // Try to enrich the error with estimated time information
+                        const enhancedError = await handleFutureBlockError(error, this.network);
+                        
+                        // If successfully converted to FutureBlockError, throw it directly
+                        if (enhancedError instanceof FutureBlockError) {
+                            logger.info(`[BabylonClient] Future block detected: ${enhancedError.message}`);
+                            throw enhancedError;
+                        }
+                        
+                        // Otherwise, continue with normal error handling
+                    } catch (enrichError) {
+                        // If enhancing the error fails, just continue with normal error handling
+                        logger.warn(`[BabylonClient] Failed to enhance future block error: ${enrichError instanceof Error ? enrichError.message : String(enrichError)}`);
+                    }
+                }
 
                 // Check special error types
                 if (error instanceof Error) {
@@ -344,6 +358,83 @@ export class BabylonClient {
                     }
                 }
 
+                // Check for JSON-RPC errors with "height must be less than or equal to the current blockchain height" message
+                if ((error as any).response?.data?.error?.data && 
+                    typeof (error as any).response.data.error.data === 'string' && 
+                    (error as any).response.data.error.data.includes('height') && 
+                    (error as any).response.data.error.data.includes('must be less than or equal to the current blockchain height')) {
+                    
+                    logger.info(`[BabylonClient] Block height not available (future block), stopping retries.`);
+                    
+                    // Extract the target height and current height from the error message
+                    const errorData = (error as any).response.data.error.data;
+                    const heightMatch = errorData.match(/height\s+(\d+)\s+must\s+be\s+less\s+than\s+or\s+equal\s+to\s+the\s+current\s+blockchain\s+height\s+(\d+)/i);
+                    
+                    let targetHeight: number | undefined;
+                    let currentBlockchainHeight: number | undefined;
+                    
+                    if (heightMatch && heightMatch.length >= 3) {
+                        targetHeight = parseInt(heightMatch[1]);
+                        currentBlockchainHeight = parseInt(heightMatch[2]);
+                    }
+                    
+                    // Create a special error for height not available with additional data
+                    const heightNotAvailableError: CustomError = new Error('SPECIAL_ERROR_FUTURE_HEIGHT');
+                    heightNotAvailableError.name = 'HeightNotAvailableError';
+                    heightNotAvailableError.originalError = error;
+                    
+                    // Add extracted height information to the error
+                    if (targetHeight && currentBlockchainHeight) {
+                        heightNotAvailableError.details = {
+                            targetHeight,
+                            currentBlockchainHeight,
+                            blockDifference: targetHeight - currentBlockchainHeight
+                        };
+                    }
+                    
+                    throw heightNotAvailableError;
+                }
+
+                // Also check for direct JSON-RPC error format
+                if ((error as any).error?.message && 
+                    typeof (error as any).error.message === 'string' && 
+                    (error as any).error.message.includes('Internal error') &&
+                    (error as any).error.data && 
+                    typeof (error as any).error.data === 'string' && 
+                    (error as any).error.data.includes('height') && 
+                    (error as any).error.data.includes('must be less than or equal to the current blockchain height')) {
+                    
+                    logger.info(`[BabylonClient] Block height not available in JSON-RPC format (future block), stopping retries.`);
+                    
+                    // Extract the target height and current height from the error message
+                    const errorData = (error as any).error.data;
+                    const heightMatch = errorData.match(/height\s+(\d+)\s+must\s+be\s+less\s+than\s+or\s+equal\s+to\s+the\s+current\s+blockchain\s+height\s+(\d+)/i);
+                    
+                    let targetHeight: number | undefined;
+                    let currentBlockchainHeight: number | undefined;
+                    
+                    if (heightMatch && heightMatch.length >= 3) {
+                        targetHeight = parseInt(heightMatch[1]);
+                        currentBlockchainHeight = parseInt(heightMatch[2]);
+                    }
+                    
+                    // Create a special error for height not available with additional data
+                    const heightNotAvailableError: CustomError = new Error('SPECIAL_ERROR_FUTURE_HEIGHT');
+                    heightNotAvailableError.name = 'HeightNotAvailableError';
+                    heightNotAvailableError.originalError = error;
+                    
+                    // Add extracted height information to the error
+                    if (targetHeight && currentBlockchainHeight) {
+                        heightNotAvailableError.details = {
+                            targetHeight,
+                            currentBlockchainHeight,
+                            blockDifference: targetHeight - currentBlockchainHeight
+                        };
+                    }
+                    
+                    throw heightNotAvailableError;
+                }
+
                 // If not the last attempt, rotate clients and retry
                 if (attempt < maxRetries - 1) {
                     this.rotateClients();
@@ -359,7 +450,7 @@ export class BabylonClient {
         throw new Error(`[BabylonClient] Unexpected error in failover logic for ${this.network}`);
     }
 
-    public static getInstance(network: Network = Network.TESTNET): BabylonClient {
+    public static getInstance(network: Network = Network.MAINNET): BabylonClient {
         if (!BabylonClient.instances.has(network)) {
             BabylonClient.instances.set(network, new BabylonClient(network));
         }
@@ -400,6 +491,10 @@ export class BabylonClient {
 
     public getRpcUrl(): string {
         return this.blockClient.getRpcUrl();
+    }
+
+    public rotateNodeUrl(): string {
+        return this.urlManager.rotateNodeUrl();
     }
 
     // BlockClient methods
@@ -542,6 +637,13 @@ export class BabylonClient {
     }
 
     public async getDistributionParams(): Promise<any> {
-        return this.withFailover(() => this.cosmosClient.getDistributionParams());
+        return this.cosmosClient.getDistributionParams();
+    }
+
+    /**
+     * Access the CosmWasm client for low-level operations
+     */
+    public get cosmWasmClient(): CosmWasmClient {
+        return this._cosmWasmClient;
     }
 }
