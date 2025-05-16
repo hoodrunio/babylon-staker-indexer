@@ -117,12 +117,12 @@ const TransactionSchema = new Schema({
 });
 
 // Compound indexes
-TransactionSchema.index({ height: 1, network: 1 });
+TransactionSchema.index({ height: 1, network: 1 }, { collation: { locale: 'en_US', numericOrdering: true } });
 TransactionSchema.index({ txHash: 1, network: 1 }, { unique: true });
 TransactionSchema.index({ type: 1, time: 1 });
 TransactionSchema.index({ 'meta.typeUrl': 1 });
 // Optimized index for aggregation pipeline
-TransactionSchema.index({ network: 1, height: -1, time: -1 });
+TransactionSchema.index({ network: 1, height: -1, time: -1 }, { collation: { locale: 'en_US', numericOrdering: true } });
 
 // Model create and export
 export const BlockchainTransaction = mongoose.model<ITransaction>('BlockchainTransaction', TransactionSchema); 

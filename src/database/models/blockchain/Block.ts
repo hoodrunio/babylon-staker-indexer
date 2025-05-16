@@ -88,7 +88,10 @@ const BlockSchema = new Schema({
 });
 
 // Compound indexes
-BlockSchema.index({ height: 1, network: 1 }, { unique: true });
+BlockSchema.index({ height: 1, network: 1 }, { 
+  unique: true,
+  collation: { locale: 'en_US', numericOrdering: true } 
+});
 BlockSchema.index({ time: 1 });
 
 // Model create and export

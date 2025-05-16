@@ -68,6 +68,7 @@ export class BlockRepository implements IBlockRepository {
   public async findBlockByHeight(height: string, network: Network): Promise<IBlock | null> {
     try {
       return await Block.findOne({ height, network })
+        .collation({ locale: 'en_US', numericOrdering: true })
         .populate('proposer', 'moniker valoper_address logo_url')
         .populate('signatures.validator', 'moniker valoper_address logo_url');
     } catch (error) {

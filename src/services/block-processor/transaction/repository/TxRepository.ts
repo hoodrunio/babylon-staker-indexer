@@ -116,7 +116,8 @@ export class TxRepository implements ITxRepository {
    */
   public async findTxsByHeight(height: string, network: Network): Promise<ITransaction[]> {
     try {
-      return await BlockchainTransaction.find({ height, network });
+      return await BlockchainTransaction.find({ height, network })
+        .collation({ locale: 'en_US', numericOrdering: true });
     } catch (error) {
       logger.error(`[TxRepository] Error finding transactions by height: ${this.formatError(error)}`);
       throw error;
