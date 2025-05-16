@@ -450,7 +450,17 @@ export class BabylonClient {
         throw new Error(`[BabylonClient] Unexpected error in failover logic for ${this.network}`);
     }
 
-    public static getInstance(network: Network = Network.MAINNET): BabylonClient {
+    public static getInstance(network?: Network): BabylonClient {
+        // If network not specified, determine from env NETWORK value
+        if (!network) {
+            const envNetwork = process.env.NETWORK?.toLowerCase() || '';
+            if (envNetwork === 'testnet') {
+                network = Network.TESTNET;
+            } else {
+                // Default to MAINNET if not specified or if env value is not 'testnet'
+                network = Network.MAINNET;
+            }
+        }
         // First try to get or create an instance for the requested network
         try {
             if (!BabylonClient.instances.has(network)) {
