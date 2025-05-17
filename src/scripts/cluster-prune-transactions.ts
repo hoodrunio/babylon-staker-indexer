@@ -197,19 +197,16 @@ if (cluster.isPrimary) {
               // Much more efficient than skip() for large collections
               logger.info('Using aggregation framework for threshold determination');
               
-              // Get transaction with timestamp at the threshold position
-              // This avoids the slow skip() operation completely
+              // Get transaction with timestamp at the threshold position using a more memory-efficient approach
+              // Instead of collecting all timestamps in memory, we'll use $skip and $limit
               const sortedAggregate = await BlockchainTransaction.aggregate([
                 { $match: { network } },
                 { $sort: { time: 1 } },
-                { $group: {
-                    _id: null,
-                    threshold: { $push: "$time" }
-                  }
-                },
+                { $skip: transactionsToDelete - 1 },
+                { $limit: 1 },
                 { $project: {
                     _id: 0,
-                    thresholdTime: { $arrayElemAt: ["$threshold", transactionsToDelete - 1] }
+                    thresholdTime: "$time"
                   }
                 }
               ]).exec();
