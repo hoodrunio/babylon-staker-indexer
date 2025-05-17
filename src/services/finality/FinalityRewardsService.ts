@@ -38,7 +38,7 @@ export class StakeholderRewardsService {
     };
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance(Network.MAINNET);
+        this.babylonClient = BabylonClient.getInstance();
         this.cache = CacheService.getInstance();
     }
 
@@ -49,11 +49,11 @@ export class StakeholderRewardsService {
         return StakeholderRewardsService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
+    private getNetworkConfig() {
+        // Always use our initialized client
         return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
+            nodeUrl: this.babylonClient.getBaseUrl(),
+            rpcUrl: this.babylonClient.getRpcUrl()
         };
     }
 
@@ -133,16 +133,18 @@ export class StakeholderRewardsService {
     /**
      * Get rewards for a stakeholder (finality provider or BTC staker)
      * @param address BTC address in bech32 format (bbn1...)
-     * @param network Network to query
+     * @param network Optional network parameter (preserves Network enum usage)
      * @returns Reward gauges for the stakeholder
      */
-    public async getStakeholderRewards(address: string, network: Network = Network.MAINNET): Promise<RewardGaugesResponse> {
-        const cacheKey = `rewards:${address}:${network}`;
+    public async getStakeholderRewards(address: string, network?: Network): Promise<RewardGaugesResponse> {
+        // Use provided network or get from client
+        const useNetwork = network || this.babylonClient.getNetwork();
+        const cacheKey = `rewards:${address}:${useNetwork}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.REWARDS,
             async () => {
-                const { nodeUrl } = this.getNetworkConfig(network);
+                const { nodeUrl } = this.getNetworkConfig();
                 
                 const url = `${nodeUrl}/babylon/incentive/address/${address}/reward_gauge`;
                 const response = await fetch(url);
@@ -242,11 +244,13 @@ export class StakeholderRewardsService {
 
     /**
      * Get reward statistics for all active finality providers
-     * @param network Network to query
+     * @param network Optional network to use (preserves Network enum usage)
      * @returns Summary of rewards for all finality providers
      */
-    public async getAllFinalityProviderRewardsSummary(network: Network = Network.MAINNET): Promise<Map<string, any>> {
-        const cacheKey = `fp:rewards:summary:${network}`;
+    public async getAllFinalityProviderRewardsSummary(network?: Network): Promise<Map<string, any>> {
+        // Use provided network or get from client
+        const useNetwork = network || this.babylonClient.getNetwork();
+        const cacheKey = `rewards:summary:${useNetwork}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.REWARDS_SUMMARY,
@@ -272,8 +276,7 @@ export class StakeholderRewardsService {
                                 // If provider has a Babylon address
                                 if (provider.addr) {
                                     const rewards = await this.getStakeholderRewards(
-                                        provider.addr,
-                                        network
+                                        provider.addr
                                     );
                                     
                                     // Store summary keyed by BTC public key

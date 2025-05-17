@@ -33,8 +33,8 @@ export class FinalitySignatureService {
     private readonly missingBlocksLogCache: Map<string, number> = new Map();
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance(
-        );
+        // Initialize BabylonClient using the network from environment variable
+        this.babylonClient = BabylonClient.getInstance();
         this.historicalService = FinalityHistoricalService.getInstance();
         this.epochService = FinalityEpochService.getInstance();
         this.sseManager = FinalitySSEManager.getInstance();
@@ -58,11 +58,11 @@ export class FinalitySignatureService {
         return FinalitySignatureService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
+    private getNetworkConfig(network?: Network) {
+        // Always use our initialized client regardless of the network parameter
         return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
+            nodeUrl: this.babylonClient.getBaseUrl(),
+            rpcUrl: this.babylonClient.getRpcUrl()
         };
     }
 

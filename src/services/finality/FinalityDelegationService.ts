@@ -56,15 +56,8 @@ export class FinalityDelegationService {
         return FinalityDelegationService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
-        return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
-        };
-    }
 
-    private processDelegation(del: BTCDelegation): DelegationResponse | null {
+/* private processDelegation(del: BTCDelegation): DelegationResponse | null {
         if (!del) return null;
 
         const totalSat = Number(del.total_sat);
@@ -99,9 +92,10 @@ export class FinalityDelegationService {
         }
 
         return response;
-    }
-/* 
-    private async fetchDelegations(
+    } */
+
+        
+/* private async fetchDelegations(
         fpBtcPkHex: string,
         network: Network,
         pageKey?: string,

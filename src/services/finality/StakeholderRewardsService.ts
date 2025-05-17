@@ -38,7 +38,7 @@ export class StakeholderRewardsService {
     };
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance(Network.MAINNET);
+        this.babylonClient = BabylonClient.getInstance();
         this.cache = CacheService.getInstance();
     }
 
@@ -49,11 +49,11 @@ export class StakeholderRewardsService {
         return StakeholderRewardsService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
+    private getNetworkConfig() {
+        // Always use our initialized client
         return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
+            nodeUrl: this.babylonClient.getBaseUrl(),
+            rpcUrl: this.babylonClient.getRpcUrl()
         };
     }
 
@@ -136,13 +136,15 @@ export class StakeholderRewardsService {
      * @param network Network to query
      * @returns Reward gauges for the stakeholder
      */
-    public async getStakeholderRewards(address: string, network: Network = Network.MAINNET): Promise<RewardGaugesResponse> {
-        const cacheKey = `rewards:${address}:${network}`;
+    public async getStakeholderRewards(address: string, network?: Network): Promise<RewardGaugesResponse> {
+        // Use provided network or get current network from client
+        const useNetwork = network || this.babylonClient.getNetwork();
+        const cacheKey = `rewards:${address}:${useNetwork}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.REWARDS,
             async () => {
-                const { nodeUrl } = this.getNetworkConfig(network);
+                const { nodeUrl } = this.getNetworkConfig();
                 
                 const url = `${nodeUrl}/babylon/incentive/address/${address}/reward_gauge`;
                 const response = await fetch(url);
@@ -314,8 +316,7 @@ export class StakeholderRewardsService {
                                 // logger.info(`[Rewards] Fetching rewards for provider ${provider.btc_pk} with address ${provider.addr}`);
                                 
                                 const rewards = await this.getStakeholderRewards(
-                                    provider.addr,
-                                    network
+                                    provider.addr
                                 );
                                 
                                 // logger.info(`[Rewards] Got rewards for provider ${provider.btc_pk}: ${JSON.stringify(Object.keys(rewards.reward_gauges || {}))}`);
