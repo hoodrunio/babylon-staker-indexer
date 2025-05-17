@@ -6,12 +6,23 @@ import { logger } from '../../utils/logger';
 export class ValidatorHistoricalSyncService {
     private static instance: ValidatorHistoricalSyncService | null = null;
     private validatorSignatureService: ValidatorSignatureService;
+    private babylonClient: BabylonClient;
     private syncInProgress: Map<Network, boolean> = new Map();
     private readonly MAX_HISTORICAL_BLOCKS = 10000;
     private readonly BATCH_SIZE = 100;
 
     private constructor() {
         this.validatorSignatureService = ValidatorSignatureService.getInstance();
+        
+        try {
+            // Initialize BabylonClient using the network from environment variable
+            this.babylonClient = BabylonClient.getInstance(); // No default network
+            const network = this.babylonClient.getNetwork();
+            logger.info(`[ValidatorHistoricalSyncService] Client initialized successfully for network: ${network}`);
+        } catch (error) {
+            logger.error('[ValidatorHistoricalSyncService] Failed to initialize BabylonClient:', error);
+            throw new Error('[ValidatorHistoricalSyncService] Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
+        }
     }
 
     public static getInstance(): ValidatorHistoricalSyncService {
@@ -21,27 +32,29 @@ export class ValidatorHistoricalSyncService {
         return ValidatorHistoricalSyncService.instance;
     }
 
-    public async startSync(network: Network, client: BabylonClient): Promise<void> {
+    public async startSync(network?: Network): Promise<void> {
+        // If network is not provided, get it from the client
+        const currentNetwork = network || this.babylonClient.getNetwork();
         // Skip historical sync in non-production environment
         if (process.env.NODE_ENV !== 'production') {
-            logger.info(`[ValidatorHistoricalSyncService] Skipping sync for ${network} in non-production environment`);
+            logger.info(`[ValidatorHistoricalSyncService] Skipping sync for ${currentNetwork} in non-production environment`);
             return;
         }
         
         // Prevent multiple syncs for the same network
-        if (this.syncInProgress.get(network)) {
-            logger.info(`[ValidatorHistoricalSyncService] Sync already in progress for ${network}`);
+        if (this.syncInProgress.get(currentNetwork)) {
+            logger.info(`[ValidatorHistoricalSyncService] Sync already in progress for ${currentNetwork}`);
             return;
         }
 
         try {
-            this.syncInProgress.set(network, true);
+            this.syncInProgress.set(currentNetwork, true);
 
-            // Get current block height - Use BabylonClient's failover mechanism
-            const currentHeight = await client.getCurrentHeight();
+            // Get current block height
+            const currentHeight = await this.babylonClient.getCurrentHeight();
             
             // Get last processed block
-            const lastProcessedBlock = await this.validatorSignatureService.getLastProcessedBlock(network);
+            const lastProcessedBlock = await this.validatorSignatureService.getLastProcessedBlock(currentNetwork);
             
             // Calculate sync range
             let startHeight = Math.max(
@@ -49,7 +62,7 @@ export class ValidatorHistoricalSyncService {
                 currentHeight - this.MAX_HISTORICAL_BLOCKS
             );
 
-            logger.info(`[ValidatorHistoricalSyncService] Starting sync from block ${startHeight} to ${currentHeight} on ${network}`);
+            logger.info(`[ValidatorHistoricalSyncService] Starting sync from block ${startHeight} to ${currentHeight} on ${currentNetwork}`);
 
             // Process blocks in batches
             while (startHeight <= currentHeight) {
@@ -57,16 +70,16 @@ export class ValidatorHistoricalSyncService {
                 const batchPromises: Promise<void>[] = [];
 
                 for (let height = startHeight; height <= endHeight; height++) {
-                    batchPromises.push(this.processBlock(height, network, client));
+                    batchPromises.push(this.processBlock(height, currentNetwork));
                 }
 
                 try {
                     await Promise.all(batchPromises);
-                    logger.info(`[ValidatorHistoricalSyncService] Processed blocks ${startHeight} to ${endHeight} on ${network}`);
+                    logger.info(`[ValidatorHistoricalSyncService] Processed blocks ${startHeight} to ${endHeight} on ${currentNetwork}`);
                 } catch (error) {
                     if (this.isPruningError(error)) {
                         logger.warn(`[ValidatorHistoricalSyncService] Detected pruned blocks at height ${startHeight}, skipping to latest available block`);
-                        const availableBlock = await this.findEarliestAvailableBlock(startHeight, currentHeight, client);
+                        const availableBlock = await this.findEarliestAvailableBlock(startHeight, currentHeight);
                         if (availableBlock) {
                             startHeight = availableBlock;
                             continue;
@@ -81,18 +94,18 @@ export class ValidatorHistoricalSyncService {
                 startHeight = endHeight + 1;
             }
 
-            logger.info(`[ValidatorHistoricalSyncService] Completed historical sync for ${network} up to block ${currentHeight}`);
+            logger.info(`[ValidatorHistoricalSyncService] Completed historical sync for ${currentNetwork} up to block ${currentHeight}`);
         } catch (error) {
-            logger.error(`[ValidatorHistoricalSyncService] Error during historical sync for ${network}:`, error);
+            logger.error(`[ValidatorHistoricalSyncService] Error during historical sync for ${currentNetwork}:`, error);
         } finally {
-            this.syncInProgress.set(network, false);
+            this.syncInProgress.set(currentNetwork, false);
         }
     }
 
-    private async processBlock(height: number, network: Network, client: BabylonClient): Promise<void> {
+    private async processBlock(height: number, network: Network): Promise<void> {
         try {
-            // Use BabylonClient's getBlockByHeight method - utilize failover feature
-            const blockData = await client.getBlockByHeight(height);
+            // Use BabylonClient's getBlockByHeight method
+            const blockData = await this.babylonClient.getBlockByHeight(height);
             
             if (!blockData || !blockData.result || !blockData.result.block) {
                 logger.warn(`[ValidatorHistoricalSyncService] No valid block data returned for height ${height}`);
@@ -121,7 +134,7 @@ export class ValidatorHistoricalSyncService {
         }
     }
 
-    private async findEarliestAvailableBlock(start: number, end: number, client: BabylonClient): Promise<number | null> {
+    private async findEarliestAvailableBlock(start: number, end: number): Promise<number | null> {
         let left = start;
         let right = end;
         let earliestAvailable = null;
@@ -129,8 +142,8 @@ export class ValidatorHistoricalSyncService {
         while (left <= right) {
             const mid = Math.floor((left + right) / 2);
             try {
-                // Use BabylonClient's getBlockByHeight method - utilize failover feature
-                await client.getBlockByHeight(mid);
+                // Use BabylonClient's getBlockByHeight method
+                await this.babylonClient.getBlockByHeight(mid);
                 earliestAvailable = mid;
                 right = mid - 1;
             } catch (error) {

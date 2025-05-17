@@ -11,7 +11,8 @@ import mongoose from 'mongoose';
 
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
-    private readonly babylonClients: Map<Network, BabylonClient>;
+    private readonly babylonClient: BabylonClient;
+    private readonly network: Network; // Store the network from client
     private updateInterval: number;
     private maxRetries: number;
     private retryDelay: number;
@@ -19,29 +20,19 @@ export class ValidatorInfoService {
     private updatePromise: Promise<void> | null = null;
 
     private constructor() {
-        this.babylonClients = new Map();
         // Default values - can be overridden via environment variables
         this.updateInterval = parseInt(process.env.VALIDATOR_UPDATE_INTERVAL_MS || '3600000'); // 1 hour default
         this.maxRetries = parseInt(process.env.VALIDATOR_UPDATE_MAX_RETRIES || '3');
         this.retryDelay = parseInt(process.env.VALIDATOR_UPDATE_RETRY_DELAY_MS || '5000'); // 5 seconds
 
-        // Initialize clients for both networks
         try {
-            this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-            logger.info('[ValidatorInfo] Mainnet client initialized successfully');
+            // Initialize BabylonClient using the network from environment variable
+            this.babylonClient = BabylonClient.getInstance(); // No default network
+            this.network = this.babylonClient.getNetwork();
+            logger.info(`[ValidatorInfo] Client initialized successfully for network: ${this.network}`);
         } catch (error) {
-            logger.warn('[ValidatorInfo] Mainnet is not configured, skipping');
-        }
-
-        try {
-            this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-            logger.info('[ValidatorInfo] Testnet client initialized successfully');
-        } catch (error) {
-            logger.warn('[ValidatorInfo] Testnet is not configured, skipping');
-        }
-
-        if (this.babylonClients.size === 0) {
-            throw new Error('[ValidatorInfo] No network configurations found. Please configure at least one network.');
+            logger.error('[ValidatorInfo] Failed to initialize BabylonClient:', error);
+            throw new Error('[ValidatorInfo] Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
         }
 
         // Start periodic updates only if not in test environment
@@ -105,29 +96,21 @@ export class ValidatorInfoService {
 
     private async updateAllValidators(): Promise<void> {
         try {
-            // Update for all configured networks
-            const updatePromises = Array.from(this.babylonClients.entries()).map(
-                ([network, _]) => this.fetchAndUpdateValidators(network)
-            );
-            await Promise.all(updatePromises);
+            logger.info(`[ValidatorInfo] Updating validators for network: ${this.network}...`);
+            // Update validators only for the network from the client
+            await this.fetchAndUpdateValidators(this.network);
         } catch (error) {
-            logger.error('[ValidatorInfo] Error updating all validators:', error);
+            logger.error('[ValidatorInfo] Error updating validators:', error);
         }
     }
 
     private async fetchAndUpdateValidators(network: Network): Promise<void> {
         try {
-            const client = this.babylonClients.get(network);
-            if (!client) {
-                logger.warn(`[ValidatorInfo] No client configured for ${network}, skipping update`);
-                return;
-            }
-
-            const baseUrl = client.getBaseUrl();
+            const baseUrl = this.babylonClient.getBaseUrl();
             logger.info(`[ValidatorInfo] Fetching validators from ${network} using base URL: ${baseUrl}`);
 
             // Fetch validators from Tendermint API
-            const tmResponse = await axios.get(`${client.getRpcUrl()}/validators?page=1&per_page=500`);
+            const tmResponse = await axios.get(`${this.babylonClient.getRpcUrl()}/validators?page=1&per_page=500`);
             const tmValidators = tmResponse.data.result.validators;
             logger.info(`[ValidatorInfo] Found ${tmValidators.length} validators from Tendermint API`);
 
@@ -333,8 +316,8 @@ export class ValidatorInfoService {
         }
     }
 
-    public getBabylonClient(network: Network): BabylonClient | undefined {
-        return this.babylonClients.get(network);
+    public getBabylonClient(): BabylonClient {
+        return this.babylonClient;
     }
 
     private async matchValidatorWithFinalityProviders(validator: any, network: Network): Promise<void> {
