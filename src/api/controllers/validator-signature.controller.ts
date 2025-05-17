@@ -32,7 +32,6 @@ export class ValidatorSignatureController {
             }
 
             const signatures = await this.validatorSignatureService.getValidatorSignatures(
-                network as Network,
                 validatorAddress as string,
                 operatorAddress as string,
                 minSignatureRate ? Number(minSignatureRate) : undefined
@@ -65,7 +64,6 @@ export class ValidatorSignatureController {
             }
 
             const signature = await this.validatorSignatureService.getValidatorSignaturesByConsensusAddress(
-                network as Network,
                 consensusAddress
             );
 
@@ -104,7 +102,6 @@ export class ValidatorSignatureController {
             }
 
             const missedBlocks = await this.validatorSignatureService.getValidatorMissedBlocks(
-                network as Network,
                 validatorAddress,
                 startHeight ? Number(startHeight) : undefined,
                 endHeight ? Number(endHeight) : undefined
@@ -137,7 +134,6 @@ export class ValidatorSignatureController {
             }
 
             const signature = await this.validatorSignatureService.getValidatorSignaturesByValoperAddress(
-                network as Network,
                 valoperAddress
             );
 

@@ -158,8 +158,8 @@ export class StatsController {
 
             // Get all finality providers in parallel
             const [allFinalityProviders, activeFinalityProviders] = await Promise.all([
-                StatsController.finalityProviderService.getAllFinalityProviders(network),
-                StatsController.finalityProviderService.getActiveFinalityProviders(network)
+                StatsController.finalityProviderService.getAllFinalityProviders(),
+                StatsController.finalityProviderService.getActiveFinalityProviders()
             ]);
 
             // Get active delegations for TVL distribution

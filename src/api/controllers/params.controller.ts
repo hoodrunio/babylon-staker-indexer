@@ -38,7 +38,7 @@ class ParamsController {
         }
       }
 
-      const params = await ParamsService.getAllParams(targetNetwork);
+      const params = await ParamsService.getAllParams();
       res.json(params);
     } catch (error) {
       logger.error('Error in getAllParams:', error);
@@ -82,7 +82,7 @@ class ParamsController {
         });
       }
 
-      const allParams = await ParamsService.getAllParams(targetNetwork) as ParamsResponse;
+      const allParams = await ParamsService.getAllParams() as ParamsResponse;
       
       if (!allParams[module]) {
         return res.status(404).json({

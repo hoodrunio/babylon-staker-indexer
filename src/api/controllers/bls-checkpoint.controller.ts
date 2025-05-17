@@ -54,7 +54,7 @@ export class BLSCheckpointController {
             const limit = 100; // Maximum records per page
 
             // Get current epoch from service for validation
-            const currentEpoch = await BLSCheckpointController.blsCheckpointService.getCurrentEpoch(network);
+            const currentEpoch = await BLSCheckpointController.blsCheckpointService.getCurrentEpoch();
 
             let startEpochNum: number | undefined;
             let endEpochNum: number | undefined;
@@ -185,7 +185,7 @@ export class BLSCheckpointController {
             const network = req.network || Network.MAINNET;
             
             // Get current epoch from service
-            const currentEpoch = await BLSCheckpointController.blsCheckpointService.getCurrentEpoch(network) - 1;
+            const currentEpoch = await BLSCheckpointController.blsCheckpointService.getCurrentEpoch() - 1;
             
             // Get validator signatures for current epoch
             const validatorSignatures = await BLSValidatorSignatures.findOne({

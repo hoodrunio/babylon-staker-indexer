@@ -160,13 +160,13 @@ router.get('/providers', async (req, res) => {
         
         // Get providers based on status parameter
         if (status.toLowerCase() === 'active') {
-            providers = await finalityProviderService.getActiveFinalityProviders(network);
+            providers = await finalityProviderService.getActiveFinalityProviders();
             logger.info(`Retrieved ${providers.length} active finality providers for ${network}`);
         } else if (status.toLowerCase() === 'inactive') {
             // Get all providers first
-            const allProviders = await finalityProviderService.getAllFinalityProviders(network);
+            const allProviders = await finalityProviderService.getAllFinalityProviders();
             // Then get active providers
-            const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+            const activeProviders = await finalityProviderService.getActiveFinalityProviders();
             
             // Create a set of active provider keys for efficient lookup
             const activePkSet = new Set(activeProviders.map(p => p.btc_pk));
@@ -176,18 +176,18 @@ router.get('/providers', async (req, res) => {
             logger.info(`Retrieved ${providers.length} inactive finality providers for ${network}`);
         } else {
             // Default to all providers
-            providers = await finalityProviderService.getAllFinalityProviders(network);            
+            providers = await finalityProviderService.getAllFinalityProviders();            
             logger.info(`Retrieved ${providers.length} total finality providers for ${network}`);
         }
 
         // ALWAYS get the latest active providers from the node
         // Finality providers' active status can change over time
         // We should not rely on the status query parameter for determining actual active status
-        const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+        const activeProviders = await finalityProviderService.getActiveFinalityProviders();
         const activePkSet = new Set(activeProviders.map(p => p.btc_pk));
 
         // Get all delegation stats in a single query for better performance
-        const allDelegationStats = await finalityProviderService.getAllFinalityProviderDelegationStats(network);
+        const allDelegationStats = await finalityProviderService.getAllFinalityProviderDelegationStats();
         
         // Enhance providers with TVL and delegation count information
         const providersWithStats = providers.map(provider => {
@@ -276,7 +276,7 @@ router.get('/providers', async (req, res) => {
 router.get('/providers/active', async (req, res) => {
     try {
         const network = req.network || Network.MAINNET;
-        const providers = await finalityProviderService.getActiveFinalityProviders(network);
+        const providers = await finalityProviderService.getActiveFinalityProviders();
         return res.json({
             providers,
             count: providers.length,
@@ -299,8 +299,8 @@ router.get('/providers/:fpBtcPkHex', async (req, res) => {
         
         // Get the provider details and delegation statistics in parallel
         const [provider, delegationStats] = await Promise.all([
-            finalityProviderService.getFinalityProvider(fpBtcPkHex, network),
-            finalityProviderService.getFinalityProviderDelegationStats(fpBtcPkHex, network)
+            finalityProviderService.getFinalityProvider(fpBtcPkHex),
+            finalityProviderService.getFinalityProviderDelegationStats(fpBtcPkHex)
         ]);
         
         // Combine provider details with delegation statistics
@@ -328,7 +328,7 @@ router.get('/providers/:fpBtcPkHex/power', async (req, res) => {
     try {
         const { fpBtcPkHex } = req.params;
         const network = req.network || Network.MAINNET;
-        const power = await finalityProviderService.getFinalityProviderPower(fpBtcPkHex, network);
+        const power = await finalityProviderService.getFinalityProviderPower(fpBtcPkHex);
         return res.json(power);
     } catch (error) {
         logger.error('Error getting finality provider power:', error);
@@ -411,7 +411,6 @@ router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
         const finalityDelegationService = FinalityDelegationService.getInstance();
         const result = await finalityDelegationService.getFinalityProviderDelegations(
             fpBtcPkHex, 
-            network,
             pageNum,
             limitNum,
             {
@@ -434,7 +433,7 @@ router.get('/providers/:fpBtcPkHex/delegations', async (req, res) => {
 router.get('/epoch/current/stats', async (req, res) => {
     try {
         const network = req.network || Network.MAINNET;
-        const stats = await finalityEpochService.getCurrentEpochStats(network);
+        const stats = await finalityEpochService.getCurrentEpochStats();
         return res.json(stats);
     } catch (error) {
         logger.error('Error getting current epoch stats:', error);
@@ -452,8 +451,7 @@ router.get('/epoch/current/stats/:fpBtcPkHex', async (req, res) => {
         const network = req.network || Network.MAINNET;
         const stats = await finalityEpochService.getProviderCurrentEpochStats(
             fpBtcPkHex, 
-            finalitySignatureService.getSignatureStats.bind(finalitySignatureService), 
-            network
+            finalitySignatureService.getSignatureStats.bind(finalitySignatureService)
         );
         return res.json(stats);
     } catch (error) {
