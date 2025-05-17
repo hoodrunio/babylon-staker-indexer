@@ -250,8 +250,7 @@ export class StakeholderRewardsService {
     public async getAllFinalityProviderRewardsSummary(network: Network = Network.MAINNET): Promise<any> {
         // Ensure we're only using supported networks
         if (network !== Network.MAINNET && network !== Network.TESTNET) {
-            logger.warn(`[Rewards] Invalid network parameter, defaulting to MAINNET: ${network}`);
-            network = Network.MAINNET;
+            throw new Error(`Invalid network parameter ${network}`);
         }
         
         // Create a cache key with explicit network name to avoid confusion
