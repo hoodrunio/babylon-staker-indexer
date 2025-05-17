@@ -1,5 +1,4 @@
 import { CosmWasmClient } from '../../clients/CosmWasmClient';
-import { Contract } from '../../database/models/cosmwasm';
 import { logger } from '../../utils/logger';
 
 /**

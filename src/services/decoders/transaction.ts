@@ -1,4 +1,4 @@
-import { Tx } from '../../generated/proto/cosmos/tx/v1beta1/tx';
+import { Tx } from '@generated/proto/cosmos/tx/v1beta1/tx';
 import { base64ToBytes } from '../../utils/base64';
 import { decodeAnyMessage } from './messageDecoders';
 import { convertBuffersToHex } from './utils/bufferUtils';

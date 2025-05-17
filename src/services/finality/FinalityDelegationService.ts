@@ -44,9 +44,11 @@ export interface DelegationQueryOptions {
 export class FinalityDelegationService {
     private static instance: FinalityDelegationService | null = null;
     private babylonClient: BabylonClient;
+    private network: Network;
 
     private constructor() {
         this.babylonClient = BabylonClient.getInstance();
+        this.network = this.babylonClient.getNetwork();
     }
 
     public static getInstance(): FinalityDelegationService {
@@ -56,15 +58,8 @@ export class FinalityDelegationService {
         return FinalityDelegationService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
-        return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
-        };
-    }
 
-    private processDelegation(del: BTCDelegation): DelegationResponse | null {
+/* private processDelegation(del: BTCDelegation): DelegationResponse | null {
         if (!del) return null;
 
         const totalSat = Number(del.total_sat);
@@ -99,9 +94,10 @@ export class FinalityDelegationService {
         }
 
         return response;
-    }
-/* 
-    private async fetchDelegations(
+    } */
+
+        
+/* private async fetchDelegations(
         fpBtcPkHex: string,
         network: Network,
         pageKey?: string,
@@ -318,7 +314,7 @@ export class FinalityDelegationService {
 
     public async getFinalityProviderDelegations(
         fpBtcPkHex: string, 
-        network: Network = Network.MAINNET,
+        network: Network = this.network,
         page: number = 1,
         limit: number = 10,
         options?: DelegationQueryOptions

@@ -4,6 +4,7 @@ import { WebSocketConnectionService } from './WebSocketConnectionService';
 import { WebSocketOrchestratorService } from './WebSocketOrchestratorService';
 import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
 import { WebSocketConfigService } from './WebSocketConfigService';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 /**
  * WebSocket Health Monitor Service
@@ -16,6 +17,8 @@ export class WebSocketHealthMonitor {
     private connectionService: WebSocketConnectionService;
     private healthTracker: WebsocketHealthTracker;
     private configService: WebSocketConfigService;
+    private babylonClient: BabylonClient;
+    private network: Network;
     // Removed from constructor, will be used for lazy initialization
     private orchestratorService: WebSocketOrchestratorService | null = null;
     
@@ -26,8 +29,24 @@ export class WebSocketHealthMonitor {
     
     private constructor() {
         this.connectionService = WebSocketConnectionService.getInstance();
-        this.healthTracker = WebsocketHealthTracker.getInstance();
         this.configService = WebSocketConfigService.getInstance();
+        
+        try {
+            // Initialize BabylonClient using the network from environment variable
+            this.babylonClient = BabylonClient.getInstance();
+            this.network = this.babylonClient.getNetwork();
+            
+            // Initialize the healthTracker after we have set our network
+            this.healthTracker = WebsocketHealthTracker.getInstance();
+            
+            // Debug the network values to ensure they match
+            const trackState = this.healthTracker.getNetworkState(this.network);
+            logger.info(`[WebSocketHealthMonitor] Initialized with network: ${this.network}`);
+            logger.info(`[WebSocketHealthMonitor] Initial health tracker state: ${trackState ? 'Found' : 'Not found'}`);
+        } catch (error) {
+            logger.error('[WebSocketHealthMonitor] Failed to initialize BabylonClient:', error);
+            throw new Error('[WebSocketHealthMonitor] Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
+        }
     }
     
     public static getInstance(): WebSocketHealthMonitor {
@@ -86,27 +105,26 @@ export class WebSocketHealthMonitor {
     }
     
     /**
-     * Check all WebSocket connections
+     * Check WebSocket connection for the configured network from environment
      */
     private checkAllConnections(): void {
-        const networks = this.configService.getAllNetworks();
-        logger.debug(`[WebSocketHealthMonitor] Checking connection status for ${networks.length} networks`);
-        
-        for (const network of networks) {
-            this.checkConnection(network);
-        }
+        // In the simplified network approach, we only have one network from environment
+        logger.debug(`[WebSocketHealthMonitor] Checking connection status for network: ${this.network}`);
+        this.checkConnection(this.network);
     }
     
     /**
      * Check a specific WebSocket connection
+     * Note: The network parameter is kept to preserve method signature, but we only use this.network internally
      */
     private async checkConnection(network: Network): Promise<void> {
         try {
-            const connection = this.connectionService.getConnection(network);
+            // Always use the network from BabylonClient for consistency
+            const connection = this.connectionService.getConnection(this.network);
             
             if (!connection) {
-                logger.warn(`[WebSocketHealthMonitor] No connection found for ${network}, attempting to reconnect`);
-                this.getOrchestratorService().reconnectNetwork(network);
+                logger.warn(`[WebSocketHealthMonitor] No connection found for ${this.network}, attempting to reconnect`);
+                this.getOrchestratorService().reconnectNetwork(this.network);
                 return;
             }
             
@@ -115,32 +133,34 @@ export class WebSocketHealthMonitor {
                 // Verify connection status again after a small delay to avoid false positives
                 // during connection establishment
                 setTimeout(() => {
-                    const conn = this.connectionService.getConnection(network);
+                    const conn = this.connectionService.getConnection(this.network);
                     if (conn && !conn.isConnected()) {
-                        logger.warn(`[WebSocketHealthMonitor] Connection for ${network} is not connected, reconnecting`);
-                        this.getOrchestratorService().reconnectNetwork(network);
+                        logger.warn(`[WebSocketHealthMonitor] Connection for ${this.network} is not connected, reconnecting`);
+                        this.getOrchestratorService().reconnectNetwork(this.network);
                     }
                 }, 1000);
                 return;
             }
             
             // Check if we've received blocks recently
-            await this.checkBlockActivity(network);
+            await this.checkBlockActivity();
             
         } catch (error) {
-            logger.error(`[WebSocketHealthMonitor] Error checking connection for ${network}:`, error);
+            logger.error(`[WebSocketHealthMonitor] Error checking connection for ${this.network}:`, error);
         }
     }
     
     /**
      * Check if we've received blocks recently
+     * Takes no network parameter as we only use this.network
      */
-    private async checkBlockActivity(network: Network): Promise<void> {
+    private async checkBlockActivity(): Promise<void> {
         try {
-            const state = this.healthTracker.getNetworkState(network);
+            const state = this.healthTracker.getNetworkState(this.network);
             
             if (!state) {
-                logger.warn(`[WebSocketHealthMonitor] No state found for ${network}`);
+                // This shouldn't happen with properly initialized services
+                logger.warn(`[WebSocketHealthMonitor] No state found for configured network ${this.network}`);
                 return;
             }
             
@@ -149,35 +169,28 @@ export class WebSocketHealthMonitor {
             const timeSinceLastUpdate = now.getTime() - lastUpdate.getTime();
             
             if (timeSinceLastUpdate > this.MAX_INACTIVE_TIME) {
-                logger.warn(`[WebSocketHealthMonitor] No block updates for ${network} in ${timeSinceLastUpdate / 1000} seconds, reconnecting`);
+                logger.warn(`[WebSocketHealthMonitor] No block updates for ${this.network} in ${timeSinceLastUpdate / 1000} seconds, reconnecting`);
                 
                 // Check current height from API to confirm if there's a real issue
-                const config = this.configService.getNetworkConfig(network);
-                const client = config?.getClient();
-                
-                if (client) {
-                    try {
-                        const currentHeight = await client.getCurrentHeight();
-                        const lastProcessedHeight = state.lastProcessedHeight;
-                        
-                        if (currentHeight > lastProcessedHeight) {
-                            logger.warn(`[WebSocketHealthMonitor] Current height (${currentHeight}) is ahead of last processed height (${lastProcessedHeight}), reconnecting`);
-                            this.getOrchestratorService().reconnectNetwork(network);
-                        } else {
-                            logger.info(`[WebSocketHealthMonitor] No new blocks available for ${network}, current height: ${currentHeight}`);
-                        }
-                    } catch (error) {
-                        logger.error(`[WebSocketHealthMonitor] Error getting current height for ${network}:`, error);
-                        // Reconnect anyway as we can't confirm if there's a real issue
-                        this.getOrchestratorService().reconnectNetwork(network);
+                // With simplified network approach, we use the class's client property directly
+                try {
+                    const currentHeight = await this.babylonClient.getCurrentHeight();
+                    const lastProcessedHeight = state.lastProcessedHeight;
+                    
+                    if (currentHeight > lastProcessedHeight) {
+                        logger.warn(`[WebSocketHealthMonitor] Current height (${currentHeight}) is ahead of last processed height (${lastProcessedHeight}), reconnecting`);
+                        this.getOrchestratorService().reconnectNetwork(this.network);
+                    } else {
+                        logger.info(`[WebSocketHealthMonitor] No new blocks available for ${this.network}, current height: ${currentHeight}`);
                     }
-                } else {
-                    // No client available, reconnect anyway
-                    this.getOrchestratorService().reconnectNetwork(network);
+                } catch (error) {
+                    logger.error(`[WebSocketHealthMonitor] Error getting current height for ${this.network}:`, error);
+                    // Reconnect anyway as we can't confirm if there's a real issue
+                    this.getOrchestratorService().reconnectNetwork(this.network);
                 }
             }
         } catch (error) {
-            logger.error(`[WebSocketHealthMonitor] Error checking block activity for ${network}:`, error);
+            logger.error(`[WebSocketHealthMonitor] Error checking block activity for ${this.network}:`, error);
         }
     }
 } 

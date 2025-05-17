@@ -18,28 +18,19 @@ import { FutureBlockError } from '../../../types/errors';
  */
 export class FetcherService implements IFetcherService {
   private static instance: FetcherService | null = null;
-  private babylonClients: Map<Network, BabylonClient> = new Map();
+  private babylonClient: BabylonClient;
   
   /**
    * Private constructor to enforce singleton pattern
    */
   private constructor() {
     try {
-      this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-      logger.info('[FetcherService] Mainnet client initialized successfully');
+      this.babylonClient = BabylonClient.getInstance();
+      const network = this.babylonClient.getNetwork();
+      logger.info(`[FetcherService] ${network} client initialized successfully`);
     } catch (error) {
-      logger.warn('[FetcherService] Mainnet is not configured, skipping');
-    }
-
-    try {
-      this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-      logger.info('[FetcherService] Testnet client initialized successfully');
-    } catch (error) {
-      logger.warn('[FetcherService] Testnet is not configured, skipping');
-    }
-
-    if (this.babylonClients.size === 0) {
-      throw new Error('[FetcherService] No network configurations found. Please configure at least one network.');
+      logger.error('[FetcherService] Failed to initialize BabylonClient:', error);
+      throw new Error('[FetcherService] Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
     }
   }
 
@@ -59,26 +50,21 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Transaction details
    */
-  public async fetchTxDetails(txHash: string, network: Network): Promise<any> {
+  public async fetchTxDetails(txHash: string, network?: Network): Promise<any> {
+    const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching transaction details for ${txHash} on ${network}`);
+      logger.debug(`[FetcherService] Fetching transaction details for ${txHash} on ${actualNetwork}`);
       
-      const client = this.babylonClients.get(network);
-      if (!client) {
-        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
-        return null;
-      }
-      
-      const txDetails = await client.getTransaction(txHash);
+      const txDetails = await this.babylonClient.getTransaction(txHash);
       if (!txDetails) {
-        logger.warn(`[FetcherService] Transaction ${txHash} not found on ${network}`);
+        logger.warn(`[FetcherService] Transaction ${txHash} not found on ${actualNetwork}`);
         return null;
       }
       
-      logger.debug(`[FetcherService] Successfully fetched transaction details for ${txHash} on ${network}`);
+      logger.debug(`[FetcherService] Successfully fetched transaction details for ${txHash} on ${actualNetwork}`);
       return txDetails;
     } catch (error) {
-      logger.error(`[FetcherService] Error fetching transaction details for ${txHash} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(`[FetcherService] Error fetching transaction details for ${txHash} on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Failed to fetch transaction details: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -88,7 +74,7 @@ export class FetcherService implements IFetcherService {
    * @returns List of supported networks
    */
   public getSupportedNetworks(): Network[] {
-    return Array.from(this.babylonClients.keys());
+    return [this.babylonClient.getNetwork()];
   }
 
   /**
@@ -97,28 +83,23 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Array of transactions
    */
-  public async fetchTxsByHeight(height: number | string, network: Network): Promise<any[]> {
+  public async fetchTxsByHeight(height: number | string, network?: Network): Promise<any[]> {
+    const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching transactions for height ${height} on ${network}`);
-      
-      const client = this.babylonClients.get(network);
-      if (!client) {
-        logger.warn(`[FetcherService] No client configured for network ${network}, returning empty array`);
-        return [];
-      }
+      logger.debug(`[FetcherService] Fetching transactions for height ${height} on ${actualNetwork}`);
       
       // Use the getTxSearch method from BlockClient through BabylonClient
-      const txSearchResult = await client.getTxSearch(Number(height));
+      const txSearchResult = await this.babylonClient.getTxSearch(Number(height));
       
       if (!txSearchResult || !txSearchResult.result || !txSearchResult.result.txs) {
-        logger.warn(`[FetcherService] No transactions found for height ${height} on ${network}`);
+        logger.warn(`[FetcherService] No transactions found for height ${height} on ${actualNetwork}`);
         return [];
       }
       
-      logger.debug(`[FetcherService] Successfully fetched ${txSearchResult.result.txs.length} transactions for height ${height} on ${network}`);
+      logger.debug(`[FetcherService] Successfully fetched ${txSearchResult.result.txs.length} transactions for height ${height} on ${actualNetwork}`);
       return txSearchResult.result.txs;
     } catch (error) {
-      logger.error(`[FetcherService] Error fetching transactions for height ${height} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(`[FetcherService] Error fetching transactions for height ${height} on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Failed to fetch transactions for height ${height}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -129,23 +110,18 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Block details
    */
-  public async fetchBlockByHeight(height: number | string, network: Network): Promise<any> {
+  public async fetchBlockByHeight(height: number | string, network?: Network): Promise<any> {
+    const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching block at height ${height} on ${network}`);
+      logger.debug(`[FetcherService] Fetching block at height ${height} on ${actualNetwork}`);
       
-      const client = this.babylonClients.get(network);
-      if (!client) {
-        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
-        return null;
-      }
-      
-      const blockData = await client.getBlockByHeight(Number(height));
+      const blockData = await this.babylonClient.getBlockByHeight(Number(height));
       if (!blockData) {
-        logger.warn(`[FetcherService] Block at height ${height} not found on ${network}`);
+        logger.warn(`[FetcherService] Block at height ${height} not found on ${actualNetwork}`);
         return null;
       }
       
-      logger.debug(`[FetcherService] Successfully fetched block at height ${height} on ${network}`);
+      logger.debug(`[FetcherService] Successfully fetched block at height ${height} on ${actualNetwork}`);
       return blockData;
     } catch (error) {
       // Check if this is a future block error
@@ -156,7 +132,7 @@ export class FetcherService implements IFetcherService {
         
         try {
           // Try to enhance error with time estimates
-          const enhancedError = await handleFutureBlockError(error, network);
+          const enhancedError = await handleFutureBlockError(error, actualNetwork);
           
           // If successfully converted to FutureBlockError, throw it
           if (enhancedError instanceof FutureBlockError) {
@@ -173,7 +149,7 @@ export class FetcherService implements IFetcherService {
         }
       }
       
-      logger.error(`[FetcherService] Error fetching block at height ${height} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(`[FetcherService] Error fetching block at height ${height} on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Failed to fetch block at height ${height}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -186,27 +162,22 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Block details or null
    */
-  public async fetchBlockByHash(blockHash: string, network: Network): Promise<any> {
+  public async fetchBlockByHash(blockHash: string, network?: Network): Promise<any> {
+    const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching block with hash ${blockHash} on ${network}`);
+      logger.debug(`[FetcherService] Fetching block with hash ${blockHash} on ${actualNetwork}`);
       
-      const client = this.babylonClients.get(network);
-      if (!client) {
-        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
-        return null;
-      }
-      
-      const blockData = await client.getBlockByHash(blockHash);
+      const blockData = await this.babylonClient.getBlockByHash(blockHash);
       if (!blockData) {
-        logger.warn(`[FetcherService] Block with hash ${blockHash} not found on ${network}`);
+        logger.warn(`[FetcherService] Block with hash ${blockHash} not found on ${actualNetwork}`);
         return null;
       }
       
-      logger.debug(`[FetcherService] Successfully fetched block with hash ${blockHash} on ${network}`);
+      logger.debug(`[FetcherService] Successfully fetched block with hash ${blockHash} on ${actualNetwork}`);
       return blockData;
      
     } catch (error) {
-      logger.error(`[FetcherService] Error fetching block with hash ${blockHash} on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(`[FetcherService] Error fetching block with hash ${blockHash} on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Failed to fetch block with hash ${blockHash}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -216,26 +187,21 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Latest block details
    */
-  public async fetchLatestBlock(network: Network): Promise<any> {
+  public async fetchLatestBlock(network?: Network): Promise<any> {
+    const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching latest block on ${network}`);
+      logger.debug(`[FetcherService] Fetching latest block on ${actualNetwork}`);
       
-      const client = this.babylonClients.get(network);
-      if (!client) {
-        logger.warn(`[FetcherService] No client configured for network ${network}, returning null`);
+      const latestBlock = await this.babylonClient.getLatestBlock();
+      if (!latestBlock) {
+        logger.warn(`[FetcherService] Unable to fetch latest block on ${actualNetwork}`);
         return null;
       }
       
-      const blockData = await client.getLatestBlock();
-      if (!blockData) {
-        logger.warn(`[FetcherService] Latest block not found on ${network}`);
-        return null;
-      }
-      
-      logger.debug(`[FetcherService] Successfully fetched latest block on ${network}`);
-      return blockData;
+      logger.debug(`[FetcherService] Successfully fetched latest block on ${actualNetwork} at height ${latestBlock.block.header.height}`);
+      return latestBlock;
     } catch (error) {
-      logger.error(`[FetcherService] Error fetching latest block on ${network}: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(`[FetcherService] Error fetching latest block on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Failed to fetch latest block: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

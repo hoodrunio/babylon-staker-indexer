@@ -19,10 +19,10 @@ interface BtcDelegationResponse {
 
 export class BTCTransactionCrawlerService {
     private static instance: BTCTransactionCrawlerService | null = null;
-    private babylonClients: Map<Network, BabylonClient> = new Map();
+    private babylonClient: BabylonClient;
     private delegationService: BTCDelegationService = BTCDelegationService.getInstance();
     private isCrawling: boolean = false;
-    private configuredNetworks: Network[] = [];
+    private network: Network;
     
     // Crawling interval: default 5 minutes (configurable through environment variable)
     private crawlingInterval: number = parseInt(process.env.BTC_TX_CRAWLING_INTERVAL || '300000', 10);
@@ -35,16 +35,14 @@ export class BTCTransactionCrawlerService {
 
     private constructor() {
         try {
-            this.initializeClients();
-            
-            if (this.configuredNetworks.length > 0) {
-                logger.info(`Starting BTCTransactionCrawlerService for networks: ${this.configuredNetworks.join(', ')}`);
-                this.startPeriodicCrawling();
-            } else {
-                logger.warn('No networks configured for BTCTransactionCrawlerService, service will not start');
-            }
+            // Initialize BabylonClient using the network from environment variable
+            this.babylonClient = BabylonClient.getInstance();
+            this.network = this.babylonClient.getNetwork();
+            logger.info(`Starting BTCTransactionCrawlerService for network: ${this.network}`);
+            this.startPeriodicCrawling();
         } catch (error) {
             logger.error('Error initializing BTCTransactionCrawlerService:', error);
+            throw new Error('Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
         }
     }
 
@@ -55,48 +53,25 @@ export class BTCTransactionCrawlerService {
         return BTCTransactionCrawlerService.instance;
     }
 
-    private initializeClients() {
-        // Initialize Babylon clients for both networks using getInstance instead of constructor
-        try {
-            const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
-            this.babylonClients.set(Network.MAINNET, mainnetClient);
-            this.configuredNetworks.push(Network.MAINNET);
-            logger.info('Initialized Babylon client for MAINNET');
-        } catch (error) {
-            logger.warn(`Failed to initialize Babylon client for MAINNET: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        
-        try {
-            const testnetClient = BabylonClient.getInstance(Network.TESTNET);
-            this.babylonClients.set(Network.TESTNET, testnetClient);
-            this.configuredNetworks.push(Network.TESTNET);
-            logger.info('Initialized Babylon client for TESTNET');
-        } catch (error) {
-            logger.warn(`Failed to initialize Babylon client for TESTNET: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
+    // No longer need to initialize multiple clients
 
     private async startPeriodicCrawling() {
-        logger.info(`Starting periodic BTC transaction crawling every ${this.crawlingInterval / 1000} seconds for networks: ${this.configuredNetworks.join(', ')}`);
+        logger.info(`Starting periodic BTC transaction crawling every ${this.crawlingInterval / 1000} seconds for network: ${this.network}`);
         
-        // Initial crawl for configured networks
-        for (const network of this.configuredNetworks) {
-            try {
-                logger.info(`Starting initial BTC transaction crawl for ${network}`);
-                await this.crawlTransactions(network);
-            } catch (error) {
-                logger.error(`Error in initial BTC transaction crawling for ${network}:`, error);
-            }
+        // Initial crawl for the configured network
+        try {
+            logger.info(`Starting initial BTC transaction crawl for ${this.network}`);
+            await this.crawlTransactions(this.network);
+        } catch (error) {
+            logger.error(`Error in initial BTC transaction crawling for ${this.network}:`, error);
         }
         
         // Setup periodic crawling
         setInterval(async () => {
-            for (const network of this.configuredNetworks) {
-                try {
-                    await this.crawlTransactions(network);
-                } catch (error) {
-                    logger.error(`Error in periodic BTC transaction crawling for ${network}:`, error);
-                }
+            try {
+                await this.crawlTransactions(this.network);
+            } catch (error) {
+                logger.error(`Error in periodic BTC transaction crawling for ${this.network}:`, error);
             }
         }, this.crawlingInterval);
     }
@@ -287,15 +262,13 @@ export class BTCTransactionCrawlerService {
         retryCount: number = 0
     ): Promise<string | null> {
         try {
-            const babylonClient = this.babylonClients.get(network);
-            if (!babylonClient) {
-                throw new Error(`No Babylon client initialized for network ${network}`);
-            }
+            // No need to check if babylonClient exists since it's initialized in the constructor
+            // and constructor will throw if initialization fails
             
             // Try to get more information from BTC delegation query endpoint
             try {
                 const delegationUrl = `/babylon/btcstaking/v1/btc_delegation/${stakingTxIdHex}`;
-                const delegationInfo = await fetch(`${babylonClient.getBaseUrl()}${delegationUrl}`);
+                const delegationInfo = await fetch(`${this.babylonClient.getBaseUrl()}${delegationUrl}`);
                 
                 if (!delegationInfo.ok) {
                     logger.warn(`Failed to get BTC delegation info for ${stakingTxIdHex} on ${network}: ${delegationInfo.statusText}`);

@@ -450,10 +450,25 @@ export class BabylonClient {
         throw new Error(`[BabylonClient] Unexpected error in failover logic for ${this.network}`);
     }
 
-    public static getInstance(network: Network = Network.MAINNET): BabylonClient {
+    public static getInstance(): BabylonClient {
+        // Read network from environment variable
+        const networkEnv = process.env.NETWORK;
+        
+        if (!networkEnv) {
+            throw new Error('NETWORK environment variable is not set. Please configure it in your .env file.');
+        }
+        
+        // Validate the network value
+        if (networkEnv !== Network.MAINNET && networkEnv !== Network.TESTNET) {
+            throw new Error(`Invalid NETWORK value: ${networkEnv}. Must be either 'mainnet' or 'testnet'.`);
+        }
+        
+        const network = networkEnv as Network;
+        
         if (!BabylonClient.instances.has(network)) {
             BabylonClient.instances.set(network, new BabylonClient(network));
         }
+        
         return BabylonClient.instances.get(network)!;
     }
 

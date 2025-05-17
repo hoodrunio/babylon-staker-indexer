@@ -2,7 +2,7 @@
  * Core message processing functionality
  */
 
-import { Any } from '../../../generated/proto/google/protobuf/any';
+import { Any } from '@generated/proto/google/protobuf/any';
 import { MessageDecoder, SpecialCaseHandler, DecodedMessage } from '../types';
 import { convertBuffersToHex, tryParseRawMessage } from '../utils/bufferUtils';
 import { logger } from '../../../utils/logger';

@@ -24,10 +24,8 @@ export class BLSCheckpointFetcher {
 
     private async calculateBlockHeightForEpoch(epochNum: number, network: Network): Promise<number> {
         try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
-            }
+            const client = this.validatorInfoService.getBabylonClient();
+            // Network parameter is still preserved as per the simplified network approach
 
             // Each epoch is 100 blocks
             const epochLength = 360;
@@ -87,11 +85,9 @@ export class BLSCheckpointFetcher {
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                     
                     // Also rotate to the next node before retrying
-                    const client = this.validatorInfoService.getBabylonClient(network);
-                    if (client) {
-                        const newUrl = client.rotateNodeUrl();
-                        logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
-                    }
+                    const client = this.validatorInfoService.getBabylonClient();
+                    const newUrl = client.rotateNodeUrl();
+                    logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
                     
                     // Continue to the next iteration
                     continue;
@@ -112,10 +108,8 @@ export class BLSCheckpointFetcher {
 
         while (retryCount < MAX_RETRIES) {
             try {
-                const client = this.validatorInfoService.getBabylonClient(network);
-                if (!client) {
-                    throw new Error(`No Babylon client found for network ${network}`);
-                }
+                const client = this.validatorInfoService.getBabylonClient();
+                // Network parameter is still preserved as per the simplified network approach
 
                 const baseUrl = client.getBaseUrl();
                 logger.info(`[BLSCheckpoint] Fetching checkpoint from height ${height} on ${network}`);
@@ -217,11 +211,9 @@ export class BLSCheckpointFetcher {
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                     
                     // Rotate to the next node before retrying
-                    const client = this.validatorInfoService.getBabylonClient(network);
-                    if (client) {
-                        const newUrl = client.rotateNodeUrl();
-                        logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
-                    }
+                    const client = this.validatorInfoService.getBabylonClient();
+                    const newUrl = client.rotateNodeUrl();
+                    logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
                     
                     // Continue to the next iteration
                     continue;
@@ -339,10 +331,8 @@ export class BLSCheckpointFetcher {
 
         while (retryCount < MAX_RETRIES) {
             try {
-                const client = this.validatorInfoService.getBabylonClient(network);
-                if (!client) {
-                    throw new Error(`No Babylon client found for network ${network}`);
-                }
+                const client = this.validatorInfoService.getBabylonClient();
+                // Network parameter is still preserved as per the simplified network approach
 
                 const baseUrl = client.getBaseUrl();
                 const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`, {
@@ -373,10 +363,8 @@ export class BLSCheckpointFetcher {
 
     public async getTimestampForHeight(height: number, network: Network): Promise<number> {
         try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
-            }
+            const client = this.validatorInfoService.getBabylonClient();
+            // Network parameter is still preserved as per the simplified network approach
             const baseRpcUrl = client.getRpcUrl();
             const response = await axios.get(`${baseRpcUrl}/block?height=${height}`);
             const timeStr = response.data.result.block.header.time;

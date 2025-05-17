@@ -1,7 +1,6 @@
 import { BlockTimeService } from '../services/BlockTimeService';
 import { FutureBlockError } from '../types/errors';
 import { Network } from '../types/finality';
-import { CustomError } from '../clients/BaseClient';
 import { logger } from './logger';
 
 /**
@@ -20,7 +19,8 @@ export async function handleFutureBlockError(error: any, network: Network): Prom
             // Only process if this is truly a future block (target > current)
             if (targetHeight > currentBlockchainHeight) {
                 // Get block time service instance
-                const blockTimeService = BlockTimeService.getInstance(network);
+                // Note: We're not using network parameter anymore, as BlockTimeService uses environment
+                const blockTimeService = BlockTimeService.getInstance();
                 
                 // Calculate estimated time
                 const estimate = await blockTimeService.getEstimatedTimeToBlock(targetHeight);
@@ -35,7 +35,7 @@ export async function handleFutureBlockError(error: any, network: Network): Prom
                 );
             }
         } catch (estimateError) {
-            logger.error(`[FutureBlockHelper] Error estimating time for future block: ${estimateError instanceof Error ? estimateError.message : String(estimateError)}`);
+            logger.error(`[FutureBlockHelper] Error estimating time for future block: ${estimateError instanceof Error ? estimateError.message : String(estimateError)} for ${network}`);
             // Continue with original error if estimation fails
         }
     }

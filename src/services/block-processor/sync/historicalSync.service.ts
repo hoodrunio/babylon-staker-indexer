@@ -12,7 +12,7 @@ import { BlockStorage } from '../storage/BlockStorage';
 export class HistoricalSyncService implements IHistoricalSyncService {
   private static instance: HistoricalSyncService | null = null;
   private isSyncing = false;
-  private babylonClients: Map<Network, BabylonClient> = new Map();
+  private babylonClient: BabylonClient;
   private readonly MAX_BLOCK_SYNC = 10;
   private blockHandler: BlockTransactionHandler;
   private blockStorage: BlockStorage;
@@ -24,21 +24,13 @@ export class HistoricalSyncService implements IHistoricalSyncService {
     this.blockStorage = BlockStorage.getInstance();
     
     try {
-      this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-      logger.info('[HistoricalSync] Mainnet client initialized successfully');
+      // Initialize BabylonClient using the network from environment variable
+      this.babylonClient = BabylonClient.getInstance();
+      const network = this.babylonClient.getNetwork();
+      logger.info(`[HistoricalSync] Client initialized successfully for network: ${network}`);
     } catch (error) {
-      logger.warn('[HistoricalSync] Mainnet is not configured, skipping');
-    }
-
-    try {
-      this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-      logger.info('[HistoricalSync] Testnet client initialized successfully');
-    } catch (error) {
-      logger.warn('[HistoricalSync] Testnet is not configured, skipping');
-    }
-
-    if (this.babylonClients.size === 0) {
-      throw new Error('[HistoricalSync] No network configurations found. Please configure at least one network.');
+      logger.error('[HistoricalSync] Failed to initialize BabylonClient:', error);
+      throw new Error('[HistoricalSync] Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
     }
 
     // Start periodic updates only if not in test environment
@@ -131,21 +123,13 @@ export class HistoricalSyncService implements IHistoricalSyncService {
     this.isSyncing = true;
     
     try {
-      // If network is not specified, synchronize for all configured networks
-      const networksToSync = network ? [network] : Array.from(this.babylonClients.keys());
+      // Use the network parameter if provided, otherwise get from client
+      const networkToUse = network || this.babylonClient.getNetwork();
       
-      for (const currentNetwork of networksToSync) {
-        const babylonClient = this.getBabylonClient(currentNetwork);
-        if (!babylonClient) {
-          logger.warn(`[HistoricalSync] Network ${currentNetwork} is not configured, skipping`);
-          continue;
-        }
-        
-        logger.info(`[HistoricalSync] Starting synchronization from height ${fromHeight} for network ${currentNetwork}`);
-        
-        // Synchronize using BlockTransactionHandler
-        await this.blockHandler.syncHistoricalBlocks(currentNetwork, fromHeight, toHeight);
-      }
+      logger.info(`[HistoricalSync] Starting synchronization from height ${fromHeight} for network ${networkToUse}`);
+      
+      // Synchronize using BlockTransactionHandler
+      await this.blockHandler.syncHistoricalBlocks(networkToUse, fromHeight, toHeight);
     } catch (error) {
       logger.error(`[HistoricalSync] Synchronization error: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
@@ -159,21 +143,13 @@ export class HistoricalSyncService implements IHistoricalSyncService {
    */
   async syncLatestBlocks(blockCount = this.MAX_BLOCK_SYNC, network?: Network): Promise<void> {
     try {
-      // If network is not specified, synchronize for all configured networks
-      const networksToSync = network ? [network] : Array.from(this.babylonClients.keys());
+      // Use the network parameter if provided, otherwise get from client
+      const networkToUse = network || this.babylonClient.getNetwork();
       
-      for (const currentNetwork of networksToSync) {
-        const babylonClient = this.getBabylonClient(currentNetwork);
-        if (!babylonClient) {
-          logger.warn(`[HistoricalSync] Network ${currentNetwork} is not configured, skipping`);
-          continue;
-        }
-        
-        logger.info(`[HistoricalSync] Synchronizing latest ${blockCount} blocks for network ${currentNetwork}`);
-        
-        // Synchronize latest blocks using BlockTransactionHandler
-        await this.blockHandler.syncLatestBlocks(currentNetwork, blockCount);
-      }
+      logger.info(`[HistoricalSync] Synchronizing latest ${blockCount} blocks for network ${networkToUse}`);
+      
+      // Synchronize latest blocks using BlockTransactionHandler
+      await this.blockHandler.syncLatestBlocks(networkToUse, blockCount);
     } catch (error) {
       logger.error(`[HistoricalSync] Error synchronizing latest blocks: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
@@ -181,16 +157,16 @@ export class HistoricalSyncService implements IHistoricalSyncService {
   }
 
   /**
-   * Returns BabylonClient instance for the specified network
+   * Returns the BabylonClient instance
    */
-  public getBabylonClient(network: Network): BabylonClient | undefined {
-    return this.babylonClients.get(network);
+  public getBabylonClient(): BabylonClient {
+    return this.babylonClient;
   }
 
   /**
-   * Returns all configured networks
+   * Returns the configured network
    */
-  public getConfiguredNetworks(): Network[] {
-    return Array.from(this.babylonClients.keys());
+  public getConfiguredNetwork(): Network {
+    return this.babylonClient.getNetwork();
   }
 } 
