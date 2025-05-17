@@ -27,7 +27,7 @@ export class BlockProcessorService implements IBlockProcessorService {
     babylonClient?: BabylonClient
   ) {
     this.network = network;
-    this.babylonClient = babylonClient || BabylonClient.getInstance(network);
+    this.babylonClient = babylonClient || BabylonClient.getInstance();
     this.initializeServices();
   }
 
@@ -316,7 +316,7 @@ export class BlockProcessorService implements IBlockProcessorService {
    */
   setNetwork(network: Network): void {
     this.network = network;
-    this.babylonClient = BabylonClient.getInstance(network);
+    this.babylonClient = BabylonClient.getInstance();
   }
 
   /**

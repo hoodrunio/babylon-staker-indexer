@@ -63,17 +63,6 @@ export class BTCTransactionCrawlerService {
             this.babylonClients.set(defaultNetwork, defaultClient);
             this.configuredNetworks.push(defaultNetwork);
             logger.info(`Initialized Babylon client for ${defaultNetwork} from environment configuration`);
-            
-            // Try to initialize the other network if possible
-            const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
-            try {
-                const otherClient = BabylonClient.getInstance(otherNetwork);
-                this.babylonClients.set(otherNetwork, otherClient);
-                this.configuredNetworks.push(otherNetwork);
-                logger.info(`Initialized Babylon client for ${otherNetwork}`);
-            } catch (error) {
-                logger.info(`${otherNetwork} is not configured, using only ${defaultNetwork}`);
-            }
         } catch (error) {
             logger.error(`Failed to initialize Babylon clients: ${error instanceof Error ? error.message : String(error)}`);
         }

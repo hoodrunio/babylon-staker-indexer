@@ -38,29 +38,20 @@ export class BTCDelegationService {
             
             // Try to initialize the other network if possible
             const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
-            try {
-                const otherClient = BabylonClient.getInstance(otherNetwork);
-                this.babylonClients.set(otherNetwork, otherClient);
-                logger.info(`[Network] ${otherNetwork} client initialized successfully`);
-            } catch (error) {
-                logger.info(`[Network] ${otherNetwork} is not configured, using only ${defaultNetwork}`);
-            }
+            // With single-network architecture, we only use one client
+            logger.info(`[Network] Using ${defaultNetwork} client from environment configuration`);
         } catch (error) {
             logger.debug('[Network] Failed to initialize client with default configuration, trying specific networks');
             
-            // Fallback to trying each network specifically
+            // With single-network architecture, we just try to get one client
             try {
-                this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-                logger.info('[Network] Testnet client initialized successfully');
+                const client = BabylonClient.getInstance();
+                const network = client.getNetwork();
+                this.babylonClients.set(network, client);
+                logger.info(`[Network] Client initialized successfully for ${network}`);
             } catch (error) {
-                logger.debug('[Network] Testnet is not configured');
-            }
-
-            try {
-                this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-                logger.info('[Network] Mainnet client initialized successfully');
-            } catch (error) {
-                logger.debug('[Network] Mainnet is not configured');
+                logger.error('[Network] Failed to initialize client from environment configuration');
+                throw new Error('No network is configured in environment settings');
             }
         }
 

@@ -4,14 +4,13 @@
 
 import { BlockTransactionHandler } from './BlockTransactionHandler';
 import { logger } from '../../../utils/logger';
-import { Network } from '../../../types/finality';
 
 /**
  * Base abstract class for all message processors
  */
 export abstract class BaseMessageProcessor {
     abstract canProcess(message: any): boolean;
-    abstract process(message: any, network: Network): Promise<void>;
+    abstract process(message: any): Promise<void>;
 }
 
 /**
@@ -32,11 +31,11 @@ export class BlockMessageProcessor extends BaseMessageProcessor {
         }
     }
 
-    async process(message: any, network: Network): Promise<void> {
+    async process(message: any): Promise<void> {
         try {
             const blockData = message;
             //logger.debug(`[BlockMessageProcessor] Processing block at height ${blockData.header?.height}`);
-            await this.blockHandler.handleNewBlock(blockData, network);
+            await this.blockHandler.handleNewBlock(blockData);
         } catch (error) {
             logger.error(`[BlockMessageProcessor] Error processing block message: ${error instanceof Error ? error.message : String(error)}`);
             if (error instanceof Error) {
@@ -62,7 +61,7 @@ export class TransactionMessageProcessor extends BaseMessageProcessor {
         }
     }
 
-    async process(message: any, network: Network): Promise<void> {
+    async process(message: any): Promise<void> {
         try {
             const txData = {
                 TxResult: message.result.data.value.TxResult,
@@ -70,7 +69,7 @@ export class TransactionMessageProcessor extends BaseMessageProcessor {
             };
             
             //logger.debug(`[TransactionMessageProcessor] Processing tx ${txData.tx_hash.substring(0, 8)}... at height ${txData.TxResult.height}`);
-            await this.blockHandler.handleNewTransaction(txData, network);
+            await this.blockHandler.handleNewTransaction(txData);
         } catch (error) {
             logger.error(`[TransactionMessageProcessor] Error processing tx message: ${error instanceof Error ? error.message : String(error)}`);
             if (error instanceof Error) {

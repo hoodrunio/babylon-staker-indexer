@@ -31,31 +31,20 @@ export class FetcherService implements IFetcherService {
       this.babylonClients.set(defaultNetwork, defaultClient);
       logger.info(`[FetcherService] ${defaultNetwork} client initialized successfully from environment configuration`);
       
-      // Try to initialize the other network if possible
-      const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
-      try {
-        const otherClient = BabylonClient.getInstance(otherNetwork);
-        this.babylonClients.set(otherNetwork, otherClient);
-        logger.info(`[FetcherService] ${otherNetwork} client initialized successfully`);
-      } catch (error) {
-        logger.info(`[FetcherService] ${otherNetwork} is not configured, using only ${defaultNetwork}`);
-      }
+      // With single-network architecture, we're only using one client
+      logger.info(`[FetcherService] Using ${defaultNetwork} client from environment configuration`);
     } catch (error) {
       // Fallback to trying each network specifically
       logger.debug('[FetcherService] Failed to initialize client with default configuration, trying specific networks');
       
       try {
-        this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-        logger.info('[FetcherService] Mainnet client initialized successfully');
+        const client = BabylonClient.getInstance();
+        const network = client.getNetwork();
+        this.babylonClients.set(network, client);
+        logger.info(`[FetcherService] Client initialized successfully for ${network}`);
       } catch (error) {
-        logger.warn('[FetcherService] Mainnet is not configured, skipping');
-      }
-
-      try {
-        this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-        logger.info('[FetcherService] Testnet client initialized successfully');
-      } catch (error) {
-        logger.warn('[FetcherService] Testnet is not configured, skipping');
+        logger.error('[FetcherService] Failed to initialize client from environment configuration');
+        throw new Error('No network is configured in environment settings');
       }
     }
 
@@ -177,7 +166,7 @@ export class FetcherService implements IFetcherService {
         
         try {
           // Try to enhance error with time estimates
-          const enhancedError = await handleFutureBlockError(error, network);
+          const enhancedError = await handleFutureBlockError(error);
           
           // If successfully converted to FutureBlockError, throw it
           if (enhancedError instanceof FutureBlockError) {

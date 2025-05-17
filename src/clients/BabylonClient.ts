@@ -313,7 +313,7 @@ export class BabylonClient {
                 if (error instanceof Error && error.name === 'HeightNotAvailableError') {
                     try {
                         // Try to enrich the error with estimated time information
-                        const enhancedError = await handleFutureBlockError(error, this.network);
+                        const enhancedError = await handleFutureBlockError(error);
                         
                         // If successfully converted to FutureBlockError, throw it directly
                         if (enhancedError instanceof FutureBlockError) {
