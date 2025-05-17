@@ -29,7 +29,7 @@ export class BlockProcessorInitializer {
     private rpcClient: BabylonClient | null = null;
     private historicalSyncService: HistoricalSyncService | null = null;
     private fetcherService: FetcherService | null = null;
-    private defaultNetwork: Network = Network.MAINNET;
+    private network: Network | null = null;
     
     private constructor() {
         // Private constructor
@@ -60,20 +60,24 @@ export class BlockProcessorInitializer {
             // Get RPC client
             this.rpcClient = BabylonClient.getInstance();
             
+            // Get network from BabylonClient instead of using a default
+            this.network = this.rpcClient.getNetwork();
+            logger.info(`[BlockProcessorInitializer] Using network from environment: ${this.network}`);
+            
             // Get FetcherService
             this.fetcherService = FetcherService.getInstance();
             
             // Create processor services
-            this.blockProcessor = new BlockProcessorService(this.blockStorage, this.defaultNetwork);
+            this.blockProcessor = new BlockProcessorService(this.blockStorage, this.network || undefined);
             
             // Get transaction details using FetcherService
             const fetchTxDetails = async (txHash: string, network?: Network) => {
-                // Determine the network to use
-                const targetNetwork = network || this.defaultNetwork;
+                // Use the network from BabylonClient as default
+                const targetNetwork = network || (this.network || undefined);
                 return this.fetcherService?.fetchTxDetails(txHash, targetNetwork) || null;
             };
             
-            this.txProcessor = new TransactionProcessorService(this.txStorage, fetchTxDetails, this.defaultNetwork);
+            this.txProcessor = new TransactionProcessorService(this.txStorage, fetchTxDetails, this.network || undefined);
             
             // Initialize BlockTransactionHandler
             this.blockTransactionHandler = BlockTransactionHandler.getInstance();
@@ -173,9 +177,9 @@ export class BlockProcessorInitializer {
     }
     
     /**
-     * Sets default network value
+     * Sets network value
      */
     public setDefaultNetwork(network: Network): void {
-        this.defaultNetwork = network;
+        this.network = network;
     }
 } 

@@ -21,6 +21,7 @@ interface CacheEntry<T> {
 export class FinalityProviderService {
     private static instance: FinalityProviderService | null = null;
     private babylonClient: BabylonClient;
+    private network: Network;
     private cache: CacheService;
     private revalidationPromises: Map<string, Promise<any>> = new Map();
     
@@ -33,8 +34,15 @@ export class FinalityProviderService {
     };
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance(Network.MAINNET);
-        this.cache = CacheService.getInstance();
+        try {
+            this.babylonClient = BabylonClient.getInstance(); // No default network
+            this.network = this.babylonClient.getNetwork();
+            this.cache = CacheService.getInstance();
+            logger.info(`[FinalityProviderService] Client initialized successfully for network: ${this.network}`);
+        } catch (error) {
+            logger.error('[FinalityProviderService] Failed to initialize BabylonClient:', error);
+            throw new Error('[FinalityProviderService] Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
+        }
     }
 
     public static getInstance(): FinalityProviderService {
@@ -44,11 +52,11 @@ export class FinalityProviderService {
         return FinalityProviderService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
+    private getNetworkConfig(network: Network) {
+        // Always use our initialized client
         return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
+            nodeUrl: this.babylonClient.getBaseUrl(),
+            rpcUrl: this.babylonClient.getRpcUrl()
         };
     }
 
@@ -125,7 +133,7 @@ export class FinalityProviderService {
         return data;
     }
 
-    public async getActiveFinalityProviders(network: Network = Network.MAINNET): Promise<FinalityProvider[]> {
+    public async getActiveFinalityProviders(network: Network = this.network): Promise<FinalityProvider[]> {
         const cacheKey = `fp:active:${network}`;
         return this.getWithRevalidate(
             cacheKey,
@@ -181,7 +189,7 @@ export class FinalityProviderService {
         );
     }
 
-    public async getAllFinalityProviders(network: Network = Network.MAINNET): Promise<FinalityProvider[]> {
+    public async getAllFinalityProviders(network: Network = this.network): Promise<FinalityProvider[]> {
         const cacheKey = `fp:all:${network}`;
         return this.getWithRevalidate(
             cacheKey,
@@ -221,7 +229,7 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProvider(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProvider & { isActive: boolean }> {
+    public async getFinalityProvider(fpBtcPkHex: string, network: Network = this.network): Promise<FinalityProvider & { isActive: boolean }> {
         const cacheKey = `fp:details:${fpBtcPkHex}:${network}`;
         return this.getWithRevalidate(
             cacheKey,
@@ -246,7 +254,7 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProviderPower(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProviderPower> {
+    public async getFinalityProviderPower(fpBtcPkHex: string, network: Network = this.network): Promise<FinalityProviderPower> {
         const cacheKey = `fp:power:${fpBtcPkHex}:${network}`;
         return this.getWithRevalidate(
             cacheKey,
@@ -276,7 +284,7 @@ export class FinalityProviderService {
         );
     }
 
-    private async getTotalVotingPower(network: Network = Network.MAINNET): Promise<{ totalPower: string; rawTotalPower: string }> {
+    private async getTotalVotingPower(network: Network = this.network): Promise<{ totalPower: string; rawTotalPower: string }> {
         const cacheKey = `fp:total-power:${network}`;
         return this.getWithRevalidate(
             cacheKey,
@@ -311,7 +319,7 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProviderDelegationStats(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<{
+    public async getFinalityProviderDelegationStats(fpBtcPkHex: string, network: Network = this.network): Promise<{
         active_tvl: string;
         active_tvl_sat: number;
         total_tvl: string;
@@ -380,7 +388,7 @@ export class FinalityProviderService {
         );
     }
 
-    public async getAllFinalityProviderDelegationStats(network: Network = Network.MAINNET): Promise<Record<string, {
+    public async getAllFinalityProviderDelegationStats(network: Network = this.network): Promise<Record<string, {
         active_tvl: string;
         active_tvl_sat: number;
         total_tvl: string;

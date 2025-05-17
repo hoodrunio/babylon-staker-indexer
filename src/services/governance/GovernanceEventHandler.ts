@@ -202,7 +202,8 @@ export class GovernanceEventHandler {
 
     private async fetchProposalDetails(proposalId: number, network: Network): Promise<any> {
         try {
-            const client = BabylonClient.getInstance(network);
+            // Get the single BabylonClient instance without specifying a network
+            const client = BabylonClient.getInstance();
             return await client.getProposalDetails(proposalId);
         } catch (error) {
             logger.error(`[Governance] Error fetching proposal ${proposalId}:`, error);
