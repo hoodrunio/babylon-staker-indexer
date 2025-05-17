@@ -1,3 +1,6 @@
+// Register module path aliases before any other imports
+import './utils/module-paths';
+
 import express from 'express';
 import dotenv from 'dotenv';
 import router from './api/routes';

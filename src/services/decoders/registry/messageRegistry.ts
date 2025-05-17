@@ -2,7 +2,7 @@
  * Main message registry that coordinates all decoder operations
  */
 
-import { Any } from '../../../generated/proto/google/protobuf/any';
+import { Any } from '@generated/proto/google/protobuf/any';
 import { logger } from '../../../utils/logger';
 import { DecodedMessage, MessageDecoder, SpecialCaseHandler } from '../types';
 import { ProtoModuleDiscovery } from '../discovery/protoModuleDiscovery';

@@ -2,7 +2,7 @@
  * Message decoder public API
  */
 
-import { Any } from '../../generated/proto/google/protobuf/any';
+import { Any } from '@generated/proto/google/protobuf/any';
 import { DecodedMessage } from './types';
 import { MessageRegistry } from './registry/messageRegistry';
 

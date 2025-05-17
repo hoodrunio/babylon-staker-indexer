@@ -66,13 +66,18 @@ export class ProtoModuleDiscovery {
   public discoverAllModules(): void {
     logger.info('[Message Decoder] Discovering proto modules...');
     
-    // Register standard namespaces
-    this.registerStandardNamespaces();
-    
-    // Auto-discover other modules
-    this.discoverGeneratedProtos();
-    
-    logger.info(`[Message Decoder] Registered ${this.decoderRegistry.size} message types.`);
+    try {
+      // Register standard namespaces
+      this.registerStandardNamespaces();
+      
+      // Auto-discover other modules
+      this.discoverGeneratedProtos();
+      
+      logger.info(`[Message Decoder] Registered ${this.decoderRegistry.size} message types.`);
+    } catch (error) {
+      // Continue with whatever modules were successfully loaded
+      logger.warn(`[Message Decoder] Some proto modules failed to load but continuing with ${this.decoderRegistry.size} registered types.`, error);
+    }
   }
   
   /**
@@ -80,7 +85,11 @@ export class ProtoModuleDiscovery {
    */
   private registerStandardNamespaces(): void {
     for (const [namespace, config] of Object.entries(ProtoModuleDiscovery.STANDARD_NAMESPACES)) {
-      this.discoverNamespace(namespace, config.modules, config.basePath);
+      try {
+        this.discoverNamespace(namespace, config.modules, config.basePath);
+      } catch (error) {
+        logger.warn(`Failed to register namespace ${namespace}, continuing with other namespaces:`, error);
+      }
     }
   }
   
@@ -94,14 +103,32 @@ export class ProtoModuleDiscovery {
         let protoModule;
         
         try {
+          // First try the original path
           const relativePath = basePath.startsWith('..') 
             ? importPath 
             : `${basePath}/${namespace}/${module}/tx`;
           
           protoModule = require(relativePath);
         } catch (e) {
-          logger.warn(`Could not load module: ${importPath}`, e);
-          continue;
+          // If that fails, try using the path aliases
+          try {
+            if (basePath.includes('generated/proto')) {
+              // Try with the new path alias approach
+              const aliasPath = `@protos/${namespace}/${module}/tx`;
+              protoModule = require(aliasPath);
+            } else if (basePath === 'cosmjs-types') {
+              // For cosmjs types, just continue with the original approach
+              logger.warn(`Could not load module: ${importPath}`, e);
+              continue;
+            } else {
+              // For any other paths, try an absolute path as fallback
+              const absolutePath = path.join(process.cwd(), `src/generated/proto/${namespace}/${module}/tx`);
+              protoModule = require(absolutePath);
+            }
+          } catch (aliasError) {
+            logger.warn(`Could not load module: ${importPath} with any method`, e);
+            continue;
+          }
         }
         
         this.registerModuleMessages(protoModule, namespace, module);
@@ -116,8 +143,21 @@ export class ProtoModuleDiscovery {
    */
   private discoverGeneratedProtos(): void {
     try {
-      const generatedBaseDir = path.resolve(__dirname, '../../../generated/proto');
-      this.scanDirectory(generatedBaseDir);
+      // Using path resolution that will work with the new aliases
+      const generatedBaseDir = path.resolve(process.cwd(), 'src/generated/proto');
+      
+      if (fs.existsSync(generatedBaseDir)) {
+        this.scanDirectory(generatedBaseDir);
+      } else {
+        // Fallback to legacy path resolution
+        const fallbackDir = path.resolve(__dirname, '../../../generated/proto');
+        if (fs.existsSync(fallbackDir)) {
+          this.scanDirectory(fallbackDir);
+        } else {
+          logger.warn(`Generated proto directory not found at expected locations. 
+            Tried: ${generatedBaseDir} and ${fallbackDir}`);
+        }
+      }
     } catch (error) {
       logger.warn('Failed to auto-discover proto modules:', error);
     }
@@ -148,18 +188,38 @@ export class ProtoModuleDiscovery {
   }
   
   /**
-   * Register messages from a tx module file
+   * Register tx module file
    */
   private registerTxModule(baseDir: string, currentPath: string, relativePath: string): void {
     try {
-      const importPath = '../../../generated/proto/' + currentPath.replace(/\\/g, '/').replace(/\.js$/, '');
-      const protoModule = require(importPath);
-      
-      // Get namespace from path (convert path segments to dot notation for typeUrl)
-      const pathSegments = currentPath.split(path.sep).filter(s => s !== 'proto' && s !== 'tx.js' && s !== 'tx.cjs');
-      const namespace = pathSegments.join('.');
-      
-      this.registerProtoModuleMessages(protoModule, namespace);
+      // Try importing via relative path first
+      try {
+        const importPath = `@protos/${currentPath.replace(/\\/g, '/').replace(/\.js$/, '')}`;
+        const protoModule = require(importPath);
+        
+        // Get namespace from path (convert path segments to dot notation for typeUrl)
+        const pathSegments = currentPath.split(path.sep).filter(s => s !== 'proto' && s !== 'tx.js' && s !== 'tx.cjs');
+        const namespace = pathSegments.join('.');
+        
+        this.registerProtoModuleMessages(protoModule, namespace);
+      } catch (requireError) {
+        // If relative import fails, try with absolute path using cwd
+        const absolutePath = path.join(process.cwd(), 'src/generated/proto', 
+          currentPath.replace(/\\/g, '/').replace(/\.js$/, ''));
+          
+        try {
+          const protoModule = require(absolutePath);
+          
+          // Get namespace from path (convert path segments to dot notation for typeUrl)
+          const pathSegments = currentPath.split(path.sep).filter(s => s !== 'proto' && s !== 'tx.js' && s !== 'tx.cjs');
+          const namespace = pathSegments.join('.');
+          
+          this.registerProtoModuleMessages(protoModule, namespace);
+        } catch (absError) {
+          // Both approaches failed, log the error
+          throw new Error(`Failed to import module with both relative and absolute paths`);
+        }
+      }
     } catch (error) {
       logger.warn(`Failed to load proto module from ${relativePath}:`, error);
     }
