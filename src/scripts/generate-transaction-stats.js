@@ -101,6 +101,7 @@ async function generateStatsForNetwork(network) {
     logger.info(`Finding latest height for network ${network} using direct sort`);
     const latestTx = await BlockchainTransaction.findOne({ network })
       .sort({ height: -1 })
+      .collation({ locale: 'en_US', numericOrdering: true })
       .limit(1)
       .lean();
     
