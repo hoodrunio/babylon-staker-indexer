@@ -13,7 +13,7 @@ export class TransactionProcessorService implements ITransactionProcessorService
   constructor(
     private readonly txStorage: ITxStorage,
     private readonly fetchTxDetails: (txHash: string, network?: Network) => Promise<any>,
-    network: Network = Network.TESTNET
+    network: Network
   ) {
     this.network = network;
   }

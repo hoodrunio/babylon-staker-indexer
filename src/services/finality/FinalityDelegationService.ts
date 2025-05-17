@@ -44,9 +44,11 @@ export interface DelegationQueryOptions {
 export class FinalityDelegationService {
     private static instance: FinalityDelegationService | null = null;
     private babylonClient: BabylonClient;
+    private network: Network;
 
     private constructor() {
         this.babylonClient = BabylonClient.getInstance();
+        this.network = this.babylonClient.getNetwork();
     }
 
     public static getInstance(): FinalityDelegationService {
@@ -312,7 +314,7 @@ export class FinalityDelegationService {
 
     public async getFinalityProviderDelegations(
         fpBtcPkHex: string, 
-        network: Network = Network.MAINNET,
+        network: Network = this.network,
         page: number = 1,
         limit: number = 10,
         options?: DelegationQueryOptions

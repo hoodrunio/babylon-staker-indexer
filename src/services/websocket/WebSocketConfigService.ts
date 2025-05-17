@@ -15,7 +15,7 @@ export class NetworkConfig implements INetworkConfig {
     }
 
     getWsUrl(): string | undefined {
-        // If BabylonClient is available, get WebSocket URL from it
+        // Only get WebSocket URL from BabylonClient
         if (this.client) {
             try {
                 return this.client.getWsEndpoint();
@@ -24,10 +24,9 @@ export class NetworkConfig implements INetworkConfig {
             }
         }
         
-        // If BabylonClient is not available or there is an error, try the old method (for backward compatibility)
-        return this.network === Network.MAINNET 
-            ? process.env.BABYLON_WS_URL 
-            : process.env.BABYLON_TESTNET_WS_URL;
+        // If no client is available or there was an error, return undefined
+        logger.warn(`[WebSocketConfig] No BabylonClient available, cannot determine WebSocket URL`);
+        return undefined;
     }
 
     getClient(): BabylonClient | undefined {

@@ -247,14 +247,16 @@ export class StakeholderRewardsService {
      * @param network Network to query
      * @returns Summary of rewards for all finality providers
      */
-    public async getAllFinalityProviderRewardsSummary(network: Network = Network.MAINNET): Promise<any> {
+    public async getAllFinalityProviderRewardsSummary(network?: Network): Promise<any> {
+        // Use provided network or get from the client
+        const useNetwork = network || this.babylonClient.getNetwork();
         // Ensure we're only using supported networks
-        if (network !== Network.MAINNET && network !== Network.TESTNET) {
-            throw new Error(`Invalid network parameter ${network}`);
+        if (useNetwork !== Network.MAINNET && useNetwork !== Network.TESTNET) {
+            throw new Error(`Invalid network parameter ${useNetwork}`);
         }
         
         // Create a cache key with explicit network name to avoid confusion
-        const cacheKey = `rewards:fp:summary:${network}`;
+        const cacheKey = `rewards:fp:summary:${useNetwork}`;
         
         // logger.info(`[Rewards] Checking cache for key: ${cacheKey}`);
         
@@ -272,15 +274,15 @@ export class StakeholderRewardsService {
             const finalityProviderService = FinalityProviderService.getInstance();
             
             // Log which network we're querying
-            // logger.info(`[Rewards] Getting rewards summary for network: ${network}`);
+            // logger.info(`[Rewards] Getting rewards summary for network: ${useNetwork}`);
             
             // Fetch active providers
-            const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+            const activeProviders = await finalityProviderService.getActiveFinalityProviders(useNetwork);
             // logger.info(`[Rewards] Found ${activeProviders.length} active finality providers`);
             
             // If no active providers, return empty result
             if (!activeProviders || activeProviders.length === 0) {
-                logger.warn(`[Rewards] No active finality providers found for network: ${network}`);
+                logger.warn(`[Rewards] No active finality providers found for network: ${useNetwork}`);
                 const emptyResult = { rewards: [] };
                 await this.cache.set(cacheKey, emptyResult, this.CACHE_TTL.REWARDS_SUMMARY);
                 return emptyResult;
