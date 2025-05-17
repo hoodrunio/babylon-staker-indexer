@@ -12,7 +12,6 @@ import { logger } from './utils/logger';
 import { GovernanceIndexerService } from './services/governance/GovernanceIndexerService';
 import { BabylonClient } from './clients/BabylonClient';
 import { BlockProcessorModule } from './services/block-processor/BlockProcessorModule';
-import { Network } from './types/finality';
 import { StatsController } from './api/controllers/stats.controller';
 import { CosmWasmScheduler } from './services/cosmwasm/scheduler.service';
 import { errorHandler } from './api/errorHandlers';
@@ -69,8 +68,8 @@ async function startServer() {
     });
 
     // Initialize and start the FinalitySignatureService
-    /* const finalityService = FinalitySignatureService.getInstance();
-    await finalityService.start(); */
+    const finalityService = FinalitySignatureService.getInstance();
+    await finalityService.start();
 
     // Initialize BTCDelegationService (this will start initial sync)
     logger.info('Initializing BTCDelegationService...');
@@ -103,7 +102,9 @@ async function startServer() {
     
     // Start historical sync if BLOCK_SYNC_ENABLED is true
     if (process.env.BLOCK_SYNC_ENABLED === 'true') {
-        const network = process.env.NETWORK === 'mainnet' ? Network.MAINNET : Network.TESTNET;
+        // Get the network from BabylonClient without default values
+        const babylonClient = BabylonClient.getInstance();
+        const network = babylonClient.getNetwork();
         const fromHeight = parseInt(process.env.BLOCK_SYNC_FROM_HEIGHT || '0');
         const blockCount = parseInt(process.env.BLOCK_SYNC_COUNT || '100');
         
@@ -156,7 +157,7 @@ async function startServer() {
         try {
             // Stop all services
             websocketService.stop();
-            //finalityService.stop();
+            finalityService.stop();
 
             // Wait a bit for cleanup
             await new Promise(resolve => setTimeout(resolve, 1000));

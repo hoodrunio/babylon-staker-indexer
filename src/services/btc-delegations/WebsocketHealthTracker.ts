@@ -30,6 +30,17 @@ export class WebsocketHealthTracker {
             
             // Create a mutex for the configured network
             this.mutex.set(this.network, new Mutex());
+            
+            // Initialize state for the configured network
+            const initialState = {
+                lastProcessedHeight: 0,
+                isConnected: true,
+                lastConnectionTime: new Date(),
+                lastUpdateTime: new Date()
+            };
+            this.state.set(this.network, initialState);
+            logger.info(`[WebsocketHealthTracker] Initialized state for network: ${this.network}`);
+            
             // Get last block height from cache
             this.loadLastProcessedHeight(this.network);
         } catch (error) {
@@ -163,14 +174,30 @@ export class WebsocketHealthTracker {
 
     /**
      * Get the current state for a network
+     * With simplified network approach, we check if the requested network
+     * matches our initialized network
      */
     public getNetworkState(network: Network): WebsocketState | undefined {
-        return this.state.get(network);
+        // In the simplified network approach, we only track the network from environment
+        // First ensure we have a state for our configured network
+        if (!this.state.has(this.network)) {
+            logger.debug(`[WebsocketHealthTracker] No state found for our configured network: ${this.network}, initializing state`);
+            this.getOrCreateState(this.network);
+        }
+        
+        // If the requested network doesn't match our configured network, return undefined
+        if (network !== this.network) {
+            logger.debug(`[WebsocketHealthTracker] Requested state for ${network} but we're running with ${this.network}`);
+            return undefined;
+        }
+        
+        return this.state.get(this.network);
     }
 
     private getOrCreateState(network: Network): WebsocketState {
         let state = this.state.get(network);
         if (!state) {
+            logger.info(`[WebsocketHealthTracker] Creating new state for network: ${network}`);
             state = {
                 lastProcessedHeight: 0,
                 isConnected: true,
