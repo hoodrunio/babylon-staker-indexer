@@ -1,8 +1,8 @@
-import { Network } from '../../types/finality';
 import { RateLimiter } from '../../utils/RateLimiter';
 import { BTCDelegationEventHandler } from './BTCDelegationEventHandler';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { logger } from '../../utils/logger';
+import { Network } from '../../types/finality';
 
 interface BTCStakingEvent {
     events: Array<{
@@ -54,12 +54,12 @@ export class MissedBlocksProcessor {
     }
 
     public async processMissedBlocks(
-        network: Network,
+        network: Network, // Keep network parameter for compatibility with callers
         startHeight: number,
         endHeight: number,
         babylonClient: BabylonClient
     ) {
-        logger.info(`[${network}] Processing missed blocks from ${startHeight} to ${endHeight}`);
+        logger.info(`Processing missed blocks from ${startHeight} to ${endHeight}`);
         
         const heightRanges = this.createHeightRanges(startHeight, endHeight);
         let processedBlocks = 0;
@@ -67,7 +67,7 @@ export class MissedBlocksProcessor {
 
         for (const range of heightRanges) {
             const results = await Promise.allSettled(
-                range.map(height => this.processBlockWithRateLimit(network, height, babylonClient))
+                range.map(height => this.processBlockWithRateLimit(height, babylonClient))
             );
 
             results.forEach((result, index) => {
@@ -75,14 +75,14 @@ export class MissedBlocksProcessor {
                     if (result.value) processedBlocks++;
                 } else {
                     failedBlocks++;
-                    logger.error(`[${network}] Failed to process block ${range[index]}:`, result.reason);
+                    logger.error(`Failed to process block ${range[index]}:`, result.reason);
                 }
             });
 
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        logger.info(`[${network}] Completed processing missed blocks: total: ${endHeight - startHeight + 1}, processed: ${processedBlocks}, failed: ${failedBlocks}`);
+        logger.info(`Completed processing missed blocks: total: ${endHeight - startHeight + 1}, processed: ${processedBlocks}, failed: ${failedBlocks}`);
     }
 
     private createHeightRanges(startHeight: number, endHeight: number): number[][] {
@@ -95,26 +95,24 @@ export class MissedBlocksProcessor {
     }
 
     private async processBlockWithRateLimit(
-        network: Network,
         height: number,
         babylonClient: BabylonClient
     ): Promise<boolean> {
-        const key = `${network}-${height}`;
+        const key = `block-${height}`;
         
         while (!(await this.rateLimiter.acquire(key))) {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         try {
-            return await this.processBlockResults(network, height, babylonClient);
+            return await this.processBlockResults(height, babylonClient);
         } catch (error) {
-            logger.error(`[${network}] Error processing block ${height}:`, error);
+            logger.error(`Error processing block ${height}:`, error);
             throw error;
         }
     }
 
     private async processBlockResults(
-        network: Network,
         height: number,
         babylonClient: BabylonClient
     ): Promise<boolean> {
@@ -150,7 +148,7 @@ export class MissedBlocksProcessor {
             logger.info('Processing BTC staking events:', JSON.stringify(btcStakingEvents, null, 2));
 
             for (const event of btcStakingEvents) {
-                await this.eventHandler.handleEvent(event, network);
+                await this.eventHandler.handleEvent(event, babylonClient.getNetwork());
             }
 
             return true;
@@ -158,7 +156,7 @@ export class MissedBlocksProcessor {
             if (this.isRetryableError(error)) {
                 throw error;
             }
-            logger.error(`[${network}] Non-retryable error for block ${height}:`, error);
+            logger.error(`Non-retryable error for block ${height}:`, error);
             return false;
         }
     }

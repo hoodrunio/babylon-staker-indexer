@@ -1,13 +1,15 @@
-import { Network } from '../../types/finality';
 import { BLSCheckpointFetcher } from './BLSCheckpointFetcher';
 import { logger } from '../../utils/logger';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 export class BLSCheckpointHandler {
     private static instance: BLSCheckpointHandler | null = null;
     private checkpointFetcher: BLSCheckpointFetcher;
+    private babylonClient: BabylonClient;
 
     private constructor() {
         this.checkpointFetcher = BLSCheckpointFetcher.getInstance();
+        this.babylonClient = BabylonClient.getInstance();
     }
 
     public static getInstance(): BLSCheckpointHandler {
@@ -17,7 +19,7 @@ export class BLSCheckpointHandler {
         return BLSCheckpointHandler.instance;
     }
 
-    public async handleCheckpoint(event: any, network: Network): Promise<void> {
+    public async handleCheckpoint(event: any): Promise<void> {
         const MAX_RETRIES = 3;
         const INITIAL_RETRY_DELAY = 3000; // 3 seconds
         const MAX_RETRY_DELAY = 15000; // 15 seconds
@@ -27,7 +29,6 @@ export class BLSCheckpointHandler {
             try {
                 // Log raw event for debugging
                 /* logger.info(`[BLSCheckpoint] Raw event received:`, {
-                    network,
                     hasEvents: !!event.events,
                     eventsCount: event.events?.length,
                     eventTypes: event.events?.map((e: any) => e.type)
@@ -81,7 +82,7 @@ export class BLSCheckpointHandler {
                 logger.info(`[BLSCheckpoint] Processing checkpoint for epoch ${epochNum}`);
 
                 // Fetch complete checkpoint data including BLS signatures
-                await this.checkpointFetcher.fetchCheckpointForEpoch(epochNum, network);
+                await this.checkpointFetcher.fetchCheckpointForEpoch(epochNum);
                 
                 // If successful, break out of retry loop
                 return;

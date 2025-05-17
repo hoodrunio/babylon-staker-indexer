@@ -33,7 +33,8 @@ export class FinalityProviderService {
     };
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance(Network.MAINNET);
+        // Use BabylonClient with the network from environment variable
+        this.babylonClient = BabylonClient.getInstance();
         this.cache = CacheService.getInstance();
     }
 
@@ -44,11 +45,11 @@ export class FinalityProviderService {
         return FinalityProviderService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
+    private getNetworkConfig() {
+        // Use babylonClient class member
         return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
+            nodeUrl: this.babylonClient.getBaseUrl(),
+            rpcUrl: this.babylonClient.getRpcUrl()
         };
     }
 
@@ -125,13 +126,13 @@ export class FinalityProviderService {
         return data;
     }
 
-    public async getActiveFinalityProviders(network: Network = Network.MAINNET): Promise<FinalityProvider[]> {
-        const cacheKey = `fp:active:${network}`;
+    public async getActiveFinalityProviders(): Promise<FinalityProvider[]> {
+        const cacheKey = `fp:active`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.PROVIDERS_LIST,
             async () => {
-                const { nodeUrl } = this.getNetworkConfig(network);
+                const { nodeUrl } = this.getNetworkConfig();
                 
                 // 1. First, get the latest block height
                 const currentHeight = await this.babylonClient.getCurrentHeight();
@@ -181,8 +182,8 @@ export class FinalityProviderService {
         );
     }
 
-    public async getAllFinalityProviders(network: Network = Network.MAINNET): Promise<FinalityProvider[]> {
-        const cacheKey = `fp:all:${network}`;
+    public async getAllFinalityProviders(): Promise<FinalityProvider[]> {
+        const cacheKey = `fp:all`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.PROVIDERS_LIST,
@@ -191,7 +192,7 @@ export class FinalityProviderService {
                 let nextKey = '';
                 
                 do {
-                    const { nodeUrl } = this.getNetworkConfig(network);
+                    const { nodeUrl } = this.getNetworkConfig();
                     const url = new URL(`${nodeUrl}/babylon/btcstaking/v1/finality_providers`);
                     
                     // Add pagination parameters if we have a next key
@@ -221,15 +222,15 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProvider(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProvider & { isActive: boolean }> {
-        const cacheKey = `fp:details:${fpBtcPkHex}:${network}`;
+    public async getFinalityProvider(fpBtcPkHex: string): Promise<FinalityProvider & { isActive: boolean }> {
+        const cacheKey = `fp:details:${fpBtcPkHex}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.PROVIDER_DETAILS,
             async () => {
                 const [providerResponse, activeProviders] = await Promise.all([
-                    fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/finality_provider`),
-                    this.getActiveFinalityProviders(network)
+                    fetch(`${this.getNetworkConfig().nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/finality_provider`),
+                    this.getActiveFinalityProviders()
                 ]);
 
                 if (!providerResponse.ok) {
@@ -246,15 +247,15 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProviderPower(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<FinalityProviderPower> {
-        const cacheKey = `fp:power:${fpBtcPkHex}:${network}`;
+    public async getFinalityProviderPower(fpBtcPkHex: string): Promise<FinalityProviderPower> {
+        const cacheKey = `fp:power:${fpBtcPkHex}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.POWER,
             async () => {
                 const [powerResponse, totalPower] = await Promise.all([
-                    fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/finality/v1/finality_providers/${fpBtcPkHex}/power`),
-                    this.getTotalVotingPower(network)
+                    fetch(`${this.getNetworkConfig().nodeUrl}/babylon/finality/v1/finality_providers/${fpBtcPkHex}/power`),
+                    this.getTotalVotingPower()
                 ]);
 
                 if (!powerResponse.ok) {
@@ -276,14 +277,14 @@ export class FinalityProviderService {
         );
     }
 
-    private async getTotalVotingPower(network: Network = Network.MAINNET): Promise<{ totalPower: string; rawTotalPower: string }> {
-        const cacheKey = `fp:total-power:${network}`;
+    private async getTotalVotingPower(): Promise<{ totalPower: string; rawTotalPower: string }> {
+        const cacheKey = `fp:total-power`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.TOTAL_POWER,
             async () => {
                 const currentHeight = await this.babylonClient.getCurrentHeight();
-                const response = await fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
+                const response = await fetch(`${this.getNetworkConfig().nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -311,27 +312,24 @@ export class FinalityProviderService {
         );
     }
 
-    public async getFinalityProviderDelegationStats(fpBtcPkHex: string, network: Network = Network.MAINNET): Promise<{
+    public async getFinalityProviderDelegationStats(fpBtcPkHex: string): Promise<{
         active_tvl: string;
         active_tvl_sat: number;
         total_tvl: string;
         total_tvl_sat: number;
         delegation_count: number;
     }> {
-        const cacheKey = `fp:delegation-stats:${fpBtcPkHex}:${network}`;
+        const cacheKey = `fp:delegation-stats:${fpBtcPkHex}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.PROVIDER_DETAILS,
             async () => {
                 try {
-                    const networkLower = network.toLowerCase();
-                    
                     // Aggregate delegation stats for this provider
                     // Only include delegations that reference this finality provider
                     const result = await NewBTCDelegation.aggregate([
                         { 
                             $match: { 
-                                networkType: networkLower,
                                 finalityProviderBtcPksHex: fpBtcPkHex
                             }
                         },
@@ -380,31 +378,23 @@ export class FinalityProviderService {
         );
     }
 
-    public async getAllFinalityProviderDelegationStats(network: Network = Network.MAINNET): Promise<Record<string, {
+    public async getAllFinalityProviderDelegationStats(): Promise<Record<string, {
         active_tvl: string;
         active_tvl_sat: number;
         total_tvl: string;
         total_tvl_sat: number;
         delegation_count: number;
     }>> {
-        const cacheKey = `fp:all-delegation-stats:${network}`;
+        const cacheKey = `fp:all-delegation-stats`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.PROVIDER_DETAILS,
             async () => {
                 try {
-                    const networkLower = network.toLowerCase();
-                    
-                    logger.info(`[FINALITY] Getting all delegation stats for network: ${networkLower}`);
+                    logger.info(`[FINALITY] Getting all delegation stats`);
                     
                     // Get delegation information for all finality providers with a single aggregation query
                     const result = await NewBTCDelegation.aggregate([
-                        { 
-                            // Filter delegations in a specific network
-                            $match: { 
-                                networkType: networkLower
-                            }
-                        },
                         // Expand the delegation to all finality providers within it
                         { 
                             $unwind: {
@@ -452,7 +442,7 @@ export class FinalityProviderService {
                     }> = {};
                     
                     if (result.length === 0) {
-                        logger.warn(`[FINALITY] No delegation stats found for network: ${networkLower}`);
+                        logger.warn(`[FINALITY] No delegation stats found`);
                     }
                     
                     result.forEach((fpStats: { 

@@ -1,4 +1,5 @@
-import { Network } from '../../types/finality';
+// import { Network } from '../../types/finality';
+import { BabylonClient } from '../../clients/BabylonClient';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { ValidatorInfoService } from '../validator/ValidatorInfoService';
 import axios from 'axios';
@@ -7,13 +8,15 @@ import { logger } from '../../utils/logger';
 export class CheckpointStatusFetcher {
     private static instance: CheckpointStatusFetcher | null = null;
     private validatorInfoService: ValidatorInfoService;
+    private babylonClient: BabylonClient;
 
     private constructor() {
         this.validatorInfoService = ValidatorInfoService.getInstance();
+        this.babylonClient = BabylonClient.getInstance();
     }
 
-    public getBabylonClient(network: Network) {
-        return this.validatorInfoService.getBabylonClient(network);
+    public getBabylonClient() {
+        return this.babylonClient;
     }
 
     public static getInstance(): CheckpointStatusFetcher {
@@ -23,17 +26,17 @@ export class CheckpointStatusFetcher {
         return CheckpointStatusFetcher.instance;
     }
 
-    public async syncHistoricalCheckpoints(network: Network, batchSize: number = 50): Promise<void> {
+    public async syncHistoricalCheckpoints(batchSize: number = 50): Promise<void> {
         try {
-            logger.info(`[CheckpointStatus] Starting historical checkpoint status sync for ${network}`);
+            const network = this.babylonClient.getNetwork();
+            logger.info(`[CheckpointStatus] Starting historical checkpoint status sync`);
 
             // Get all checkpoints that need status update
             const checkpoints = await BLSCheckpoint.find({
-                network,
                 status: { $ne: 'CKPT_STATUS_FINALIZED' } // Get only non-finalized checkpoints
             }).sort({ epoch_num: -1 });
 
-            logger.info(`[CheckpointStatus] Found ${checkpoints.length} non-finalized checkpoints to check status for ${network}`);
+            logger.info(`[CheckpointStatus] Found ${checkpoints.length} non-finalized checkpoints to check status`);
 
             let updatedCount = 0;
             // Process checkpoints in batches
@@ -45,12 +48,7 @@ export class CheckpointStatusFetcher {
                 const statusUpdates = await Promise.all(
                     batch.map(async checkpoint => {
                         try {
-                            const client = await this.validatorInfoService.getBabylonClient(network);
-                            if (!client) {
-                                throw new Error(`No Babylon client found for network ${network}`);
-                            }
-
-                            const baseUrl = client.getBaseUrl();
+                            const baseUrl = this.babylonClient.getBaseUrl();
                             const [statusResponse, checkpointResponse] = await Promise.all([
                                 axios.get(`${baseUrl}/babylon/checkpointing/v1/epochs/${checkpoint.epoch_num}/status`),
                                 axios.get(`${baseUrl}/babylon/checkpointing/v1/raw_checkpoint/${checkpoint.epoch_num}`)
@@ -97,8 +95,7 @@ export class CheckpointStatusFetcher {
                         // Update checkpoint with the new status
                         await BLSCheckpoint.findOneAndUpdate(
                             { 
-                                epoch_num: checkpoint.epoch_num,
-                                network 
+                                epoch_num: checkpoint.epoch_num
                             },
                             { 
                                 $set: { 
@@ -126,21 +123,16 @@ export class CheckpointStatusFetcher {
                 }
             }
 
-            logger.info(`[CheckpointStatus] Completed historical checkpoint status sync for ${network}. Updated ${updatedCount}/${checkpoints.length} checkpoints`);
+            logger.info(`[CheckpointStatus] Completed historical checkpoint status sync. Updated ${updatedCount}/${checkpoints.length} checkpoints`);
         } catch (error) {
-            logger.error(`[CheckpointStatus] Error in historical checkpoint sync for ${network}:`, error);
+            logger.error(`[CheckpointStatus] Error in historical checkpoint sync:`, error);
             throw error;
         }
     }
 
-    public async getCurrentEpoch(network: Network): Promise<number> {
+    public async getCurrentEpoch(): Promise<number> {
         try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
-            }
-
-            const baseUrl = client.getBaseUrl();
+            const baseUrl = this.babylonClient.getBaseUrl();
             const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`);
             return parseInt(response.data.epoch_number);
         } catch (error) {

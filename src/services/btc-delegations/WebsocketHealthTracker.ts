@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { MissedBlocksProcessor } from './MissedBlocksProcessor';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { Mutex } from 'async-mutex';
@@ -9,37 +8,40 @@ import dotenv from 'dotenv';
 dotenv.config();
 export class WebsocketHealthTracker {
     private static instance: WebsocketHealthTracker | null = null;
-    private state: Map<Network, WebsocketState> = new Map();
+    private state: WebsocketState;
     private missedBlocksProcessor: MissedBlocksProcessor;
-    private mutex: Map<Network, Mutex> = new Map();
+    private mutex: Mutex;
     private cacheService: CacheService;
-    private readonly CACHE_KEY_PREFIX = 'last_processed_height:';
+    private babylonClient: BabylonClient;
+    private readonly CACHE_KEY_PREFIX = 'last_processed_height';
     private readonly CACHE_TTL = 7 * 24 * 60 * 60; // 7 days
     private readonly isProduction = process.env.NODE_ENV === 'production';
     
     private constructor() {
         this.missedBlocksProcessor = MissedBlocksProcessor.getInstance();
         this.cacheService = CacheService.getInstance();
+        this.babylonClient = BabylonClient.getInstance();
+        this.mutex = new Mutex();
+        this.state = {
+            lastProcessedHeight: 0,
+            isConnected: true,
+            lastConnectionTime: new Date(),
+            lastUpdateTime: new Date()
+        };
         
-        // Create a mutex for each network
-        Object.values(Network).forEach(network => {
-            this.mutex.set(network, new Mutex());
-            // Get last block height from cache
-            this.loadLastProcessedHeight(network);
-        });
+        // Load the last processed height from cache
+        this.loadLastProcessedHeight();
     }
 
-    private async loadLastProcessedHeight(network: Network) {
+    private async loadLastProcessedHeight() {
         try {
-            const height = await this.cacheService.get<number>(`${this.CACHE_KEY_PREFIX}${network}`);
+            const height = await this.cacheService.get<number>(this.CACHE_KEY_PREFIX);
             if (height !== null) {
-                const state = this.getOrCreateState(network);
-                state.lastProcessedHeight = height;
-                this.state.set(network, state);
-                logger.debug(`[${network}] Loaded last processed height from cache: ${height}`);
+                this.state.lastProcessedHeight = height;
+                logger.debug(`Loaded last processed height from cache: ${height}`);
             }
         } catch (error) {
-            logger.error(`[${network}] Error loading last processed height from cache:`, error);
+            logger.error(`Error loading last processed height from cache:`, error);
         }
     }
 
@@ -50,42 +52,32 @@ export class WebsocketHealthTracker {
         return WebsocketHealthTracker.instance;
     }
 
-    public async updateBlockHeight(network: Network, height: number) {
-        const mutex = this.mutex.get(network);
-        if (!mutex) {
-            logger.error(`[${network}] No mutex found for network`);
-            return;
-        }
-
+    public async updateBlockHeight(height: number) {
         // Lock with mutex
-        const release = await mutex.acquire();
+        const release = await this.mutex.acquire();
         try {
-            const currentState = this.getOrCreateState(network);
-            
             // Only process real gaps (if more than 1 block is skipped)
-            if (height > currentState.lastProcessedHeight + 1 && this.isProduction) {
-                logger.debug(`[${network}] Gap detected: ${currentState.lastProcessedHeight} -> ${height}`);
+            if (height > this.state.lastProcessedHeight + 1 && this.isProduction) {
+                logger.debug(`Gap detected: ${this.state.lastProcessedHeight} -> ${height}`);
                 
                 // Process missing blocks
-                const client = BabylonClient.getInstance(network);
                 await this.missedBlocksProcessor.processMissedBlocks(
-                    network,
-                    currentState.lastProcessedHeight + 1,
+                    this.babylonClient.getNetwork(),
+                    this.state.lastProcessedHeight + 1,
                     height - 1, // Except last block
-                    client
+                    this.babylonClient
                 );
             }
 
             // Update new height
-            if (height > currentState.lastProcessedHeight) {
-                logger.debug(`[${network}] Updating block height from ${currentState.lastProcessedHeight} to ${height}`);
-                currentState.lastProcessedHeight = height;
-                currentState.lastUpdateTime = new Date();
-                this.state.set(network, currentState);
+            if (height > this.state.lastProcessedHeight) {
+                logger.debug(`Updating block height from ${this.state.lastProcessedHeight} to ${height}`);
+                this.state.lastProcessedHeight = height;
+                this.state.lastUpdateTime = new Date();
 
                 // Save to cache
                 await this.cacheService.set(
-                    `${this.CACHE_KEY_PREFIX}${network}`,
+                    this.CACHE_KEY_PREFIX,
                     height,
                     this.CACHE_TTL
                 );
@@ -96,58 +88,47 @@ export class WebsocketHealthTracker {
         }
     }
 
-    public markDisconnected(network: Network) {
-        const currentState = this.getOrCreateState(network);
-        currentState.isConnected = false;
-        currentState.disconnectedAt = new Date();
-        this.state.set(network, currentState);
+    public markDisconnected() {
+        this.state.isConnected = false;
+        this.state.disconnectedAt = new Date();
         
-        logger.info(`[${network}] Websocket disconnected at height ${currentState.lastProcessedHeight}`);
+        logger.info(`Websocket disconnected at height ${this.state.lastProcessedHeight}`);
     }
 
-    public async handleReconnection(network: Network, babylonClient: BabylonClient) {
-        const mutex = this.mutex.get(network);
-        if (!mutex) {
-            logger.error(`[${network}] No mutex found for network`);
-            return;
-        }
-
+    public async handleReconnection() {
         // Lock with mutex
-        const release = await mutex.acquire();
+        const release = await this.mutex.acquire();
         try {
-            const state = this.getOrCreateState(network);
-            const currentHeight = await babylonClient.getCurrentHeight();
-            const lastProcessedHeight = state.lastProcessedHeight;
+            const currentHeight = await this.babylonClient.getCurrentHeight();
+            const lastProcessedHeight = this.state.lastProcessedHeight;
 
             // Process if there are missing blocks
             if (currentHeight > lastProcessedHeight && this.isProduction) {
-                logger.debug(`[${network}] Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
+                logger.debug(`Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
                 
                 await this.missedBlocksProcessor.processMissedBlocks(
-                    network,
+                    this.babylonClient.getNetwork(),
                     lastProcessedHeight + 1,
                     currentHeight,
-                    babylonClient
+                    this.babylonClient
                 );
 
-                state.lastProcessedHeight = currentHeight;
-                this.state.set(network, state);
+                this.state.lastProcessedHeight = currentHeight;
 
                 // Save to cache
                 await this.cacheService.set(
-                    `${this.CACHE_KEY_PREFIX}${network}`,
+                    this.CACHE_KEY_PREFIX,
                     currentHeight,
                     this.CACHE_TTL
                 );
             }
 
             // Update connection status
-            state.isConnected = true;
-            state.disconnectedAt = undefined;
-            this.state.set(network, state);
+            this.state.isConnected = true;
+            this.state.disconnectedAt = undefined;
 
         } catch (error) {
-            logger.error(`[${network}] Error processing missed blocks:`, error);
+            logger.error(`Error processing missed blocks:`, error);
             throw error;
         } finally {
             // Always release mutex
@@ -156,24 +137,10 @@ export class WebsocketHealthTracker {
     }
 
     /**
-     * Get the current state for a network
+     * Get the current state
      */
-    public getNetworkState(network: Network): WebsocketState | undefined {
-        return this.state.get(network);
-    }
-
-    private getOrCreateState(network: Network): WebsocketState {
-        let state = this.state.get(network);
-        if (!state) {
-            state = {
-                lastProcessedHeight: 0,
-                isConnected: true,
-                lastConnectionTime: new Date(),
-                lastUpdateTime: new Date()
-            };
-            this.state.set(network, state);
-        }
-        return state;
+    public getState(): WebsocketState {
+        return this.state;
     }
 }
 

@@ -1,5 +1,4 @@
 import { BabylonClient } from '../../clients/BabylonClient';
-import { Network } from '../../types/finality';
 import { EpochInfo, EpochStats, SignatureStatsParams } from '../../types';
 import { FinalityProviderService } from './FinalityProviderService';
 import { logger } from '../../utils/logger';
@@ -14,79 +13,20 @@ export class FinalityEpochService {
         stats: EpochStats;
         timestamp: number;
     } | null = null;
-
-    // Default network type to be used (one of the configured networks)
-    private defaultNetwork: Network;
     
     private readonly EPOCHS_TO_KEEP = 14; // Keep last 14 epochs
     private readonly statsUpdateLock: Set<string> = new Set();
     private readonly STATS_UPDATE_INTERVAL = 60000; // 1 minute
 
     private constructor() {
-        // First, determine the configured networks
-        this.defaultNetwork = this.determineDefaultNetwork();
-        // Get BabylonClient based on the determined default network
-        this.babylonClient = BabylonClient.getInstance(this.defaultNetwork);
+        this.babylonClient = BabylonClient.getInstance();
         this.finalityProviderService = FinalityProviderService.getInstance();
-        logger.info(`[FinalityEpochService] Initialized with default network: ${this.defaultNetwork}`);
+        logger.info(`[FinalityEpochService] Initialized`);
     }
 
-    /**
-     * Sets one of the configured networks as default.
-     * Checks testnet first, then mainnet.
-     */
-    private determineDefaultNetwork(): Network {
-        try {
-            // try testnet first
-            try {
-                const testnetClient = BabylonClient.getInstance(Network.TESTNET);
-                const testnetBaseUrl = testnetClient.getBaseUrl();
-                if (testnetBaseUrl) {
-                    logger.info('[FinalityEpochService] Using TESTNET as default network');
-                    return Network.TESTNET;
-                }
-            } catch (err) {
-                logger.debug(`[FinalityEpochService] Testnet not available: ${err instanceof Error ? err.message : String(err)}`);
-            }
-            
-            // If testnet is not available, try mainnet
-            try {
-                const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
-                const mainnetBaseUrl = mainnetClient.getBaseUrl();
-                if (mainnetBaseUrl) {
-                    logger.info('[FinalityEpochService] Using MAINNET as default network');
-                    return Network.MAINNET;
-                }
-            } catch (err) {
-                logger.debug(`[FinalityEpochService] Mainnet not available: ${err instanceof Error ? err.message : String(err)}`);
-            }
-            
-            // Return testnet as default (even if not configured, will be checked later)
-            logger.warn('[FinalityEpochService] No configured networks found, defaulting to MAINNET');
-            return Network.MAINNET;
-        } catch (err) {
-            logger.error(`[FinalityEpochService] Error determining default network: ${err instanceof Error ? err.message : String(err)}`);
-            // As a last resort, return testnet
-            return Network.MAINNET;
-        }
-    }
+
     
-    /**
-     * Checks if the specified network is configured.
-     * If the network is not configured, uses the default network.
-     */
-    private ensureNetworkConfigured(network: Network): Network {
-        try {
-            const client = BabylonClient.getInstance(network);
-            const baseUrl = client.getBaseUrl();
-            if (baseUrl) {
-                return network;
-            }
-        } catch (err) {
-            logger.warn(`[FinalityEpochService] Network ${network} is not configured, using default network ${this.defaultNetwork} instead`);
-        }
-        return this.defaultNetwork;
-    }
+
 
     public static getInstance(): FinalityEpochService {
         if (!FinalityEpochService.instance) {
@@ -95,16 +35,12 @@ export class FinalityEpochService {
         return FinalityEpochService.instance;
     }
 
-    public async getCurrentEpochInfo(network?: Network): Promise<{ epochNumber: number; boundary: number }> {
-        // Make sure the specified network is configured, if not use the default
-        const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
-        
+    public async getCurrentEpochInfo(): Promise<{ epochNumber: number; boundary: number }> {
         if (this.currentEpochInfo) {
             return this.currentEpochInfo;
         }
         
-        const client = BabylonClient.getInstance(useNetwork);
-        const response = await client.getCurrentEpoch();
+        const response = await this.babylonClient.getCurrentEpoch();
         this.currentEpochInfo = {
             epochNumber: Number(response.current_epoch),
             boundary: Number(response.epoch_boundary)
@@ -113,15 +49,11 @@ export class FinalityEpochService {
         return this.currentEpochInfo;
     }
 
-    public async checkAndUpdateEpoch(currentHeight: number, network?: Network): Promise<void> {
-        // Make sure the specified network is configured, if not use the default
-        const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
-        
+    public async checkAndUpdateEpoch(currentHeight: number): Promise<void> {
         try {
             // If cache doesn't exist or current height has passed the boundary
             if (!this.currentEpochInfo || currentHeight > this.currentEpochInfo.boundary) {
-                const client = BabylonClient.getInstance(useNetwork);
-                const response = await client.getCurrentEpoch();
+                const response = await this.babylonClient.getCurrentEpoch();
                 const newEpochInfo = {
                     epochNumber: Number(response.current_epoch),
                     boundary: Number(response.epoch_boundary)
@@ -131,7 +63,7 @@ export class FinalityEpochService {
                 if (!this.currentEpochInfo || newEpochInfo.epochNumber > this.currentEpochInfo.epochNumber) {
                     this.currentEpochInfo = newEpochInfo;
                     await this.cleanupOldEpochs();
-                    logger.info(`[FinalityEpochService] Moved to new epoch ${newEpochInfo.epochNumber} with boundary ${newEpochInfo.boundary} on network ${useNetwork}`);
+                    logger.info(`[FinalityEpochService] Moved to new epoch ${newEpochInfo.epochNumber} with boundary ${newEpochInfo.boundary}`);
                 }
             }
         } catch (error) {
@@ -182,13 +114,9 @@ export class FinalityEpochService {
     }
 
     public async updateCurrentEpochStats(
-        getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
-        network?: Network
+        getSignatureStats: (params: SignatureStatsParams) => Promise<any>
     ): Promise<EpochStats> {
-        // Make sure the specified network is configured, if not use the default
-        const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
-        
-        const lockKey = `epoch-stats-${useNetwork}`;
+        const lockKey = `epoch-stats`;
         
         // Check if stats are being updated
         if (this.statsUpdateLock.has(lockKey)) {
@@ -207,9 +135,8 @@ export class FinalityEpochService {
         try {
             this.statsUpdateLock.add(lockKey);
             
-            const client = BabylonClient.getInstance(useNetwork);
-            const currentEpoch = await this.getCurrentEpochInfo(useNetwork);
-            const currentHeight = await client.getCurrentHeight();
+            const currentEpoch = await this.getCurrentEpochInfo();
+            const currentHeight = await this.babylonClient.getCurrentHeight();
             const safeHeight = currentHeight - 2; // Process up to 2 blocks behind (because there is a timeout for the finality providers to submit their votes)
             
             // Calculate epoch boundaries
@@ -217,7 +144,7 @@ export class FinalityEpochService {
             const epochEndHeight = Math.min(currentEpoch.boundary);
             
             // Get active finality providers at current height
-            const providers = await client.getActiveFinalityProvidersAtHeight(safeHeight);
+            const providers = await this.babylonClient.getActiveFinalityProvidersAtHeight(safeHeight);
             
             // Calculate stats for each provider
             const providerStats = await Promise.all(
@@ -227,8 +154,7 @@ export class FinalityEpochService {
                         const stats = await getSignatureStats({
                             fpBtcPkHex: provider.fpBtcPkHex,
                             startHeight: epochStartHeight,
-                            endHeight: epochEndHeight,
-                            network: useNetwork
+                            endHeight: epochEndHeight
                         });
                         
                         const totalBlocks = stats.signedBlocks + stats.missedBlocks;
@@ -272,10 +198,7 @@ export class FinalityEpochService {
         }
     }
 
-    public async getCurrentEpochStats(network?: Network): Promise<EpochStats> {
-        // Make sure the specified network is configured, if not use the default
-        const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
-        
+    public async getCurrentEpochStats(): Promise<EpochStats> {
         if (!this.currentEpochStatsCache) {
             throw new Error('Epoch stats not initialized');
         }
@@ -284,8 +207,7 @@ export class FinalityEpochService {
 
     public async getProviderCurrentEpochStats(
         fpBtcPkHex: string, 
-        getSignatureStats: (params: SignatureStatsParams) => Promise<any>,
-        network?: Network
+        getSignatureStats: (params: SignatureStatsParams) => Promise<any>
     ): Promise<{
         epochNumber: number;
         startHeight: number;
@@ -297,20 +219,15 @@ export class FinalityEpochService {
         timestamp: number;
     }> {
         try {
-            // Make sure the specified network is configured, if not use the default
-            const useNetwork = network ? this.ensureNetworkConfigured(network) : this.defaultNetwork;
-            
-            const client = BabylonClient.getInstance(useNetwork);
-            const currentEpoch = await this.getCurrentEpochInfo(useNetwork);
-            const currentHeight = await client.getCurrentHeight();
+            const currentEpoch = await this.getCurrentEpochInfo();
+            const currentHeight = await this.babylonClient.getCurrentHeight();
             const epochStartHeight = currentEpoch.boundary - 360;
             const epochEndHeight = currentEpoch.boundary;
 
             const stats = await getSignatureStats({
                 fpBtcPkHex,
                 startHeight: epochStartHeight,
-                endHeight: epochEndHeight,
-                network: useNetwork
+                endHeight: epochEndHeight
             });
 
             const totalBlocks = stats.signedBlocks + stats.missedBlocks;

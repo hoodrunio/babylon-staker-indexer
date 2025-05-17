@@ -450,43 +450,30 @@ export class BabylonClient {
         throw new Error(`[BabylonClient] Unexpected error in failover logic for ${this.network}`);
     }
 
-    public static getInstance(network?: Network): BabylonClient {
-        // If network not specified, determine from env NETWORK value
-        if (!network) {
-            const envNetwork = process.env.NETWORK?.toLowerCase() || '';
-            if (envNetwork === 'testnet') {
-                network = Network.TESTNET;
-            } else {
-                // Default to MAINNET if not specified or if env value is not 'testnet'
-                network = Network.MAINNET;
-            }
+    public static getInstance(): BabylonClient {
+        // Determine network from env NETWORK value
+        const envNetwork = process.env.NETWORK?.toLowerCase() || '';
+        let network: Network;
+        
+        if (envNetwork === 'testnet') {
+            network = Network.TESTNET;
+        } else {
+            // Default to MAINNET if not specified or if env value is not 'testnet'
+            network = Network.MAINNET;
         }
-        // First try to get or create an instance for the requested network
+        
+        // Check if we already have an instance for this network
+        if (BabylonClient.instances.has(network)) {
+            return BabylonClient.instances.get(network)!;
+        }
+        
+        // Try to create an instance for the specified network
         try {
-            if (!BabylonClient.instances.has(network)) {
-                BabylonClient.instances.set(network, new BabylonClient(network));
-            }
+            BabylonClient.instances.set(network, new BabylonClient(network));
             return BabylonClient.instances.get(network)!;
         } catch (error) {
-            // If the requested network is not configured, try the alternative network
-            const alternativeNetwork = network === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
-            
-            // Log a warning about falling back to the alternative network
-            console.warn(`Network ${network} is not configured. Falling back to ${alternativeNetwork}.`);
-            
-            // Check if we already have an instance for the alternative network
-            if (BabylonClient.instances.has(alternativeNetwork)) {
-                return BabylonClient.instances.get(alternativeNetwork)!;
-            }
-            
-            // Try to create an instance for the alternative network
-            try {
-                BabylonClient.instances.set(alternativeNetwork, new BabylonClient(alternativeNetwork));
-                return BabylonClient.instances.get(alternativeNetwork)!;
-            } catch (fallbackError) {
-                // If we can't create an instance for either network, throw an error
-                throw new Error(`No configured networks available. Both ${network} and ${alternativeNetwork} are not configured.`);
-            }
+            // If the configured network is not available, throw a clear error
+            throw new Error(`Network ${network} is not configured. Please check your environment settings.`);
         }
     }
 

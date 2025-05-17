@@ -8,19 +8,9 @@ class ParamsService {
   private static readonly CACHE_KEY_PREFIX = 'params:';
 
   private static getClient(network?: Network): BabylonClient {
-    try {
-      return BabylonClient.getInstance(network || Network.MAINNET);
-    } catch (error) {
-      if (!network) {
-        // If no specific network was requested, try testnet as fallback
-        try {
-          return BabylonClient.getInstance(Network.MAINNET);
-        } catch (error) {
-          throw new Error('Neither mainnet nor testnet is configured. Please configure at least one network in your environment variables.');
-        }
-      }
-      throw error;
-    }
+    // Use the network parameter if specified, otherwise use the default from environment
+    return BabylonClient.getInstance(network);
+    // The getInstance method now handles fallbacks and proper error messages internally
   }
 
   private static getCacheKey(network: Network): string {

@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { CacheService } from '../CacheService';
 import { logger } from '../../utils/logger';
@@ -38,7 +37,7 @@ export class StakeholderRewardsService {
     };
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance(Network.MAINNET);
+        this.babylonClient = BabylonClient.getInstance(); // Use network from environment
         this.cache = CacheService.getInstance();
     }
 
@@ -49,11 +48,10 @@ export class StakeholderRewardsService {
         return StakeholderRewardsService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
+    private getNetworkConfig() {
         return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
+            nodeUrl: this.babylonClient.getBaseUrl(),
+            rpcUrl: this.babylonClient.getRpcUrl()
         };
     }
 
@@ -133,16 +131,15 @@ export class StakeholderRewardsService {
     /**
      * Get rewards for a stakeholder (finality provider or BTC staker)
      * @param address BTC address in bech32 format (bbn1...)
-     * @param network Network to query
      * @returns Reward gauges for the stakeholder
      */
-    public async getStakeholderRewards(address: string, network: Network = Network.MAINNET): Promise<RewardGaugesResponse> {
-        const cacheKey = `rewards:${address}:${network}`;
+    public async getStakeholderRewards(address: string): Promise<RewardGaugesResponse> {
+        const cacheKey = `rewards:${address}`;
         return this.getWithRevalidate(
             cacheKey,
             this.CACHE_TTL.REWARDS,
             async () => {
-                const { nodeUrl } = this.getNetworkConfig(network);
+                const { nodeUrl } = this.getNetworkConfig();
                 
                 const url = `${nodeUrl}/babylon/incentive/address/${address}/reward_gauge`;
                 const response = await fetch(url);
@@ -242,18 +239,11 @@ export class StakeholderRewardsService {
 
     /**
      * Get reward statistics for all active finality providers
-     * @param network Network to query
      * @returns Summary of rewards for all finality providers
      */
-    public async getAllFinalityProviderRewardsSummary(network: Network = Network.MAINNET): Promise<any> {
-        // Ensure we're only using supported networks
-        if (network !== Network.MAINNET && network !== Network.TESTNET) {
-            logger.warn(`[Rewards] Invalid network parameter, defaulting to MAINNET: ${network}`);
-            network = Network.MAINNET;
-        }
-        
-        // Create a cache key with explicit network name to avoid confusion
-        const cacheKey = `rewards:fp:summary:${network}`;
+    public async getAllFinalityProviderRewardsSummary(): Promise<any> {
+        // Create a cache key
+        const cacheKey = `rewards:fp:summary`;
         
         // logger.info(`[Rewards] Checking cache for key: ${cacheKey}`);
         
@@ -271,15 +261,15 @@ export class StakeholderRewardsService {
             const finalityProviderService = FinalityProviderService.getInstance();
             
             // Log which network we're querying
-            // logger.info(`[Rewards] Getting rewards summary for network: ${network}`);
+            // logger.info(`[Rewards] Getting rewards summary`);
             
             // Fetch active providers
-            const activeProviders = await finalityProviderService.getActiveFinalityProviders(network);
+            const activeProviders = await finalityProviderService.getActiveFinalityProviders();
             // logger.info(`[Rewards] Found ${activeProviders.length} active finality providers`);
             
             // If no active providers, return empty result
             if (!activeProviders || activeProviders.length === 0) {
-                logger.warn(`[Rewards] No active finality providers found for network: ${network}`);
+                logger.warn(`[Rewards] No active finality providers found`);
                 const emptyResult = { rewards: [] };
                 await this.cache.set(cacheKey, emptyResult, this.CACHE_TTL.REWARDS_SUMMARY);
                 return emptyResult;
@@ -314,8 +304,7 @@ export class StakeholderRewardsService {
                                 // logger.info(`[Rewards] Fetching rewards for provider ${provider.btc_pk} with address ${provider.addr}`);
                                 
                                 const rewards = await this.getStakeholderRewards(
-                                    provider.addr,
-                                    network
+                                    provider.addr
                                 );
                                 
                                 // logger.info(`[Rewards] Got rewards for provider ${provider.btc_pk}: ${JSON.stringify(Object.keys(rewards.reward_gauges || {}))}`);
@@ -362,7 +351,7 @@ export class StakeholderRewardsService {
             
             return result;
         } catch (error) {
-            logger.error(`[Rewards] Error fetching rewards summary for ${network}:`, error);
+            logger.error(`[Rewards] Error fetching rewards summary:`, error);
             return { rewards: [] };
         }
     }

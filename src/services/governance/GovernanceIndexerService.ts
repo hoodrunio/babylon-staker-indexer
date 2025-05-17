@@ -1,7 +1,6 @@
 import { BabylonClient } from '../../clients/BabylonClient';
 import { Proposal } from '../../database/models/Proposal';
 import { ProposalVotes } from '../../database/models/ProposalVotes';
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { ValidatorInfoService } from '../../services/validator/ValidatorInfoService';
 import { ProposalMessageParser } from '../../utils/proposal-message-parser';
@@ -10,46 +9,27 @@ import { GovernanceParams } from '../../database/models/GovernanceParams';
 export class GovernanceIndexerService {
     private babylonClient: BabylonClient;
     private isRunning = false;
-    private networks: Network[] = [];
     private shouldSync: boolean;
     private statusUpdateInterval: NodeJS.Timeout | null = null;
-    private readonly STATUS_UPDATE_INTERVAL_MS = 240000; // Check every minute
+    private readonly STATUS_UPDATE_INTERVAL_MS = 240000; // Check every 4 minutes
 
     constructor(babylonClient: BabylonClient) {
         this.babylonClient = babylonClient;
         this.shouldSync = process.env.GOVERNANCE_SYNC === 'true';
         
-        // Check networks through BabylonClient
+        // Verify configuration
         try {
-            // Create BabylonClient for Mainnet and check URLs
-            const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
-            const mainnetBaseUrl = mainnetClient.getBaseUrl();
-            const mainnetRpcUrl = mainnetClient.getRpcUrl();
+            const baseUrl = this.babylonClient.getBaseUrl();
+            const rpcUrl = this.babylonClient.getRpcUrl();
             
-            if (mainnetBaseUrl && mainnetRpcUrl) {
-                this.networks.push(Network.MAINNET);
-                logger.info(`[Governance] Mainnet enabled with base URL: ${mainnetBaseUrl}`);
+            if (baseUrl && rpcUrl) {
+                logger.info(`[Governance] Client initialized with base URL: ${baseUrl}`);
+            } else {
+                throw new Error('Invalid client configuration - missing base URL or RPC URL');
             }
-        } catch (err) {
-            logger.warn(`[Governance] Mainnet not available: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        
-        try {
-            // Create BabylonClient for Testnet and check URLs
-            const testnetClient = BabylonClient.getInstance(Network.TESTNET);
-            const testnetBaseUrl = testnetClient.getBaseUrl();
-            const testnetRpcUrl = testnetClient.getRpcUrl();
-            
-            if (testnetBaseUrl && testnetRpcUrl) {
-                this.networks.push(Network.TESTNET);
-                logger.info(`[Governance] Testnet enabled with base URL: ${testnetBaseUrl}`);
-            }
-        } catch (err) {
-            logger.warn(`[Governance] Testnet not available: ${err instanceof Error ? err.message : String(err)}`);
-        }
-
-        if (this.networks.length === 0) {
-            throw new Error('No network configuration found with valid URLs');
+        } catch (error) {
+            logger.error(`[Governance] Error initializing client: ${error instanceof Error ? error.message : String(error)}`);
+            throw new Error('Failed to initialize governance indexer');
         }
     }
 
@@ -61,23 +41,20 @@ export class GovernanceIndexerService {
 
         this.isRunning = true;
         
-        // If shouldSync is true, do initial sync for all networks
+        // If shouldSync is true, do initial sync
         if (this.shouldSync) {
-            logger.info('[Governance] Starting initial sync for all networks');
-            for (const network of this.networks) {
-                try {
-                    // First update governance parameters
-                    await this.updateGovernanceParams(network, this.babylonClient);
-                    logger.info(`[Governance] Updated governance parameters for network ${network}`);
+            logger.info('[Governance] Starting initial sync');
+            try {
+                // First update governance parameters
+                await this.updateGovernanceParams();
+                logger.info(`[Governance] Updated governance parameters`);
 
-                    // Then sync proposals
-                    await this.indexProposals(network);
-                    logger.info(`[Governance] Completed initial sync for network ${network}`);
-                } catch (error) {
-                    logger.error(`[Governance] Error in initial sync for network ${network}:`, error);
-                }
+                // Then sync proposals
+                await this.indexProposals();
+                logger.info(`[Governance] Completed initial sync`);
+            } catch (error) {
+                logger.error(`[Governance] Error in initial sync:`, error);
             }
-            logger.info('[Governance] Initial sync completed for all networks');
         } else {
             logger.info('[Governance] Skipping initial sync, will rely on WebSocket updates');
         }
@@ -93,36 +70,32 @@ export class GovernanceIndexerService {
 
         this.statusUpdateInterval = setInterval(async () => {
             logger.debug('[Governance] Running periodic proposal status update check');
-            for (const network of this.networks) {
-                await this.checkAndUpdateEndedProposals(network);
-            }
+            await this.checkAndUpdateEndedProposals();
         }, this.STATUS_UPDATE_INTERVAL_MS);
 
         logger.info('[Governance] Started periodic proposal status update interval');
     }
 
-    private async checkAndUpdateEndedProposals(network: Network) {
+    private async checkAndUpdateEndedProposals() {
         try {
             // Find proposals in voting period that have ended
             const now = new Date();
             const endedProposals = await Proposal.find({
-                network,
                 status: 'PROPOSAL_STATUS_VOTING_PERIOD',
                 voting_end_time: { $lt: now }
             });
 
             if (endedProposals.length === 0) {
-                logger.debug(`[Governance] No ended proposals to update for network ${network}`);
+                logger.debug(`[Governance] No ended proposals to update`);
                 return;
             }
 
-            logger.info(`[Governance] Found ${endedProposals.length} proposals with ended voting periods for network ${network}`);
-            const client = BabylonClient.getInstance(network);
+            logger.info(`[Governance] Found ${endedProposals.length} proposals with ended voting periods`);
 
             for (const proposal of endedProposals) {
                 try {
                     // Get the latest proposal status from the network
-                    const proposalData = await client.getProposalDetails(proposal.proposal_id);
+                    const proposalData = await this.babylonClient.getProposalDetails(proposal.proposal_id);
                     
                     if (proposalData && proposalData.status !== proposal.status) {
                         logger.info(`[Governance] Updating proposal ${proposal.proposal_id} status from ${proposal.status} to ${proposalData.status}`);
@@ -130,7 +103,6 @@ export class GovernanceIndexerService {
                         // Update proposal with new status and final tally
                         await Proposal.findOneAndUpdate(
                             {
-                                network,
                                 proposal_id: proposal.proposal_id
                             },
                             {
@@ -144,14 +116,14 @@ export class GovernanceIndexerService {
                             }
                         );
                     } else if (!proposalData) {
-                        logger.warn(`[Governance] Could not fetch details for proposal ${proposal.proposal_id} on network ${network}`);
+                        logger.warn(`[Governance] Could not fetch details for proposal ${proposal.proposal_id}`);
                     }
                 } catch (error) {
-                    logger.error(`[Governance] Error updating ended proposal ${proposal.proposal_id} for network ${network}:`, error);
+                    logger.error(`[Governance] Error updating ended proposal ${proposal.proposal_id}:`, error);
                 }
             }
         } catch (error) {
-            logger.error(`[Governance] Error checking for ended proposals for network ${network}:`, error);
+            logger.error(`[Governance] Error checking for ended proposals:`, error);
         }
     }
 
@@ -165,40 +137,35 @@ export class GovernanceIndexerService {
         logger.info('[Governance] Governance indexer stopped');
     }
 
-    private async indexProposals(network: Network) {
-        // Get the appropriate BabylonClient instance for the network
-        const client = BabylonClient.getInstance(network);
-        const proposals = await client.getProposals();
+    private async indexProposals() {
+        // Get proposals from the client
+        const proposals = await this.babylonClient.getProposals();
 
-        logger.info(`[Governance] Found ${proposals.length} proposals for network ${network}`);
+        logger.info(`[Governance] Found ${proposals.length} proposals`);
         for (const proposal of proposals) {
             try {
-                await this.updateProposalAndVotes(proposal, network);
+                await this.updateProposalAndVotes(proposal);
             } catch (error) {
-                logger.error(`[Governance] Error processing proposal ${proposal.id} for network ${network}:`, error);
+                logger.error(`[Governance] Error processing proposal ${proposal.id}:`, error);
             }
         }
     }
 
-    private async updateProposalAndVotes(proposal: any, network: Network) {
-        const client = BabylonClient.getInstance(network);
-        
+    private async updateProposalAndVotes(proposal: any) {
         // Always update governance parameters
-        await this.updateGovernanceParams(network, client);
+        await this.updateGovernanceParams();
 
         // Process messages using the ProposalMessageParser
         const messages = proposal.messages?.map((msg: any) => ProposalMessageParser.parseMessage(msg)) || [];
 
         // Get existing proposal to check if status has changed
         const existingProposal = await Proposal.findOne({
-            network,
             proposal_id: proposal.id
         });
 
         // Update or create proposal
         await Proposal.findOneAndUpdate(
             {
-                network,
                 proposal_id: proposal.id
             },
             {
@@ -212,7 +179,6 @@ export class GovernanceIndexerService {
                 voting_end_time: new Date(proposal.voting_end_time),
                 deposit_end_time: new Date(proposal.deposit_end_time),
                 total_deposit: proposal.total_deposit?.[0]?.amount || '0',
-                network,
                 final_tally_result: {
                     yes: proposal.final_tally_result?.yes_count || "0",
                     abstain: proposal.final_tally_result?.abstain_count || "0",
@@ -228,20 +194,20 @@ export class GovernanceIndexerService {
 
         // Only fetch votes if proposal is in voting period or completed
         if (proposal.status === 'PROPOSAL_STATUS_VOTING_PERIOD') {
-            await this.updateProposalVotesFromTxs(proposal.id, network, client);
+            await this.updateProposalVotesFromTxs(proposal.id);
         } else if (proposal.status === 'PROPOSAL_STATUS_PASSED' || proposal.status === 'PROPOSAL_STATUS_REJECTED') {
             logger.info(`[Governance] Processing completed proposal ${proposal.id} with status ${proposal.status}`);
             // For completed proposals, directly use tx search
-            await this.updateProposalVotesFromTxs(proposal.id, network, client);
+            await this.updateProposalVotesFromTxs(proposal.id);
         }
     }
 
-    private async updateProposalVotes(proposalId: string | number, network: Network, client: BabylonClient) {
-        const votes = await client.getProposalVotes(parseInt(proposalId.toString()));
-        await this.processVotes(proposalId, network, votes);
+    private async updateProposalVotes(proposalId: string | number) {
+        const votes = await this.babylonClient.getProposalVotes(parseInt(proposalId.toString()));
+        await this.processVotes(proposalId, votes);
     }
 
-    private async updateProposalVotesFromTxs(proposalId: string | number, network: Network, client: BabylonClient) {
+    private async updateProposalVotesFromTxs(proposalId: string | number) {
         let page = 1;
         const limit = 100;
         let hasMore = true;
@@ -250,7 +216,7 @@ export class GovernanceIndexerService {
         while (hasMore) {
             logger.info(`[Governance] Fetching votes from transactions for proposal ${proposalId}, page ${page}`);
             const query = `proposal_vote.proposal_id=${proposalId}`;
-            const txsResponse = await client.searchTxs(query, page, limit);
+            const txsResponse = await this.babylonClient.searchTxs(query, page, limit);
             
             if (!txsResponse || !txsResponse.tx_responses || txsResponse.tx_responses.length === 0) {
                 logger.info(`[Governance] No more transactions found for proposal ${proposalId}`);
@@ -315,15 +281,14 @@ export class GovernanceIndexerService {
 
         if (processedVotes.length > 0) {
             logger.info(`[Governance] Found ${processedVotes.length} votes from transactions for proposal ${proposalId}`);
-            await this.processVotes(proposalId, network, processedVotes);
+            await this.processVotes(proposalId, processedVotes);
         } else {
             logger.warn(`[Governance] No votes found in transactions for proposal ${proposalId}`);
         }
     }
 
-    private async processVotes(proposalId: string | number, network: Network, votes: any[]) {
+    private async processVotes(proposalId: string | number, votes: any[]) {
         let proposalVotes = await ProposalVotes.findOne({
-            network,
             proposal_id: parseInt(proposalId.toString())
         });
 
@@ -333,6 +298,8 @@ export class GovernanceIndexerService {
         // Calculate total voting power from all active validators
         let totalVotingPower = "0";
         try {
+            // Use the network from BabylonClient
+            const network = this.babylonClient.getNetwork();
             const allValidators = await validatorInfoService.getAllValidators(network, false);
             totalVotingPower = allValidators.validators.reduce((acc, validator) => {
                 if (validator.active && validator.voting_power) {
@@ -348,7 +315,6 @@ export class GovernanceIndexerService {
 
         if (!proposalVotes) {
             proposalVotes = new ProposalVotes({
-                network,
                 proposal_id: parseInt(proposalId.toString()),
                 votes: new Map(),
                 vote_counts: {
@@ -400,6 +366,8 @@ export class GovernanceIndexerService {
             let votingPower = voteOption.weight || "1.000000000000000000";
             let validatorInfo = null;
             try {
+                // Use the network from BabylonClient
+                const network = this.babylonClient.getNetwork();
                 validatorInfo = await validatorInfoService.getValidatorByAccountAddress(vote.voter, network);
                 if (validatorInfo && validatorInfo.active && validatorInfo.voting_power) {
                     votingPower = validatorInfo.voting_power;
@@ -443,17 +411,17 @@ export class GovernanceIndexerService {
         }
     }
 
-    private async updateGovernanceParams(network: Network, client: BabylonClient) {
+    private async updateGovernanceParams() {
         try {
-            const params = await client.getGovernanceParams();
+            const params = await this.babylonClient.getGovernanceParams();
             
             if (!params) {
-                logger.warn(`[Governance] No governance parameters found for network ${network}`);
+                logger.warn(`[Governance] No governance parameters found`);
                 return;
             }
 
             await GovernanceParams.findOneAndUpdate(
-                { network },
+                {},
                 {
                     quorum: params.params?.quorum || params.tally_params?.quorum,
                     threshold: params.params?.threshold || params.tally_params?.threshold,
@@ -471,9 +439,9 @@ export class GovernanceIndexerService {
                 { upsert: true, new: true }
             );
 
-            logger.info(`[Governance] Updated governance parameters for network ${network}`);
+            logger.info(`[Governance] Updated governance parameters`);
         } catch (error) {
-            logger.error(`[Governance] Error updating governance parameters for network ${network}:`, error);
+            logger.error(`[Governance] Error updating governance parameters:`, error);
         }
     }
 } 

@@ -64,7 +64,7 @@ export class FinalityWebSocketManager {
             this.ws = new WebSocket(wsUrl);
 
             this.ws.on('open', () => {
-                logger.debug(`[WebSocket] Connected successfully to ${this.babylonClient.getNetwork()} network`);
+                logger.debug(`[WebSocket] Connected successfully to network`);
                 this.subscribeToNewBlocks();
             });
 
@@ -77,7 +77,7 @@ export class FinalityWebSocketManager {
                             // Process block with 2-block delay for finalization
                             await this.onNewBlockCallback(height - 2);
                             // Update block height in health tracker
-                            await this.healthTracker.updateBlockHeight(this.babylonClient.getNetwork(), height - 2);
+                            await this.healthTracker.updateBlockHeight(height - 2);
                         }
                     }
                 } catch (error) {

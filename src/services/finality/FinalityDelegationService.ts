@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { 
     QueryFinalityProviderDelegationsResponse,
@@ -7,7 +6,7 @@ import {
     BTCDelegationStatus
 } from '../../types/finality/btcstaking';
 import { formatSatoshis } from '../../utils/util';
-import { getTxHash } from '../../utils/generate-tx-hash';
+// import { getTxHash } from '../../utils/generate-tx-hash';
 import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
 import { Document } from 'mongoose';
 import { logger } from '../../utils/logger';
@@ -56,15 +55,7 @@ export class FinalityDelegationService {
         return FinalityDelegationService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
-        return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
-        };
-    }
-
-    private processDelegation(del: BTCDelegation): DelegationResponse | null {
+    /* private processDelegation(del: BTCDelegation): DelegationResponse | null {
         if (!del) return null;
 
         const totalSat = Number(del.total_sat);
@@ -99,7 +90,7 @@ export class FinalityDelegationService {
         }
 
         return response;
-    }
+    } */
 /* 
     private async fetchDelegations(
         fpBtcPkHex: string,
@@ -136,10 +127,9 @@ export class FinalityDelegationService {
         };
     } */
 
-    private buildQuery(fpBtcPkHex: string, network: Network, options?: DelegationQueryOptions) {
+    private buildQuery(fpBtcPkHex: string, options?: DelegationQueryOptions) {
         const query: any = {
-            finalityProviderBtcPksHex: fpBtcPkHex,
-            networkType: network.toLowerCase()
+            finalityProviderBtcPksHex: fpBtcPkHex
         };
 
         if (options?.status && options.status !== BTCDelegationStatus.ANY) {
@@ -181,7 +171,6 @@ export class FinalityDelegationService {
 
     private async getDelegationsFromDatabase(
         fpBtcPkHex: string,
-        network: Network,
         page: number = 1,
         limit: number = 10,
         options?: DelegationQueryOptions
@@ -207,7 +196,7 @@ export class FinalityDelegationService {
     }> {
         try {
             const skip = (page - 1) * limit;
-            const baseQuery = this.buildQuery(fpBtcPkHex, network, options);
+            const baseQuery = this.buildQuery(fpBtcPkHex, options);
             const sort = this.getSortOptions(options);
 
             // Get all data with a single aggregation pipeline
@@ -318,7 +307,6 @@ export class FinalityDelegationService {
 
     public async getFinalityProviderDelegations(
         fpBtcPkHex: string, 
-        network: Network = Network.MAINNET,
         page: number = 1,
         limit: number = 10,
         options?: DelegationQueryOptions
@@ -342,6 +330,6 @@ export class FinalityDelegationService {
             unbonding_amount_sat: number;
         };
     }> {
-        return this.getDelegationsFromDatabase(fpBtcPkHex, network, page, limit, options);
+        return this.getDelegationsFromDatabase(fpBtcPkHex, page, limit, options);
     }
 } 

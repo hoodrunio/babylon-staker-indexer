@@ -24,18 +24,39 @@ export class FetcherService implements IFetcherService {
    * Private constructor to enforce singleton pattern
    */
   private constructor() {
+    // First try to get a client with environment-based configuration
     try {
-      this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-      logger.info('[FetcherService] Mainnet client initialized successfully');
+      const defaultClient = BabylonClient.getInstance();
+      const defaultNetwork = defaultClient.getNetwork();
+      this.babylonClients.set(defaultNetwork, defaultClient);
+      logger.info(`[FetcherService] ${defaultNetwork} client initialized successfully from environment configuration`);
+      
+      // Try to initialize the other network if possible
+      const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
+      try {
+        const otherClient = BabylonClient.getInstance(otherNetwork);
+        this.babylonClients.set(otherNetwork, otherClient);
+        logger.info(`[FetcherService] ${otherNetwork} client initialized successfully`);
+      } catch (error) {
+        logger.info(`[FetcherService] ${otherNetwork} is not configured, using only ${defaultNetwork}`);
+      }
     } catch (error) {
-      logger.warn('[FetcherService] Mainnet is not configured, skipping');
-    }
+      // Fallback to trying each network specifically
+      logger.debug('[FetcherService] Failed to initialize client with default configuration, trying specific networks');
+      
+      try {
+        this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
+        logger.info('[FetcherService] Mainnet client initialized successfully');
+      } catch (error) {
+        logger.warn('[FetcherService] Mainnet is not configured, skipping');
+      }
 
-    try {
-      this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-      logger.info('[FetcherService] Testnet client initialized successfully');
-    } catch (error) {
-      logger.warn('[FetcherService] Testnet is not configured, skipping');
+      try {
+        this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
+        logger.info('[FetcherService] Testnet client initialized successfully');
+      } catch (error) {
+        logger.warn('[FetcherService] Testnet is not configured, skipping');
+      }
     }
 
     if (this.babylonClients.size === 0) {

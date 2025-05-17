@@ -29,20 +29,39 @@ export class BTCDelegationService {
         this.babylonClients = new Map();
         this.delegationModel = NewBTCDelegation;
         
-        // Try to initialize testnet client
+        // First try to get a client with environment-based configuration
         try {
-            this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-            logger.info('[Network] Testnet client initialized successfully');
+            const defaultClient = BabylonClient.getInstance();
+            const defaultNetwork = defaultClient.getNetwork();
+            this.babylonClients.set(defaultNetwork, defaultClient);
+            logger.info(`[Network] ${defaultNetwork} client initialized successfully (from environment configuration)`);
+            
+            // Try to initialize the other network if possible
+            const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
+            try {
+                const otherClient = BabylonClient.getInstance(otherNetwork);
+                this.babylonClients.set(otherNetwork, otherClient);
+                logger.info(`[Network] ${otherNetwork} client initialized successfully`);
+            } catch (error) {
+                logger.info(`[Network] ${otherNetwork} is not configured, using only ${defaultNetwork}`);
+            }
         } catch (error) {
-            logger.debug('[Network] Testnet is not configured');
-        }
+            logger.debug('[Network] Failed to initialize client with default configuration, trying specific networks');
+            
+            // Fallback to trying each network specifically
+            try {
+                this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
+                logger.info('[Network] Testnet client initialized successfully');
+            } catch (error) {
+                logger.debug('[Network] Testnet is not configured');
+            }
 
-        // Try to initialize mainnet client
-        try {
-            this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-            logger.info('[Network] Mainnet client initialized successfully');
-        } catch (error) {
-            logger.debug('[Network] Mainnet is not configured');
+            try {
+                this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
+                logger.info('[Network] Mainnet client initialized successfully');
+            } catch (error) {
+                logger.debug('[Network] Mainnet is not configured');
+            }
         }
 
         if (this.babylonClients.size === 0) {

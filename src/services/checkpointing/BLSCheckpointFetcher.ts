@@ -1,18 +1,20 @@
-import { Network } from '../../types/finality';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { BLSValidatorSignatures } from '../../database/models/BLSValidatorSignatures';
 import { ValidatorInfoService } from '../validator/ValidatorInfoService';
 import axios from 'axios';
 import { convertBase64AddressToHex } from '../../utils/util';
 import { logger } from '../../utils/logger';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 
 export class BLSCheckpointFetcher {
     private static instance: BLSCheckpointFetcher | null = null;
     private validatorInfoService: ValidatorInfoService;
+    private babylonClient: BabylonClient;
 
     private constructor() {
         this.validatorInfoService = ValidatorInfoService.getInstance();
+        this.babylonClient = BabylonClient.getInstance();
     }
 
     public static getInstance(): BLSCheckpointFetcher {
@@ -22,12 +24,8 @@ export class BLSCheckpointFetcher {
         return BLSCheckpointFetcher.instance;
     }
 
-    private async calculateBlockHeightForEpoch(epochNum: number, network: Network): Promise<number> {
+    private async calculateBlockHeightForEpoch(epochNum: number): Promise<number> {
         try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
-            }
 
             // Each epoch is 100 blocks
             const epochLength = 360;
@@ -44,7 +42,7 @@ export class BLSCheckpointFetcher {
         }
     }
 
-    public async fetchCheckpointForEpoch(epochNum: number, network: Network): Promise<void> {
+    public async fetchCheckpointForEpoch(epochNum: number): Promise<void> {
         const MAX_RETRIES = 3;
         const INITIAL_RETRY_DELAY = 2000; // 2 seconds
         const MAX_RETRY_DELAY = 10000; // 10 seconds
@@ -52,8 +50,8 @@ export class BLSCheckpointFetcher {
 
         while (retryCount < MAX_RETRIES) {
             try {
-                const height = await this.calculateBlockHeightForEpoch(epochNum, network);
-                await this.fetchCheckpointFromHeight(height, network);
+                const height = await this.calculateBlockHeightForEpoch(epochNum);
+                await this.fetchCheckpointFromHeight(height);
                 // If successful, exit the loop
                 return;
             } catch (error: any) {
@@ -87,11 +85,8 @@ export class BLSCheckpointFetcher {
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                     
                     // Also rotate to the next node before retrying
-                    const client = this.validatorInfoService.getBabylonClient(network);
-                    if (client) {
-                        const newUrl = client.rotateNodeUrl();
-                        logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
-                    }
+                    const newUrl = this.babylonClient.rotateNodeUrl();
+                    logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
                     
                     // Continue to the next iteration
                     continue;
@@ -104,7 +99,7 @@ export class BLSCheckpointFetcher {
         }
     }
 
-    private async fetchCheckpointFromHeight(height: number, network: Network): Promise<void> {
+    private async fetchCheckpointFromHeight(height: number): Promise<void> {
         const MAX_RETRIES = 3;
         const INITIAL_RETRY_DELAY = 2000; // 2 seconds
         const MAX_RETRY_DELAY = 10000; // 10 seconds
@@ -112,15 +107,10 @@ export class BLSCheckpointFetcher {
 
         while (retryCount < MAX_RETRIES) {
             try {
-                const client = this.validatorInfoService.getBabylonClient(network);
-                if (!client) {
-                    throw new Error(`No Babylon client found for network ${network}`);
-                }
+                const baseUrl = this.babylonClient.getBaseUrl();
+                logger.info(`[BLSCheckpoint] Fetching checkpoint from height ${height}`);
 
-                const baseUrl = client.getBaseUrl();
-                logger.info(`[BLSCheckpoint] Fetching checkpoint from height ${height} on ${network}`);
-
-                const timestamp = await this.getTimestampForHeight(height, network);
+                const timestamp = await this.getTimestampForHeight(height);
                 const response = await axios.get(`${baseUrl}/cosmos/tx/v1beta1/txs/block/${height}`);
                 const txs = response.data.txs || [];
 
@@ -154,15 +144,13 @@ export class BLSCheckpointFetcher {
                                 status: msg.ckpt.status,
                                 bls_aggr_pk: msg.ckpt.bls_aggr_pk,
                                 power_sum: msg.ckpt.power_sum,
-                                network,
                                 lifecycle: msg.ckpt.lifecycle || [],
                                 timestamp: timestamp
                             };
 
                             await BLSCheckpoint.findOneAndUpdate(
                                 { 
-                                    epoch_num: checkpoint.epoch_num,
-                                    network 
+                                    epoch_num: checkpoint.epoch_num
                                 },
                                 checkpoint,
                                 { upsert: true, new: true }
@@ -170,7 +158,7 @@ export class BLSCheckpointFetcher {
 
                             // Process validator votes if available
                             if (msg.extended_commit_info?.votes) {
-                                await this.processValidatorVotes(msg.extended_commit_info.votes, checkpoint.epoch_num, network, timestamp);
+                                await this.processValidatorVotes(msg.extended_commit_info.votes, checkpoint.epoch_num, timestamp);
                             }
 
                         } catch (error: any) {
@@ -217,11 +205,8 @@ export class BLSCheckpointFetcher {
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                     
                     // Rotate to the next node before retrying
-                    const client = this.validatorInfoService.getBabylonClient(network);
-                    if (client) {
-                        const newUrl = client.rotateNodeUrl();
-                        logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
-                    }
+                    const newUrl = this.babylonClient.rotateNodeUrl();
+                    logger.info(`[BLSCheckpoint] Rotated to new node: ${newUrl}`);
                     
                     // Continue to the next iteration
                     continue;
@@ -234,7 +219,7 @@ export class BLSCheckpointFetcher {
         }
     }
 
-    private async processValidatorVotes(votes: any[], epochNum: number, network: Network, timestamp: number): Promise<void> {
+    private async processValidatorVotes(votes: any[], epochNum: number, timestamp: number): Promise<void> {
         try {
             // First, ensure all validators are in the database
             const validatorAddresses = votes.map(vote => convertBase64AddressToHex(vote.validator.address));
@@ -244,7 +229,7 @@ export class BLSCheckpointFetcher {
             
             let validatorInfos = await Promise.all(
                 validatorAddresses.map(hexAddress => 
-                    this.validatorInfoService.getValidatorByHexAddress(hexAddress, network)
+                    this.validatorInfoService.getValidatorByHexAddress(hexAddress)
                 )
             );
 
@@ -260,7 +245,7 @@ export class BLSCheckpointFetcher {
                 // Retry getting validator info after update
                 validatorInfos = await Promise.all(
                     validatorAddresses.map(hexAddress => 
-                        this.validatorInfoService.getValidatorByHexAddress(hexAddress, network)
+                        this.validatorInfoService.getValidatorByHexAddress(hexAddress)
                     )
                 );
                 
@@ -304,8 +289,7 @@ export class BLSCheckpointFetcher {
             // Store all validator signatures and stats
             await BLSValidatorSignatures.findOneAndUpdate(
                 {
-                    epoch_num: epochNum,
-                    network
+                    epoch_num: epochNum
                 },
                 {
                     signatures: allValidators,
@@ -332,19 +316,14 @@ export class BLSCheckpointFetcher {
         }
     }
 
-    public async getCurrentEpoch(network: Network): Promise<number> {
+    public async getCurrentEpoch(): Promise<number> {
         const MAX_RETRIES = 3;
         const RETRY_DELAY = 2000; // 2 seconds
         let retryCount = 0;
 
         while (retryCount < MAX_RETRIES) {
             try {
-                const client = this.validatorInfoService.getBabylonClient(network);
-                if (!client) {
-                    throw new Error(`No Babylon client found for network ${network}`);
-                }
-
-                const baseUrl = client.getBaseUrl();
+                const baseUrl = this.babylonClient.getBaseUrl();
                 const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`, {
                     timeout: 10000 // Increased timeout to 10 seconds
                 });
@@ -371,13 +350,9 @@ export class BLSCheckpointFetcher {
         throw new Error('Failed to get current epoch after max retries');
     }
 
-    public async getTimestampForHeight(height: number, network: Network): Promise<number> {
+    public async getTimestampForHeight(height: number): Promise<number> {
         try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
-            }
-            const baseRpcUrl = client.getRpcUrl();
+            const baseRpcUrl = this.babylonClient.getRpcUrl();
             const response = await axios.get(`${baseRpcUrl}/block?height=${height}`);
             const timeStr = response.data.result.block.header.time;
             
@@ -405,9 +380,9 @@ export class BLSCheckpointFetcher {
         }
     }
 
-    public async syncHistoricalCheckpoints(network: Network, batchSize: number = 10): Promise<void> {
+    public async syncHistoricalCheckpoints(batchSize: number = 10): Promise<void> {
         try {
-            const currentEpoch = await this.getCurrentEpoch(network);
+            const currentEpoch = await this.getCurrentEpoch();
             logger.info(`[BLSCheckpoint] Starting historical sync from epoch ${currentEpoch - 1}`);
 
             let lowestAvailableHeight: number | null = null;
@@ -420,8 +395,7 @@ export class BLSCheckpointFetcher {
             const epochsToProcess: number[] = [];
             for (let epoch = currentEpoch - 1; epoch >= 0; epoch--) {
                 const existingCheckpoint = await BLSCheckpoint.findOne({
-                    epoch_num: epoch,
-                    network
+                    epoch_num: epoch
                 });
 
                 if (!existingCheckpoint) {
@@ -440,7 +414,7 @@ export class BLSCheckpointFetcher {
                 for (const epoch of batch) {
                     try {
                         if (lowestAvailableHeight !== null) {
-                            const epochHeight = await this.calculateBlockHeightForEpoch(epoch, network);
+                            const epochHeight = await this.calculateBlockHeightForEpoch(epoch);
                             if (epochHeight < lowestAvailableHeight) {
                                 logger.info(`[BLSCheckpoint] Historical sync stopped at epoch ${epoch} (height ${epochHeight} is below lowest available height ${lowestAvailableHeight})`);
                                 return;
@@ -452,7 +426,7 @@ export class BLSCheckpointFetcher {
 
                         while (!success && retryCount < MAX_RETRIES) {
                             try {
-                                await this.fetchCheckpointForEpoch(epoch, network);
+                                await this.fetchCheckpointForEpoch(epoch);
                                 logger.info(`[BLSCheckpoint] Successfully synced checkpoint for epoch ${epoch}`);
                                 success = true;
                                 consecutiveErrors = 0;

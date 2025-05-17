@@ -1,6 +1,5 @@
 import { BabylonClient } from '../clients/BabylonClient';
 import { logger } from '../utils/logger';
-import { Network } from '../types/finality';
 import { Block } from '../database/models/blockchain/Block';
 
 interface BlockTimeData {
@@ -12,7 +11,7 @@ interface BlockTimeData {
  * Service to track block times and estimate when future blocks will be created
  */
 export class BlockTimeService {
-    private static instances: Map<Network, BlockTimeService> = new Map();
+    private static instance: BlockTimeService | null = null;
     private readonly MAX_BLOCK_HISTORY = 100; // Use a larger window for better average calculation
     private recentBlocks: BlockTimeData[] = [];
     private averageBlockTime: number = 10000; // Default 10 seconds in milliseconds
@@ -20,16 +19,16 @@ export class BlockTimeService {
     private updateIntervalMs = 60000; // Update every minute
     private babylonClient: BabylonClient;
     
-    private constructor(private network: Network) {
-        this.babylonClient = BabylonClient.getInstance(network);
+    private constructor() {
+        this.babylonClient = BabylonClient.getInstance();
         this.startTracking();
     }
     
-    public static getInstance(network: Network = Network.TESTNET): BlockTimeService {
-        if (!BlockTimeService.instances.has(network)) {
-            BlockTimeService.instances.set(network, new BlockTimeService(network));
+    public static getInstance(): BlockTimeService {
+        if (!BlockTimeService.instance) {
+            BlockTimeService.instance = new BlockTimeService();
         }
-        return BlockTimeService.instances.get(network)!;
+        return BlockTimeService.instance;
     }
 
     /**
@@ -63,13 +62,13 @@ export class BlockTimeService {
         
         try {
             // Get recent blocks from database
-            const blocks = await Block.find({ network: this.network })
+            const blocks = await Block.find({})
                 .sort({ height: -1 })
                 .limit(this.MAX_BLOCK_HISTORY)
                 .lean();
             
             if (blocks.length === 0) {
-                logger.warn(`[BlockTimeService] No blocks found in database for ${this.network}`);
+                logger.warn(`[BlockTimeService] No blocks found in database`);
                 
                 // Fall back to API if no blocks in database
                 await this.updateBlockTimesFromAPI();
@@ -161,7 +160,7 @@ export class BlockTimeService {
         // Update average if we have valid time differences
         if (validTimeDiffs > 0) {
             this.averageBlockTime = totalTimeDiff / validTimeDiffs;
-            logger.debug(`[BlockTimeService] Updated average block time to ${this.averageBlockTime}ms for ${this.network}`);
+            logger.debug(`[BlockTimeService] Updated average block time to ${this.averageBlockTime}ms`);
         }
     }
 

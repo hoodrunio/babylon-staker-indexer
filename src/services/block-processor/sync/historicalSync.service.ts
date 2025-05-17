@@ -23,18 +23,39 @@ export class HistoricalSyncService implements IHistoricalSyncService {
     // Get BlockStorage singleton instance
     this.blockStorage = BlockStorage.getInstance();
     
+    // First try to get a client with environment-based configuration
     try {
-      this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-      logger.info('[HistoricalSync] Mainnet client initialized successfully');
+      const defaultClient = BabylonClient.getInstance();
+      const defaultNetwork = defaultClient.getNetwork();
+      this.babylonClients.set(defaultNetwork, defaultClient);
+      logger.info(`[HistoricalSync] ${defaultNetwork} client initialized successfully from environment configuration`);
+      
+      // Try to initialize the other network if possible
+      const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
+      try {
+        const otherClient = BabylonClient.getInstance(otherNetwork);
+        this.babylonClients.set(otherNetwork, otherClient);
+        logger.info(`[HistoricalSync] ${otherNetwork} client initialized successfully`);
+      } catch (error) {
+        logger.info(`[HistoricalSync] ${otherNetwork} is not configured, using only ${defaultNetwork}`);
+      }
     } catch (error) {
-      logger.warn('[HistoricalSync] Mainnet is not configured, skipping');
-    }
+      // Fallback to trying each network specifically
+      logger.debug('[HistoricalSync] Failed to initialize client with default configuration, trying specific networks');
+      
+      try {
+        this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
+        logger.info('[HistoricalSync] Mainnet client initialized successfully');
+      } catch (error) {
+        logger.warn('[HistoricalSync] Mainnet is not configured, skipping');
+      }
 
-    try {
-      this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-      logger.info('[HistoricalSync] Testnet client initialized successfully');
-    } catch (error) {
-      logger.warn('[HistoricalSync] Testnet is not configured, skipping');
+      try {
+        this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
+        logger.info('[HistoricalSync] Testnet client initialized successfully');
+      } catch (error) {
+        logger.warn('[HistoricalSync] Testnet is not configured, skipping');
+      }
     }
 
     if (this.babylonClients.size === 0) {

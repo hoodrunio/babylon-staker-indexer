@@ -56,23 +56,26 @@ export class BTCTransactionCrawlerService {
     }
 
     private initializeClients() {
-        // Initialize Babylon clients for both networks using getInstance instead of constructor
+        // First try to get a client with environment-based configuration
         try {
-            const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
-            this.babylonClients.set(Network.MAINNET, mainnetClient);
-            this.configuredNetworks.push(Network.MAINNET);
-            logger.info('Initialized Babylon client for MAINNET');
+            const defaultClient = BabylonClient.getInstance();
+            const defaultNetwork = defaultClient.getNetwork();
+            this.babylonClients.set(defaultNetwork, defaultClient);
+            this.configuredNetworks.push(defaultNetwork);
+            logger.info(`Initialized Babylon client for ${defaultNetwork} from environment configuration`);
+            
+            // Try to initialize the other network if possible
+            const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
+            try {
+                const otherClient = BabylonClient.getInstance(otherNetwork);
+                this.babylonClients.set(otherNetwork, otherClient);
+                this.configuredNetworks.push(otherNetwork);
+                logger.info(`Initialized Babylon client for ${otherNetwork}`);
+            } catch (error) {
+                logger.info(`${otherNetwork} is not configured, using only ${defaultNetwork}`);
+            }
         } catch (error) {
-            logger.warn(`Failed to initialize Babylon client for MAINNET: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        
-        try {
-            const testnetClient = BabylonClient.getInstance(Network.TESTNET);
-            this.babylonClients.set(Network.TESTNET, testnetClient);
-            this.configuredNetworks.push(Network.TESTNET);
-            logger.info('Initialized Babylon client for TESTNET');
-        } catch (error) {
-            logger.warn(`Failed to initialize Babylon client for TESTNET: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`Failed to initialize Babylon clients: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 

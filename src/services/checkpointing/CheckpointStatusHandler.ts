@@ -1,4 +1,5 @@
-import { Network } from '../../types/finality';
+// import { Network } from '../../types/finality';
+import { BabylonClient } from '../../clients/BabylonClient';
 import { BLSCheckpoint } from '../../database/models/BLSCheckpoint';
 import { CheckpointStatusFetcher } from './CheckpointStatusFetcher';
 import { convertBase64AddressToHex } from '../../utils/util';
@@ -7,9 +8,11 @@ import { logger } from '../../utils/logger';
 export class CheckpointStatusHandler {
     private static instance: CheckpointStatusHandler | null = null;
     private checkpointStatusFetcher: CheckpointStatusFetcher;
+    private babylonClient: BabylonClient;
 
     private constructor() {
         this.checkpointStatusFetcher = CheckpointStatusFetcher.getInstance();
+        this.babylonClient = BabylonClient.getInstance();
 
         // If CHECKPOINT_SYNC is true, synchronize historical checkpoints
         if (process.env.CHECKPOINT_SYNC === 'true') {
@@ -30,7 +33,7 @@ export class CheckpointStatusHandler {
         return CheckpointStatusHandler.instance;
     }
 
-    public async handleNewBlock(blockData: any, network: Network): Promise<void> {
+    public async handleNewBlock(blockData: any): Promise<void> {
         try {
             const events = blockData?.result?.data?.value?.result_finalize_block?.events;
             const blockHeight = blockData?.result?.data?.value?.block?.header?.height;
@@ -54,7 +57,7 @@ export class CheckpointStatusHandler {
                 switch (event.type) {
                     case 'babylon.checkpointing.v1.EventCheckpointAccumulating':
                         logger.info(`[CheckpointStatus] Processing ACCUMULATING event in block ${blockHeight}`);
-                        await this.handleAccumulatingEvent(event, network, blockData);
+                        await this.handleAccumulatingEvent(event, blockData);
                         break;
                     case 'babylon.checkpointing.v1.EventCheckpointSealed':
                         logger.info(`[CheckpointStatus] Skipping SEALED event in block ${blockHeight} (handled by BLSCheckpointHandler)`);
@@ -63,7 +66,7 @@ export class CheckpointStatusHandler {
                     case 'babylon.checkpointing.v1.EventCheckpointConfirmed':
                     case 'babylon.checkpointing.v1.EventCheckpointFinalized':
                         logger.info(`[CheckpointStatus] Processing ${event.type.split('.').pop()} event in block ${blockHeight}`);
-                        await this.handleStatusUpdateEvent(event, network, blockData);
+                        await this.handleStatusUpdateEvent(event, blockData);
                         break;
                 }
             }
@@ -72,7 +75,7 @@ export class CheckpointStatusHandler {
         }
     }
 
-    private async handleAccumulatingEvent(event: any, network: Network, blockData: any): Promise<void> {
+    private async handleAccumulatingEvent(event: any, blockData: any): Promise<void> {
         try {
             const checkpointAttr = event.attributes?.find((attr: any) => attr.key === 'checkpoint');
             if (!checkpointAttr) {
@@ -119,6 +122,9 @@ export class CheckpointStatusHandler {
                 block_time: now
             };
 
+            // Get the network from the client
+            const network = this.babylonClient.getNetwork();
+            
             // Create new checkpoint if not found
             const newCheckpoint = {
                 epoch_num: epochNum,
@@ -135,8 +141,7 @@ export class CheckpointStatusHandler {
 
             // Only create if it doesn't exist
             const existingCheckpoint = await BLSCheckpoint.findOne({
-                epoch_num: epochNum,
-                network
+                epoch_num: epochNum
             });
 
             if (!existingCheckpoint) {
@@ -148,7 +153,7 @@ export class CheckpointStatusHandler {
         }
     }
 
-    private async handleStatusUpdateEvent(event: any, network: Network, blockData: any): Promise<void> {
+    private async handleStatusUpdateEvent(event: any, blockData: any): Promise<void> {
         try {
             const checkpointAttr = event.attributes?.find((attr: any) => attr.key === 'checkpoint');
             if (!checkpointAttr) {
@@ -185,8 +190,7 @@ export class CheckpointStatusHandler {
 
             // Check if existing checkpoint exists
             const existingCheckpoint = await BLSCheckpoint.findOne({ 
-                epoch_num: epochNum,
-                network 
+                epoch_num: epochNum
             });
 
             logger.info(`[CheckpointStatus] Found existing checkpoint:`, existingCheckpoint ? 'yes' : 'no');
@@ -204,6 +208,9 @@ export class CheckpointStatusHandler {
             // If checkpoint is not found, create new one
             if (!existingCheckpoint) {
                 logger.info(`[CheckpointStatus] Creating new checkpoint for epoch ${epochNum}`);
+                // Get the network from the client
+                const network = this.babylonClient.getNetwork();
+                
                 await BLSCheckpoint.create({
                     epoch_num: epochNum,
                     network,
@@ -220,8 +227,7 @@ export class CheckpointStatusHandler {
                 // Update existing checkpoint
                 await BLSCheckpoint.findOneAndUpdate(
                     { 
-                        epoch_num: epochNum,
-                        network 
+                        epoch_num: epochNum
                     },
                     { 
                         $set: { 
@@ -261,31 +267,24 @@ export class CheckpointStatusHandler {
         }
     }
 
-    public async syncHistoricalCheckpoints(network: Network): Promise<void> {
-        return this.checkpointStatusFetcher.syncHistoricalCheckpoints(network);
+    public async syncHistoricalCheckpoints(batchSize?: number): Promise<void> {
+        return this.checkpointStatusFetcher.syncHistoricalCheckpoints(batchSize);
     }
 
-    public async getCurrentEpoch(network: Network): Promise<number> {
-        return this.checkpointStatusFetcher.getCurrentEpoch(network);
+    public async getCurrentEpoch(): Promise<number> {
+        return this.checkpointStatusFetcher.getCurrentEpoch();
     }
 
     private async initializeHistoricalSync() {
         try {
             logger.info('[CheckpointStatus] Starting historical sync initialization');
-            // Start synchronization for each network
-            const networks = [Network.MAINNET, Network.TESTNET];
-            
-            for (const network of networks) {
-                try {
-                    const client = this.checkpointStatusFetcher.getBabylonClient(network);
-                    if (client) {
-                        logger.info(`[CheckpointStatus] Starting historical sync for ${network}`);
-                        await this.checkpointStatusFetcher.syncHistoricalCheckpoints(network);
-                        logger.info(`[CheckpointStatus] Completed historical sync for ${network}`);
-                    }
-                } catch (error) {
-                    logger.error(`[CheckpointStatus] Error syncing historical checkpoints for ${network}:`, error);
-                }
+            // Start synchronization for the current network
+            try {
+                logger.info(`[CheckpointStatus] Starting historical sync`);
+                await this.checkpointStatusFetcher.syncHistoricalCheckpoints();
+                logger.info(`[CheckpointStatus] Completed historical sync`);
+            } catch (error) {
+                logger.error(`[CheckpointStatus] Error syncing historical checkpoints:`, error);
             }
             logger.info('[CheckpointStatus] Completed historical sync initialization');
         } catch (error) {

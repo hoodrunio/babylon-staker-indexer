@@ -6,7 +6,6 @@ import {
     EpochStats
 } from '../../types';
 import { Response } from 'express';
-import { Network } from '../../types/finality';
 import { FinalityHistoricalService } from './FinalityHistoricalService';
 import { FinalityEpochService } from './FinalityEpochService';
 import { FinalitySSEManager } from './FinalitySSEManager';
@@ -33,8 +32,7 @@ export class FinalitySignatureService {
     private readonly missingBlocksLogCache: Map<string, number> = new Map();
 
     private constructor() {
-        this.babylonClient = BabylonClient.getInstance(
-        );
+        this.babylonClient = BabylonClient.getInstance();
         this.historicalService = FinalityHistoricalService.getInstance();
         this.epochService = FinalityEpochService.getInstance();
         this.sseManager = FinalitySSEManager.getInstance();
@@ -58,11 +56,10 @@ export class FinalitySignatureService {
         return FinalitySignatureService.instance;
     }
 
-    private getNetworkConfig(network: Network = Network.MAINNET) {
-        const client = BabylonClient.getInstance(network);
+    private getNetworkConfig() {
         return {
-            nodeUrl: client.getBaseUrl(),
-            rpcUrl: client.getRpcUrl()
+            nodeUrl: this.babylonClient.getBaseUrl(),
+            rpcUrl: this.babylonClient.getRpcUrl()
         };
     }
 
@@ -183,7 +180,7 @@ export class FinalitySignatureService {
     }
 
     public async getSignatureStats(params: SignatureStatsParams): Promise<SignatureStats> {
-        const { nodeUrl, rpcUrl } = this.getNetworkConfig(params.network);
+        const { nodeUrl, rpcUrl } = this.getNetworkConfig();
         const { fpBtcPkHex, startHeight, endHeight, lastNBlocks = this.DEFAULT_LAST_N_BLOCKS } = params;
         
         const currentHeight = await this.babylonClient.getCurrentHeight();
