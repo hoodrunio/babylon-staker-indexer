@@ -1,6 +1,5 @@
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
-import { BabylonClient } from '../../clients/BabylonClient';
 import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
 
 // WebSocket Reconnection Service
@@ -22,7 +21,6 @@ export class WebSocketReconnectionService {
     
     public async handleReconnect(
         network: Network, 
-        client: BabylonClient | undefined,
         reconnectAction: () => void
     ): Promise<void> {
         const attempts = this.reconnectAttempts.get(network) || 0;
@@ -32,15 +30,13 @@ export class WebSocketReconnectionService {
             logger.info(`[${network}] Attempting to reconnect (attempt ${attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
             
             try {
-                if (client) {
-                    await this.healthTracker.handleReconnection(network, client);
-                }
+                await this.healthTracker.handleReconnection(network);
 
                 setTimeout(reconnectAction, this.RECONNECT_INTERVAL);
             } catch (error) {
                 logger.error(`[${network}] Error handling reconnection:`, error);
                 // Retry even if there's an error
-                this.handleReconnect(network, client, reconnectAction);
+                this.handleReconnect(network, reconnectAction);
             }
         } else {
             logger.error(`[${network}] Max reconnection attempts reached`);

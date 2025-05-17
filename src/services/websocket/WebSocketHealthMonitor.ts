@@ -86,15 +86,12 @@ export class WebSocketHealthMonitor {
     }
     
     /**
-     * Check all WebSocket connections
+     * Check WebSocket connection for the configured network
      */
     private checkAllConnections(): void {
-        const networks = this.configService.getAllNetworks();
-        logger.debug(`[WebSocketHealthMonitor] Checking connection status for ${networks.length} networks`);
-        
-        for (const network of networks) {
-            this.checkConnection(network);
-        }
+        const network = this.configService.getNetwork();
+        logger.debug(`[WebSocketHealthMonitor] Checking connection status for network: ${network}`);
+        this.checkConnection(network);
     }
     
     /**
@@ -152,7 +149,7 @@ export class WebSocketHealthMonitor {
                 logger.warn(`[WebSocketHealthMonitor] No block updates for ${network} in ${timeSinceLastUpdate / 1000} seconds, reconnecting`);
                 
                 // Check current height from API to confirm if there's a real issue
-                const config = this.configService.getNetworkConfig(network);
+                const config = this.configService.getNetworkConfig();
                 const client = config?.getClient();
                 
                 if (client) {

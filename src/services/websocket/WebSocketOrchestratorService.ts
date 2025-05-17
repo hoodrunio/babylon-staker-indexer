@@ -42,20 +42,18 @@ export class WebSocketOrchestratorService {
     }
     
     public startListening(): void {
-        // Connect to all configured networks
-        const networks = this.configService.getAllNetworks();
-        for (const network of networks) {
-            this.connectToNetwork(network);
-        }
+        // Connect to the single configured network from environment
+        const network = this.configService.getNetwork();
+        this.connectToNetwork(network);
         
         // Start health monitoring
         this.healthMonitor.startMonitoring();
     }
     
     private connectToNetwork(network: Network): void {
-        const config = this.configService.getNetworkConfig(network);
+        const config = this.configService.getNetworkConfig();
         if (!config) {
-            logger.error(`[WebSocketOrchestrator] Network configuration for ${network} not found`);
+            logger.error(`[WebSocketOrchestrator] Network configuration not found`);
             return;
         }
         
@@ -92,10 +90,10 @@ export class WebSocketOrchestratorService {
         
         try {
             // Start historical sync
-            const config = this.configService.getNetworkConfig(network);
+            const config = this.configService.getNetworkConfig();
             const client = config?.getClient();
             if (client) {
-                await this.validatorHistoricalSync.startSync(network, client);
+                await this.validatorHistoricalSync.startSync(network);
             }
             
             // Send subscriptions
@@ -137,10 +135,9 @@ export class WebSocketOrchestratorService {
         logger.info(`${network} websocket connection closed`);
         this.healthTracker.markDisconnected(network);
         
-        const config = this.configService.getNetworkConfig(network);
+        const config = this.configService.getNetworkConfig();
         await this.reconnectionService.handleReconnect(
             network, 
-            config?.getClient(),
             () => this.reconnect(network)
         );
     }
