@@ -1,4 +1,3 @@
-import { FinalityProviderStat, PhaseStat } from './interfaces/StakerInterfaces';
 import { StakerUtils } from './utils/StakerUtils';
 
 export class StakerStatsService {

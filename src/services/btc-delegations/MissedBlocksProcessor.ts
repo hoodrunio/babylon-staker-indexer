@@ -37,6 +37,8 @@ export class MissedBlocksProcessor {
     private static instance: MissedBlocksProcessor | null = null;
     private readonly rateLimiter: RateLimiter;
     private readonly eventHandler: BTCDelegationEventHandler;
+    private readonly babylonClient: BabylonClient;
+    private readonly network: Network;
     private readonly BATCH_SIZE = 20;
     private readonly MAX_CONCURRENT_REQUESTS = 5;
     private readonly REQUEST_INTERVAL_MS = 1000;
@@ -44,6 +46,16 @@ export class MissedBlocksProcessor {
     private constructor() {
         this.rateLimiter = new RateLimiter(this.MAX_CONCURRENT_REQUESTS, this.REQUEST_INTERVAL_MS);
         this.eventHandler = BTCDelegationEventHandler.getInstance();
+        
+        try {
+            // Initialize BabylonClient using the network from environment variable
+            this.babylonClient = BabylonClient.getInstance();
+            this.network = this.babylonClient.getNetwork();
+            logger.info(`MissedBlocksProcessor initialized for network: ${this.network}`);
+        } catch (error) {
+            logger.error('Failed to initialize BabylonClient:', error);
+            throw new Error('Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
+        }
     }
 
     public static getInstance(): MissedBlocksProcessor {
@@ -56,8 +68,7 @@ export class MissedBlocksProcessor {
     public async processMissedBlocks(
         network: Network,
         startHeight: number,
-        endHeight: number,
-        babylonClient: BabylonClient
+        endHeight: number
     ) {
         logger.info(`[${network}] Processing missed blocks from ${startHeight} to ${endHeight}`);
         
@@ -67,7 +78,7 @@ export class MissedBlocksProcessor {
 
         for (const range of heightRanges) {
             const results = await Promise.allSettled(
-                range.map(height => this.processBlockWithRateLimit(network, height, babylonClient))
+                range.map(height => this.processBlockWithRateLimit(network, height))
             );
 
             results.forEach((result, index) => {
@@ -96,8 +107,7 @@ export class MissedBlocksProcessor {
 
     private async processBlockWithRateLimit(
         network: Network,
-        height: number,
-        babylonClient: BabylonClient
+        height: number
     ): Promise<boolean> {
         const key = `${network}-${height}`;
         
@@ -106,7 +116,7 @@ export class MissedBlocksProcessor {
         }
 
         try {
-            return await this.processBlockResults(network, height, babylonClient);
+            return await this.processBlockResults(network, height);
         } catch (error) {
             logger.error(`[${network}] Error processing block ${height}:`, error);
             throw error;
@@ -115,11 +125,10 @@ export class MissedBlocksProcessor {
 
     private async processBlockResults(
         network: Network,
-        height: number,
-        babylonClient: BabylonClient
+        height: number
     ): Promise<boolean> {
         try {
-            const txSearchResponse = await babylonClient.getTxSearch(height);
+            const txSearchResponse = await this.babylonClient.getTxSearch(height);
             
             // Check new data structure
             const txSearchResults = txSearchResponse?.result?.txs ? 

@@ -12,24 +12,26 @@ interface BlockTimeData {
  * Service to track block times and estimate when future blocks will be created
  */
 export class BlockTimeService {
-    private static instances: Map<Network, BlockTimeService> = new Map();
+    private static instance: BlockTimeService | null = null;
     private readonly MAX_BLOCK_HISTORY = 100; // Use a larger window for better average calculation
     private recentBlocks: BlockTimeData[] = [];
     private averageBlockTime: number = 10000; // Default 10 seconds in milliseconds
     private lastUpdateTime: number = 0;
     private updateIntervalMs = 60000; // Update every minute
     private babylonClient: BabylonClient;
+    private network: Network;
     
-    private constructor(private network: Network) {
-        this.babylonClient = BabylonClient.getInstance(network);
+    private constructor() {
+        this.babylonClient = BabylonClient.getInstance();
+        this.network = this.babylonClient.getNetwork();
         this.startTracking();
     }
     
-    public static getInstance(network: Network = Network.TESTNET): BlockTimeService {
-        if (!BlockTimeService.instances.has(network)) {
-            BlockTimeService.instances.set(network, new BlockTimeService(network));
+    public static getInstance(): BlockTimeService {
+        if (!BlockTimeService.instance) {
+            BlockTimeService.instance = new BlockTimeService();
         }
-        return BlockTimeService.instances.get(network)!;
+        return BlockTimeService.instance;
     }
 
     /**

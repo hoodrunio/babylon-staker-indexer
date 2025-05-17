@@ -10,7 +10,7 @@ import { GovernanceParams } from '../../database/models/GovernanceParams';
 export class GovernanceIndexerService {
     private babylonClient: BabylonClient;
     private isRunning = false;
-    private networks: Network[] = [];
+    private network: Network;
     private shouldSync: boolean;
     private statusUpdateInterval: NodeJS.Timeout | null = null;
     private readonly STATUS_UPDATE_INTERVAL_MS = 240000; // Check every minute
@@ -19,37 +19,20 @@ export class GovernanceIndexerService {
         this.babylonClient = babylonClient;
         this.shouldSync = process.env.GOVERNANCE_SYNC === 'true';
         
-        // Check networks through BabylonClient
+        // Get the configured network from BabylonClient
         try {
-            // Create BabylonClient for Mainnet and check URLs
-            const mainnetClient = BabylonClient.getInstance(Network.MAINNET);
-            const mainnetBaseUrl = mainnetClient.getBaseUrl();
-            const mainnetRpcUrl = mainnetClient.getRpcUrl();
+            this.network = this.babylonClient.getNetwork();
+            const baseUrl = this.babylonClient.getBaseUrl();
+            const rpcUrl = this.babylonClient.getRpcUrl();
             
-            if (mainnetBaseUrl && mainnetRpcUrl) {
-                this.networks.push(Network.MAINNET);
-                logger.info(`[Governance] Mainnet enabled with base URL: ${mainnetBaseUrl}`);
+            if (baseUrl && rpcUrl) {
+                logger.info(`[Governance] ${this.network} enabled with base URL: ${baseUrl}`);
+            } else {
+                throw new Error(`Invalid configuration for ${this.network} network - missing URLs`);
             }
         } catch (err) {
-            logger.warn(`[Governance] Mainnet not available: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        
-        try {
-            // Create BabylonClient for Testnet and check URLs
-            const testnetClient = BabylonClient.getInstance(Network.TESTNET);
-            const testnetBaseUrl = testnetClient.getBaseUrl();
-            const testnetRpcUrl = testnetClient.getRpcUrl();
-            
-            if (testnetBaseUrl && testnetRpcUrl) {
-                this.networks.push(Network.TESTNET);
-                logger.info(`[Governance] Testnet enabled with base URL: ${testnetBaseUrl}`);
-            }
-        } catch (err) {
-            logger.warn(`[Governance] Testnet not available: ${err instanceof Error ? err.message : String(err)}`);
-        }
-
-        if (this.networks.length === 0) {
-            throw new Error('No network configuration found with valid URLs');
+            logger.error(`[Governance] Failed to initialize BabylonClient: ${err instanceof Error ? err.message : String(err)}`);
+            throw new Error('Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
         }
     }
 
@@ -61,23 +44,21 @@ export class GovernanceIndexerService {
 
         this.isRunning = true;
         
-        // If shouldSync is true, do initial sync for all networks
+        // If shouldSync is true, do initial sync for the configured network
         if (this.shouldSync) {
-            logger.info('[Governance] Starting initial sync for all networks');
-            for (const network of this.networks) {
-                try {
-                    // First update governance parameters
-                    await this.updateGovernanceParams(network, this.babylonClient);
-                    logger.info(`[Governance] Updated governance parameters for network ${network}`);
+            logger.info(`[Governance] Starting initial sync for network: ${this.network}`);
+            try {
+                // First update governance parameters
+                await this.updateGovernanceParams(this.network, this.babylonClient);
+                logger.info(`[Governance] Updated governance parameters for network ${this.network}`);
 
-                    // Then sync proposals
-                    await this.indexProposals(network);
-                    logger.info(`[Governance] Completed initial sync for network ${network}`);
-                } catch (error) {
-                    logger.error(`[Governance] Error in initial sync for network ${network}:`, error);
-                }
+                // Then sync proposals
+                await this.indexProposals(this.network);
+                logger.info(`[Governance] Completed initial sync for network ${this.network}`);
+            } catch (error) {
+                logger.error(`[Governance] Error in initial sync for network ${this.network}:`, error);
             }
-            logger.info('[Governance] Initial sync completed for all networks');
+            logger.info('[Governance] Initial sync completed');
         } else {
             logger.info('[Governance] Skipping initial sync, will rely on WebSocket updates');
         }
@@ -93,9 +74,7 @@ export class GovernanceIndexerService {
 
         this.statusUpdateInterval = setInterval(async () => {
             logger.debug('[Governance] Running periodic proposal status update check');
-            for (const network of this.networks) {
-                await this.checkAndUpdateEndedProposals(network);
-            }
+            await this.checkAndUpdateEndedProposals(this.network);
         }, this.STATUS_UPDATE_INTERVAL_MS);
 
         logger.info('[Governance] Started periodic proposal status update interval');
@@ -117,7 +96,7 @@ export class GovernanceIndexerService {
             }
 
             logger.info(`[Governance] Found ${endedProposals.length} proposals with ended voting periods for network ${network}`);
-            const client = BabylonClient.getInstance(network);
+            const client = this.babylonClient;
 
             for (const proposal of endedProposals) {
                 try {
@@ -166,9 +145,8 @@ export class GovernanceIndexerService {
     }
 
     private async indexProposals(network: Network) {
-        // Get the appropriate BabylonClient instance for the network
-        const client = BabylonClient.getInstance(network);
-        const proposals = await client.getProposals();
+        // Use the configured BabylonClient
+        const proposals = await this.babylonClient.getProposals();
 
         logger.info(`[Governance] Found ${proposals.length} proposals for network ${network}`);
         for (const proposal of proposals) {
@@ -181,7 +159,7 @@ export class GovernanceIndexerService {
     }
 
     private async updateProposalAndVotes(proposal: any, network: Network) {
-        const client = BabylonClient.getInstance(network);
+        const client = this.babylonClient;
         
         // Always update governance parameters
         await this.updateGovernanceParams(network, client);

@@ -69,8 +69,8 @@ async function startServer() {
     });
 
     // Initialize and start the FinalitySignatureService
-    const finalityService = FinalitySignatureService.getInstance();
-    await finalityService.start();
+    /* const finalityService = FinalitySignatureService.getInstance();
+    await finalityService.start(); */
 
     // Initialize BTCDelegationService (this will start initial sync)
     logger.info('Initializing BTCDelegationService...');
@@ -156,7 +156,7 @@ async function startServer() {
         try {
             // Stop all services
             websocketService.stop();
-            finalityService.stop();
+            //finalityService.stop();
 
             // Wait a bit for cleanup
             await new Promise(resolve => setTimeout(resolve, 1000));

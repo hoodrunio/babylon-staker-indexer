@@ -20,45 +20,32 @@ interface ChainDelegationResponse {
 
 export class BTCDelegationService {
     private static instance: BTCDelegationService | null = null;
-    private babylonClients: Map<Network, BabylonClient>;
+    private babylonClient: BabylonClient;
     private readonly SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
     private delegationModel: typeof NewBTCDelegation;
     private isSyncing = false;
 
     private constructor() {
-        this.babylonClients = new Map();
         this.delegationModel = NewBTCDelegation;
         
-        // Try to initialize testnet client
+        // Get BabylonClient from singleton instance
         try {
-            this.babylonClients.set(Network.TESTNET, BabylonClient.getInstance(Network.TESTNET));
-            logger.info('[Network] Testnet client initialized successfully');
+            this.babylonClient = BabylonClient.getInstance();
+            const network = this.babylonClient.getNetwork();
+            logger.info(`[Network] Client initialized successfully for network: ${network}`);
         } catch (error) {
-            logger.debug('[Network] Testnet is not configured');
-        }
-
-        // Try to initialize mainnet client
-        try {
-            this.babylonClients.set(Network.MAINNET, BabylonClient.getInstance(Network.MAINNET));
-            logger.info('[Network] Mainnet client initialized successfully');
-        } catch (error) {
-            logger.debug('[Network] Mainnet is not configured');
-        }
-
-        if (this.babylonClients.size === 0) {
-            throw new Error('No network configurations available. Please configure at least one network (testnet or mainnet).');
+            logger.error('[Network] Failed to initialize BabylonClient:', error);
+            throw new Error('Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
         }
         
-        const networks = Array.from(this.babylonClients.keys());
+        const network = this.babylonClient.getNetwork();
         const enableFullSync = process.env.DELEGATION_FULL_SYNC === 'true';
         
         if (enableFullSync) {
-            logger.info(`[Network] Starting initial delegation sync for configured networks: ${networks.join(', ')}`);
-            for (const network of networks) {
-                this.syncDelegations(network).catch(err => 
-                    logger.error(`[${network}] Error in initial sync:`, err)
-                );
-            }
+            logger.info(`[Network] Starting initial delegation sync for network: ${network}`);
+            this.syncDelegations(network).catch(err => 
+                logger.error(`[${network}] Error in initial sync:`, err)
+            );
         } else {
             logger.info('[Network] Full sync is disabled, skipping initial delegation sync');
         }
@@ -71,26 +58,14 @@ export class BTCDelegationService {
         return BTCDelegationService.instance;
     }
 
-    private getBabylonClient(network: Network): BabylonClient {
-        const client = this.babylonClients.get(network);
-        if (!client) {
-            throw new Error(`No BabylonClient instance found for network: ${network}`);
-        }
-        return client;
+    private getBabylonClient(): BabylonClient {
+        return this.babylonClient;
     }
 
-    private getNetworkConfig(network?: Network) {
-        // If network is not specified, use the first available network
-        if (!network) {
-            const availableNetworks = Array.from(this.babylonClients.keys());
-            if (availableNetworks.length === 0) {
-                throw new Error('No networks are configured');
-            }
-            network = availableNetworks[0];
-        }
-
-        const client = this.getBabylonClient(network);
+    private getNetworkConfig() {
+        const client = this.getBabylonClient();
         const baseUrl = client.getBaseUrl();
+        const network = client.getNetwork();
         
         if (!baseUrl) {
             throw new Error(`Missing configuration for ${network} network`);
@@ -113,14 +88,12 @@ export class BTCDelegationService {
 
             try {
                 isPeriodicSyncRunning = true;
-                const networks = Array.from(this.babylonClients.keys());
-                logger.info(`[Network] Starting periodic delegation sync for configured networks: ${networks.join(', ')}`);
+                const network = this.babylonClient.getNetwork();
+                logger.info(`[Network] Starting periodic delegation sync for network: ${network}`);
                 
-                for (const network of networks) {
-                    if (this.isSyncing) {
-                        logger.info(`[${network}] Manual sync in progress, skipping periodic sync...`);
-                        continue;
-                    }
+                if (this.isSyncing) {
+                    logger.info(`[${network}] Manual sync in progress, skipping periodic sync...`);
+                } else {
                     await this.syncDelegations(network).catch(err => 
                         logger.error(`[${network}] Error in periodic sync:`, err)
                     );
@@ -287,14 +260,14 @@ export class BTCDelegationService {
 
     private async fetchDelegationsFromChain(
         status: BTCDelegationStatus,
-        network: Network,
+        network: Network, // Keep parameter for logging only
         pageKey?: string,
         pageLimit: number = 100,
         retryCount: number = 0
     ): Promise<DelegationResponse[]> {
         const maxRetries = 5;
         const retryDelay = (retryCount: number) => Math.min(1000 * Math.pow(2, retryCount), 10000); // exponential backoff
-        const { nodeUrl } = this.getNetworkConfig(network);
+        const { nodeUrl } = this.getNetworkConfig();
         const url = new URL(`${nodeUrl}/babylon/btcstaking/v1/btc_delegations/${status}`);
         
         url.searchParams.append('pagination.limit', pageLimit.toString());
@@ -424,7 +397,7 @@ export class BTCDelegationService {
                 return existingDelegation;
             }
 
-            const currentHeight = await this.getBabylonClient(network).getCurrentHeight();
+            const currentHeight = await this.getBabylonClient().getCurrentHeight();
 
             const delegation = new this.delegationModel({
                 stakingTxHex: chainDel.transaction_id,
