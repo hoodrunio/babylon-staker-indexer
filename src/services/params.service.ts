@@ -7,19 +7,13 @@ class ParamsService {
   private static readonly CACHE_TTL = 7200; // 2 hours in seconds
   private static readonly CACHE_KEY_PREFIX = 'params:';
 
-  private static getClient(network?: Network): BabylonClient {
+  private static getClient(): BabylonClient {
     try {
-      return BabylonClient.getInstance(network || Network.MAINNET);
+      // Initialize BabylonClient using the network from environment variable
+      return BabylonClient.getInstance();
     } catch (error) {
-      if (!network) {
-        // If no specific network was requested, try testnet as fallback
-        try {
-          return BabylonClient.getInstance(Network.MAINNET);
-        } catch (error) {
-          throw new Error('Neither mainnet nor testnet is configured. Please configure at least one network in your environment variables.');
-        }
-      }
-      throw error;
+      logger.error('Failed to initialize BabylonClient:', error);
+      throw new Error('Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
     }
   }
 
@@ -27,9 +21,9 @@ class ParamsService {
     return `${this.CACHE_KEY_PREFIX}${network}`;
   }
 
-  static async getAllParams(network?: Network) {
+  static async getAllParams() {
     try {
-      const client = ParamsService.getClient(network);
+      const client = ParamsService.getClient();
       const actualNetwork = client.getNetwork();
       const cacheKey = this.getCacheKey(actualNetwork);
       
