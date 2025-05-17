@@ -53,7 +53,7 @@ export class StakeholderRewardsController {
             }
 
             // Get raw rewards from the blockchain
-            const rawRewards = await this.stakeholderRewardsService.getStakeholderRewards(address, network);
+            const rawRewards = await this.stakeholderRewardsService.getStakeholderRewards(address);
             
             // Format rewards for API response
             const formattedRewards = this.stakeholderRewardsService.formatRewards(rawRewards);
@@ -80,7 +80,7 @@ export class StakeholderRewardsController {
             const network = req.network || Network.MAINNET;
 
             // Get provider details to find its Babylon address
-            const provider = await this.finalityProviderService.getFinalityProvider(btcPkHex, network);
+            const provider = await this.finalityProviderService.getFinalityProvider(btcPkHex);
             
             if (!provider || !provider.addr) {
                 return res.status(404).json({
@@ -90,10 +90,7 @@ export class StakeholderRewardsController {
             }
 
             // Get raw rewards from the blockchain
-            const rawRewards = await this.stakeholderRewardsService.getStakeholderRewards(
-                provider.addr, 
-                network
-            );
+            const rawRewards = await this.stakeholderRewardsService.getStakeholderRewards(provider.addr);
             
             // Format rewards for API response
             const formattedRewards = this.stakeholderRewardsService.formatRewards(rawRewards);
@@ -123,7 +120,7 @@ export class StakeholderRewardsController {
             // logger.info(`Getting rewards summary for network: ${network}`);
             
             // Get rewards summary for all providers
-            const result = await this.stakeholderRewardsService.getAllFinalityProviderRewardsSummary(network);
+            const result = await this.stakeholderRewardsService.getAllFinalityProviderRewardsSummary();
             
             // logger.info(`Got rewards summary with ${result.rewards ? result.rewards.length : 0} providers`);
             

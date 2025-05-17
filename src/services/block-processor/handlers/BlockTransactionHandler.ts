@@ -64,7 +64,7 @@ export class BlockTransactionHandler {
             this.validateInitialization();
             
             // Check if network is configured
-            if (!this.isNetworkConfigured(network)) {
+            if (!this.isNetworkConfigured()) {
                 logger.warn(`[BlockHandler] Network ${network} is not configured, skipping block processing`);
                 return;
             }
@@ -471,14 +471,15 @@ export class BlockTransactionHandler {
     /**
      * Checks if a network is configured
      */
-    private isNetworkConfigured(network: Network): boolean {
+    private isNetworkConfigured(): boolean {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             if (!this.blockProcessor) {
                 return false;
             }
             
-            // Set network on block processor to ensure it's using the correct network
-            this.blockProcessor.setNetwork(network);
+            // Ensure block processor is configured correctly
+            // No need to set network as it's now handled through BabylonClient
             
             // Check if the network is supported by the processor
             return this.blockProcessor.isNetworkConfigured();
