@@ -73,7 +73,7 @@ export class TxRepository implements ITxRepository {
       } catch (dbError: any) {
         // Handle duplicate key errors gracefully
         if (dbError.code === 11000) {  // MongoDB duplicate key error code
-          logger.info(`[TxRepository] Transaction ${tx.txHash} already exists in network ${network}, skipping save operation`);
+          logger.warn(`[TxRepository] Transaction ${tx.txHash} already exists in network ${network}, skipping save operation`);
           return;  // Exit without throwing an error since this is an expected case
         }
         // Re-throw other errors

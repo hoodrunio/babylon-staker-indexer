@@ -6,6 +6,7 @@ import { formatSatoshis } from '../../utils/util';
 import { BTCDelegationStatus } from '../../types/finality/btcstaking';
 import { logger } from '../../utils/logger';
 import { CacheService } from '../../services/CacheService';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 export class StatsController {
     private static finalityProviderService = FinalityProviderService.getInstance();
@@ -16,16 +17,16 @@ export class StatsController {
     private static refreshIntervals: Map<string, NodeJS.Timeout> = new Map();
 
     public static initialize() {
-        // Setup background refresh for mainnet
-        this.setupBackgroundRefresh(Network.MAINNET);
-        
-        // Try to setup testnet if configured
         try {
-            this.setupBackgroundRefresh(Network.TESTNET);
-            logger.info('Stats controller initialized with background cache refresh for both networks');
+            // Get the configured network from BabylonClient
+            const network = BabylonClient.getInstance().getNetwork();
+            
+            // Setup background refresh for the configured network only
+            this.setupBackgroundRefresh(network);
+            logger.info(`Background refreshing stats cache for network: ${network}`);
+            logger.info(`Stats controller initialized with background cache refresh for ${network}`);
         } catch (error) {
-            logger.warn('Testnet not configured, skipping stats refresh for testnet');
-            logger.info('Stats controller initialized with background cache refresh for mainnet only');
+            logger.error(`Error initializing stats controller: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 

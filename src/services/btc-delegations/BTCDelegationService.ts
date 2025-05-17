@@ -36,8 +36,6 @@ export class BTCDelegationService {
             this.babylonClients.set(defaultNetwork, defaultClient);
             logger.info(`[Network] ${defaultNetwork} client initialized successfully (from environment configuration)`);
             
-            // Try to initialize the other network if possible
-            const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
             // With single-network architecture, we only use one client
             logger.info(`[Network] Using ${defaultNetwork} client from environment configuration`);
         } catch (error) {

@@ -6,28 +6,26 @@
 import { Network } from '../../../../types/finality';
 import { TransactionStatsService } from './TransactionStatsService';
 import { logger } from '../../../../utils/logger';
-import { BlockProcessorModule } from '../../BlockProcessorModule';
-
+import { BabylonClient } from '../../../../clients/BabylonClient';
 /**
- * Initialize transaction statistics for all supported networks
+ * Initialize transaction statistics for the configured network
  * This should be called during application startup
  */
 export async function initializeTransactionStats(): Promise<void> {
   try {
-    // Get supported networks from block processor module
-    const blockProcessor = BlockProcessorModule.getInstance();
-    const networks = blockProcessor.getSupportedNetworks();
+    // Get the current network from BabylonClient
+    const network = BabylonClient.getInstance().getNetwork();
     
-    logger.info(`[TransactionStats] Initializing statistics for ${networks.length} networks`);
+    logger.info(`[TransactionStats] Initializing statistics for 1 networks`);
     
-    // Initialize stats for each network
+    // Initialize stats for the current network
     const statsService = TransactionStatsService.getInstance();
-    await statsService.initializeStats(networks as Network[]);
+    await statsService.initializeStats([network]);
     
     logger.info('[TransactionStats] Statistics initialized successfully');
     
     // Start periodic updates (every hour)
-    startPeriodicUpdates(networks as Network[]);
+    startPeriodicUpdates([network]);
   } catch (error) {
     logger.error(`[TransactionStats] Error initializing statistics: ${error instanceof Error ? error.message : String(error)}`);
   }
