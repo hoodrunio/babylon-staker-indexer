@@ -23,12 +23,18 @@ export class BlockProcessorService implements IBlockProcessorService {
 
   constructor(
     private readonly blockStorage: IBlockStorage, 
-    network: Network = Network.TESTNET,
-    babylonClient?: BabylonClient
+    network?: Network
   ) {
-    this.network = network;
-    this.babylonClient = babylonClient || BabylonClient.getInstance(network);
-    this.initializeServices();
+    try {
+      // Initialize BabylonClient using the network from environment variable
+      this.babylonClient = BabylonClient.getInstance(); // No default network
+      this.network = network || this.babylonClient.getNetwork();
+      this.initializeServices();
+      logger.info(`[BlockProcessorService] Initialized with network: ${this.network}`);
+    } catch (error) {
+      logger.error('[BlockProcessorService] Failed to initialize BabylonClient:', error);
+      throw new Error('[BlockProcessorService] Failed to initialize BabylonClient. Please check your NETWORK environment variable.');
+    }
   }
 
   /**
@@ -313,10 +319,11 @@ export class BlockProcessorService implements IBlockProcessorService {
 
   /**
    * Set network value
+   * Note: This doesn't change the BabylonClient's network, only the local reference
    */
   setNetwork(network: Network): void {
+    // Only update the local network reference, don't re-initialize BabylonClient with a specific network
     this.network = network;
-    this.babylonClient = BabylonClient.getInstance(network);
   }
 
   /**
