@@ -50,14 +50,14 @@ export class ValidatorInfoAdapter implements IValidatorInfoAdapter {
   /**
    * Gets validator by hex address
    */
-  public async getValidatorByHexAddress(hexAddress: string, network: Network): Promise<any | null> {
+  public async getValidatorByHexAddress(hexAddress: string): Promise<any | null> {
     if (!this.validatorInfoService) {
       logger.error(`[ValidatorInfoAdapter] ValidatorInfoService is not available`);
       return null;
     }
     
     try {
-      return await this.validatorInfoService.getValidatorByHexAddress(hexAddress, network);
+      return await this.validatorInfoService.getValidatorByHexAddress(hexAddress);
     } catch (error) {
       logger.error(`[ValidatorInfoAdapter] Error getting validator by hex address: ${this.formatError(error)}`);
       return null;
@@ -67,14 +67,14 @@ export class ValidatorInfoAdapter implements IValidatorInfoAdapter {
   /**
    * Gets validator by ID
    */
-  public async getValidatorById(id: Types.ObjectId, network?: Network): Promise<any | null> {
+  public async getValidatorById(id: Types.ObjectId): Promise<any | null> {
     if (!this.validatorInfoService) {
       logger.error(`[ValidatorInfoAdapter] ValidatorInfoService is not available`);
       return null;
     }
     
     try {
-      return await this.validatorInfoService.getValidatorById(id.toString(), network);
+      return await this.validatorInfoService.getValidatorById(id.toString());
     } catch (error) {
       logger.error(`[ValidatorInfoAdapter] Error getting validator by ID: ${this.formatError(error)}`);
       return null;

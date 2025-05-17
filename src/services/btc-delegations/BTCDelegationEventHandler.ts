@@ -1,6 +1,6 @@
-import { Network } from '../../types/finality';
 import { NewBTCDelegationService } from './NewBTCDelegationService';
 import { logger } from '../../utils/logger';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 export class BTCDelegationEventHandler {
     private static instance: BTCDelegationEventHandler | null = null;
@@ -17,7 +17,8 @@ export class BTCDelegationEventHandler {
         return BTCDelegationEventHandler.instance;
     }
 
-    public async handleEvent(txData: any, network: Network) {
+    public async handleEvent(txData: any) {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             if (!txData?.events || !Array.isArray(txData.events)) {
                 logger.info('No valid events data in txData:', txData);
@@ -101,25 +102,25 @@ export class BTCDelegationEventHandler {
                    // logger.info(`Processing event: ${eventType}`);
                     switch (eventType) {
                         case 'MsgCreateBTCDelegation':
-                            await this.handleDelegationEvent(txData, network);
+                            await this.handleDelegationEvent(txData);
                             break;
                         case 'EventBTCDelegationStateUpdate':
-                            await this.handleDelegationStateUpdate(txData, network);
+                            await this.handleDelegationStateUpdate(txData);
                             break;
                         case 'EventCovenantQuorumReached':
-                            await this.handleCovenantQuorum(txData, network);
+                            await this.handleCovenantQuorum(txData);
                             break;
                         case 'EventBTCDelegationInclusionProofReceived':
-                            await this.handleInclusionProof(txData, network);
+                            await this.handleInclusionProof(txData);
                             break;
                         case 'EventBTCDelgationUnbondedEarly':
-                            await this.handleEarlyUnbonding(txData, network);
+                            await this.handleEarlyUnbonding(txData);
                             break;
                         case 'EventBTCDelegationExpired':
-                            await this.handleDelegationExpired(txData, network);
+                            await this.handleDelegationExpired(txData);
                             break;
                         case 'EventCovenantSignatureReceived':
-                            await this.handleCovenantSignature(txData, network);
+                            await this.handleCovenantSignature(txData);
                             break;
                     }
                 }
@@ -152,7 +153,8 @@ export class BTCDelegationEventHandler {
        // logger.info(`Parsed ${eventName} event data:`, parsedData.stakingTxHash, 'network:', parsedData.network);
     }
 
-    private async handleDelegationEvent(txData: any, network: Network) {
+    private async handleDelegationEvent(txData: any) {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             logger.info('Handling delegation event with data');
             
@@ -184,13 +186,14 @@ export class BTCDelegationEventHandler {
             let tx_hash = eventDataWithHashAndSender.hash;
             logger.info('Processed event data:', tx_hash);
 
-            await this.delegationService.handleNewDelegationFromWebsocket(eventDataWithHashAndSender, network);
+            await this.delegationService.handleNewDelegationFromWebsocket(eventDataWithHashAndSender);
         } catch (error) {
             logger.error(`Error handling delegation event for ${network}:`, error);
         }
     }
 
-    private async handleDelegationStateUpdate(txData: any, network: Network) {
+    private async handleDelegationStateUpdate(txData: any) {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             const event = txData.events.find((e: any) => 
                 e.type === 'babylon.btcstaking.v1.EventBTCDelegationStateUpdate'
@@ -206,8 +209,7 @@ export class BTCDelegationEventHandler {
 
             const parsedData = {
                 stakingTxHash,
-                newState,
-                network
+                newState
             };
 
             this.logEventData('state update', event, parsedData);
@@ -222,7 +224,7 @@ export class BTCDelegationEventHandler {
             }
 
             // Get existing delegation to preserve height values
-            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
+            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash);
             if (!delegation) {
                 logger.error('No delegation found for staking tx id hex:', stakingTxHash);
                 return;
@@ -231,7 +233,6 @@ export class BTCDelegationEventHandler {
             const result = await this.delegationService.updateDelegationState(
                 stakingTxHash, 
                 newState, 
-                network,
                 delegation.end_height,
                 delegation.start_height
             );
@@ -246,7 +247,8 @@ export class BTCDelegationEventHandler {
         }
     }
 
-    private async handleCovenantSignature(txData: any, network: Network) {
+    private async handleCovenantSignature(txData: any) {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             const event = txData.events.find((e: any) => 
                 e.type === 'babylon.btcstaking.v1.EventCovenantSignatureReceived'
@@ -280,7 +282,8 @@ export class BTCDelegationEventHandler {
         }
     }
 
-    private async handleCovenantQuorum(txData: any, network: Network) {
+    private async handleCovenantQuorum(txData: any) {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             // First log all events
             /* logger.info('Processing transaction events:', {
@@ -319,7 +322,7 @@ export class BTCDelegationEventHandler {
             }
 
             // First check current status of delegation
-            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
+            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash);
             
             if (!delegation) {
                 logger.error('Delegation not found for covenant quorum:', stakingTxHash);
@@ -330,8 +333,7 @@ export class BTCDelegationEventHandler {
             if (delegation.status === 'PENDING') {
                 const result = await this.delegationService.updateDelegationState(
                     stakingTxHash, 
-                    newState, 
-                    network
+                    newState
                 );
                 
                 if (!result) {
@@ -350,7 +352,7 @@ export class BTCDelegationEventHandler {
         }
     }
 
-    private async handleInclusionProof(txData: any, network: Network) {
+    private async handleInclusionProof(txData: any) {
         try {
             const event = txData.events.find((e: any) => 
                 e.type === 'babylon.btcstaking.v1.EventBTCDelegationInclusionProofReceived'
@@ -370,8 +372,7 @@ export class BTCDelegationEventHandler {
                 stakingTxIdHex,
                 newState,
                 startHeight: startHeight ? parseInt(startHeight) : undefined,
-                endHeight: endHeight ? parseInt(endHeight) : undefined,
-                network
+                endHeight: endHeight ? parseInt(endHeight) : undefined
             };
 
             this.logEventData('inclusion proof', event, parsedData);
@@ -388,7 +389,7 @@ export class BTCDelegationEventHandler {
             }
 
             // First check if delegation exists
-            const delegation = await this.delegationService.getDelegationByTxId(stakingTxIdHex, network);
+            const delegation = await this.delegationService.getDelegationByTxId(stakingTxIdHex);
             if (!delegation) {
                 logger.error('No delegation found for staking tx id hex:', stakingTxIdHex);
                 return;
@@ -399,7 +400,6 @@ export class BTCDelegationEventHandler {
             const result = await this.delegationService.updateDelegationState(
                 stakingTxIdHex,
                 newState, 
-                network,
                 parsedData.endHeight,
                 parsedData.startHeight
             );
@@ -412,13 +412,12 @@ export class BTCDelegationEventHandler {
         } catch (error) {
             logger.error('Error handling inclusion proof:', {
                 error,
-                txData,
-                network
+                txData
             });
         }
     }
 
-    private async handleEarlyUnbonding(txData: any, network: Network) {
+    private async handleEarlyUnbonding(txData: any) {
         try {
             const event = txData.events.find((e: any) => 
                 e.type === 'babylon.btcstaking.v1.EventBTCDelgationUnbondedEarly'
@@ -434,8 +433,7 @@ export class BTCDelegationEventHandler {
 
             const parsedData = {
                 stakingTxHash,
-                newState,
-                network
+                newState
             };
 
             this.logEventData('early unbonding', event, parsedData);
@@ -450,7 +448,7 @@ export class BTCDelegationEventHandler {
             }
 
             // Get existing delegation to preserve height values
-            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
+            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash);
             if (!delegation) {
                 logger.error('No delegation found for staking tx id hex:', stakingTxHash);
                 return;
@@ -458,8 +456,7 @@ export class BTCDelegationEventHandler {
 
             const result = await this.delegationService.updateDelegationState(
                 stakingTxHash, 
-                newState, 
-                network
+                newState
             );
             
             if (!result) {
@@ -472,7 +469,7 @@ export class BTCDelegationEventHandler {
         }
     }
 
-    private async handleDelegationExpired(txData: any, network: Network) {
+    private async handleDelegationExpired(txData: any) {
         try {
             const event = txData.events.find((e: any) => 
                 e.type === 'babylon.btcstaking.v1.EventBTCDelegationExpired'
@@ -488,8 +485,7 @@ export class BTCDelegationEventHandler {
 
             const parsedData = {
                 stakingTxHash,
-                newState,
-                network
+                newState
             };
 
             this.logEventData('delegation expired', event, parsedData);
@@ -504,7 +500,7 @@ export class BTCDelegationEventHandler {
             }
 
             // Get existing delegation to preserve height values
-            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash, network);
+            const delegation = await this.delegationService.getDelegationByTxId(stakingTxHash);
             if (!delegation) {
                 logger.error('No delegation found for staking tx id hex:', stakingTxHash);
                 return;
@@ -512,8 +508,7 @@ export class BTCDelegationEventHandler {
 
             const result = await this.delegationService.updateDelegationState(
                 stakingTxHash, 
-                newState, 
-                network
+                newState
             );
             
             if (!result) {

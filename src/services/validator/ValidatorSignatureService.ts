@@ -1,7 +1,7 @@
-import { Network } from '../../types/finality';
 import { ValidatorSignature, IValidatorSignatureDocument } from '../../database/models/ValidatorSignature';
 import { ValidatorInfoService } from './ValidatorInfoService';
 import { logger } from '../../utils/logger';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 interface TendermintSignature {
     validator_address: string;
@@ -26,9 +26,11 @@ export class ValidatorSignatureService {
     private validatorInfoService: ValidatorInfoService;
     private readonly RECENT_BLOCKS_LIMIT = 100; // Last 100 block details
     private readonly SIGNATURE_PERFORMANCE_WINDOW = 10000; // Performance for last 10k blocks
+    private babylonClient: BabylonClient;
 
     private constructor() {
         this.validatorInfoService = ValidatorInfoService.getInstance();
+        this.babylonClient = BabylonClient.getInstance();
     }
 
     public static getInstance(): ValidatorSignatureService {
@@ -38,8 +40,9 @@ export class ValidatorSignatureService {
         return ValidatorSignatureService.instance;
     }
 
-    public async getLastProcessedBlock(network: Network): Promise<number> {
-        const lastSignature = await ValidatorSignature.findOne({ network: network.toLowerCase() })
+    public async getLastProcessedBlock(): Promise<number> {
+        const network = this.babylonClient.getNetwork().toLowerCase();
+        const lastSignature = await ValidatorSignature.findOne({ network })
             .sort({ lastSignedBlock: -1 })
             .select('lastSignedBlock')
             .lean();
@@ -47,7 +50,7 @@ export class ValidatorSignatureService {
         return lastSignature?.lastSignedBlock || 0;
     }
 
-    public async handleNewBlock(blockData: BlockData, network: Network): Promise<void> {
+    public async handleNewBlock(blockData: BlockData): Promise<void> {
         try {
             const height = parseInt(blockData.block.header.height);
             const timestamp = new Date(blockData.block.header.time);
@@ -61,8 +64,9 @@ export class ValidatorSignatureService {
             );
 
             // Get all validators (active and inactive)
+            const network = this.babylonClient.getNetwork().toLowerCase();
             const allValidators = await ValidatorSignature.find({
-                network: network.toLowerCase()
+                network
             }).select('validatorAddress').lean();
 
             // Mark validators active in current block
@@ -73,7 +77,7 @@ export class ValidatorSignatureService {
 
             // Fetch all validator info in bulk
             const validatorInfoPromises = Array.from(blockSignatures.keys()).map(address => 
-                this.validatorInfoService.getValidatorByHexAddress(address, network)
+                this.validatorInfoService.getValidatorByHexAddress(address)
             );
             const validatorInfos = await Promise.all(validatorInfoPromises);
             const validatorInfoMap = new Map(
@@ -160,7 +164,7 @@ export class ValidatorSignatureService {
 
             // Update signature rates
             const validators = await ValidatorSignature.find({
-                network: network.toLowerCase(),
+                network,
                 validatorAddress: { $in: Array.from(allValidatorAddresses) }
             });
 
@@ -217,7 +221,7 @@ export class ValidatorSignatureService {
                 await ValidatorSignature.bulkWrite(rateUpdateOps as any[], { ordered: false });
             }
 
-            logger.info(`[ValidatorSignature] Processed signatures for block ${height} on ${network}`);
+            logger.info(`[ValidatorSignature] Processed signatures for block ${height} on ${this.babylonClient.getNetwork()}`);
         } catch (error) {
             logger.error('[ValidatorSignature] Error processing block signatures:', error);
             throw error;
@@ -225,12 +229,12 @@ export class ValidatorSignatureService {
     }
 
     public async getValidatorSignatures(
-        network: Network,
         validatorAddress?: string,
         validatorOperatorAddress?: string,
         minSignatureRate?: number
     ): Promise<IValidatorSignatureDocument[]> {
-        const query: any = { network: network.toLowerCase() };
+        const network = this.babylonClient.getNetwork().toLowerCase();
+        const query: any = { network };
 
         if (validatorAddress) {
             query.validatorAddress = validatorAddress;
@@ -264,32 +268,32 @@ export class ValidatorSignatureService {
     }
 
     public async getValidatorSignaturesByConsensusAddress(
-        network: Network,
         consensusAddress: string
     ): Promise<IValidatorSignatureDocument | null> {
+        const network = this.babylonClient.getNetwork().toLowerCase();
         return await ValidatorSignature.findOne({
-            network: network.toLowerCase(),
+            network,
             validatorConsensusAddress: consensusAddress
         }).lean();
     }
 
     public async getValidatorSignaturesByValoperAddress(
-        network: Network,
         valoperAddress: string
     ): Promise<IValidatorSignatureDocument | null> {
+        const network = this.babylonClient.getNetwork().toLowerCase();
         return await ValidatorSignature.findOne({
-            network: network.toLowerCase(),
+            network,
             validatorOperatorAddress: valoperAddress
         }).lean();
     }
 
     public async getValidatorMissedBlocks(
-        network: Network,
         validatorAddress: string,
         startHeight?: number,
         endHeight?: number
     ): Promise<Array<{ blockHeight: number; timestamp: Date }>> {
-        const validator = await ValidatorSignature.findByAddress(network.toLowerCase(), validatorAddress);
+        const network = this.babylonClient.getNetwork().toLowerCase();
+        const validator = await ValidatorSignature.findByAddress(network, validatorAddress);
 
         if (!validator) {
             return [];

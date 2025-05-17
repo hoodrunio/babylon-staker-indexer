@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { WebSocketConnectionService } from './WebSocketConnectionService';
 import { WebSocketOrchestratorService } from './WebSocketOrchestratorService';
@@ -86,27 +85,24 @@ export class WebSocketHealthMonitor {
     }
     
     /**
-     * Check all WebSocket connections
+     * Check WebSocket connection
      */
     private checkAllConnections(): void {
-        const networks = this.configService.getAllNetworks();
-        logger.debug(`[WebSocketHealthMonitor] Checking connection status for ${networks.length} networks`);
-        
-        for (const network of networks) {
-            this.checkConnection(network);
-        }
+        logger.debug(`[WebSocketHealthMonitor] Checking WebSocket connection status`);
+        this.checkConnection();
     }
     
     /**
-     * Check a specific WebSocket connection
+     * Check the WebSocket connection
      */
-    private async checkConnection(network: Network): Promise<void> {
+    private async checkConnection(): Promise<void> {
         try {
-            const connection = this.connectionService.getConnection(network);
+            const connection = this.connectionService.getConnection();
             
             if (!connection) {
-                logger.warn(`[WebSocketHealthMonitor] No connection found for ${network}, attempting to reconnect`);
-                this.getOrchestratorService().reconnectNetwork(network);
+                logger.warn(`[WebSocketHealthMonitor] No connection found, attempting to reconnect`);
+                // Use the public reconnect method
+                this.getOrchestratorService().reconnect();
                 return;
             }
             
@@ -115,32 +111,32 @@ export class WebSocketHealthMonitor {
                 // Verify connection status again after a small delay to avoid false positives
                 // during connection establishment
                 setTimeout(() => {
-                    const conn = this.connectionService.getConnection(network);
+                    const conn = this.connectionService.getConnection();
                     if (conn && !conn.isConnected()) {
-                        logger.warn(`[WebSocketHealthMonitor] Connection for ${network} is not connected, reconnecting`);
-                        this.getOrchestratorService().reconnectNetwork(network);
+                        logger.warn(`[WebSocketHealthMonitor] Connection is not connected, reconnecting`);
+                        this.getOrchestratorService().reconnect();
                     }
                 }, 1000);
                 return;
             }
             
             // Check if we've received blocks recently
-            await this.checkBlockActivity(network);
+            await this.checkBlockActivity();
             
         } catch (error) {
-            logger.error(`[WebSocketHealthMonitor] Error checking connection for ${network}:`, error);
+            logger.error(`[WebSocketHealthMonitor] Error checking connection:`, error);
         }
     }
     
     /**
      * Check if we've received blocks recently
      */
-    private async checkBlockActivity(network: Network): Promise<void> {
+    private async checkBlockActivity(): Promise<void> {
         try {
-            const state = this.healthTracker.getNetworkState(network);
+            const state = this.healthTracker.getState();
             
             if (!state) {
-                logger.warn(`[WebSocketHealthMonitor] No state found for ${network}`);
+                logger.warn(`[WebSocketHealthMonitor] No state found`);
                 return;
             }
             
@@ -149,10 +145,10 @@ export class WebSocketHealthMonitor {
             const timeSinceLastUpdate = now.getTime() - lastUpdate.getTime();
             
             if (timeSinceLastUpdate > this.MAX_INACTIVE_TIME) {
-                logger.warn(`[WebSocketHealthMonitor] No block updates for ${network} in ${timeSinceLastUpdate / 1000} seconds, reconnecting`);
+                logger.warn(`[WebSocketHealthMonitor] No block updates in ${timeSinceLastUpdate / 1000} seconds, reconnecting`);
                 
                 // Check current height from API to confirm if there's a real issue
-                const config = this.configService.getNetworkConfig(network);
+                const config = this.configService.getConfig();
                 const client = config?.getClient();
                 
                 if (client) {
@@ -162,22 +158,22 @@ export class WebSocketHealthMonitor {
                         
                         if (currentHeight > lastProcessedHeight) {
                             logger.warn(`[WebSocketHealthMonitor] Current height (${currentHeight}) is ahead of last processed height (${lastProcessedHeight}), reconnecting`);
-                            this.getOrchestratorService().reconnectNetwork(network);
+                            this.getOrchestratorService().reconnect();
                         } else {
-                            logger.info(`[WebSocketHealthMonitor] No new blocks available for ${network}, current height: ${currentHeight}`);
+                            logger.info(`[WebSocketHealthMonitor] No new blocks available, current height: ${currentHeight}`);
                         }
                     } catch (error) {
-                        logger.error(`[WebSocketHealthMonitor] Error getting current height for ${network}:`, error);
+                        logger.error(`[WebSocketHealthMonitor] Error getting current height:`, error);
                         // Reconnect anyway as we can't confirm if there's a real issue
-                        this.getOrchestratorService().reconnectNetwork(network);
+                        this.getOrchestratorService().reconnect();
                     }
                 } else {
                     // No client available, reconnect anyway
-                    this.getOrchestratorService().reconnectNetwork(network);
+                    this.getOrchestratorService().reconnect();
                 }
             }
         } catch (error) {
-            logger.error(`[WebSocketHealthMonitor] Error checking block activity for ${network}:`, error);
+            logger.error(`[WebSocketHealthMonitor] Error checking block activity:`, error);
         }
     }
 } 

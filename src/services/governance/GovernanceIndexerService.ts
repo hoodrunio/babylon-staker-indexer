@@ -299,8 +299,7 @@ export class GovernanceIndexerService {
         let totalVotingPower = "0";
         try {
             // Use the network from BabylonClient
-            const network = this.babylonClient.getNetwork();
-            const allValidators = await validatorInfoService.getAllValidators(network, false);
+            const allValidators = await validatorInfoService.getAllValidators(false);
             totalVotingPower = allValidators.validators.reduce((acc, validator) => {
                 if (validator.active && validator.voting_power) {
                     const currentPower = BigInt(validator.voting_power);
@@ -366,9 +365,7 @@ export class GovernanceIndexerService {
             let votingPower = voteOption.weight || "1.000000000000000000";
             let validatorInfo = null;
             try {
-                // Use the network from BabylonClient
-                const network = this.babylonClient.getNetwork();
-                validatorInfo = await validatorInfoService.getValidatorByAccountAddress(vote.voter, network);
+                validatorInfo = await validatorInfoService.getValidatorByAccountAddress(vote.voter);
                 if (validatorInfo && validatorInfo.active && validatorInfo.voting_power) {
                     votingPower = validatorInfo.voting_power;
                     logger.debug(`[Governance] Using validator voting power ${votingPower} for voter ${vote.voter}`);

@@ -2,7 +2,6 @@ import { RateLimiter } from '../../utils/RateLimiter';
 import { BTCDelegationEventHandler } from './BTCDelegationEventHandler';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { logger } from '../../utils/logger';
-import { Network } from '../../types/finality';
 
 interface BTCStakingEvent {
     events: Array<{
@@ -53,15 +52,28 @@ export class MissedBlocksProcessor {
         return MissedBlocksProcessor.instance;
     }
 
+    /**
+     * Processes missed blocks by fetching and storing data for each missed block
+     * 
+     * @param fromHeight - Starting height (inclusive)
+     * @param toHeight - Ending height (inclusive)
+     * @param babylonClient - The BabylonClient instance to use
+     */
     public async processMissedBlocks(
-        network: Network, // Keep network parameter for compatibility with callers
-        startHeight: number,
-        endHeight: number,
+        fromHeight: number,
+        toHeight: number,
         babylonClient: BabylonClient
-    ) {
-        logger.info(`Processing missed blocks from ${startHeight} to ${endHeight}`);
+    ): Promise<void> {
+        if (fromHeight > toHeight) {
+            logger.warn(`Invalid height range: ${fromHeight} > ${toHeight}, skipping processing`);
+            return;
+        }
+
+        const numberOfBlocks = toHeight - fromHeight + 1;
+        const network = babylonClient.getNetwork();
+        logger.info(`Processing ${numberOfBlocks} missed block(s) on ${network} from ${fromHeight} to ${toHeight}`);
         
-        const heightRanges = this.createHeightRanges(startHeight, endHeight);
+        const heightRanges = this.createHeightRanges(fromHeight, toHeight);
         let processedBlocks = 0;
         let failedBlocks = 0;
 
@@ -82,7 +94,7 @@ export class MissedBlocksProcessor {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        logger.info(`Completed processing missed blocks: total: ${endHeight - startHeight + 1}, processed: ${processedBlocks}, failed: ${failedBlocks}`);
+        logger.info(`Completed processing missed blocks: total: ${numberOfBlocks}, processed: ${processedBlocks}, failed: ${failedBlocks}`);
     }
 
     private createHeightRanges(startHeight: number, endHeight: number): number[][] {
@@ -105,14 +117,14 @@ export class MissedBlocksProcessor {
         }
 
         try {
-            return await this.processBlockResults(height, babylonClient);
+            return await this.processSingleBlock(height, babylonClient);
         } catch (error) {
             logger.error(`Error processing block ${height}:`, error);
             throw error;
         }
     }
 
-    private async processBlockResults(
+    private async processSingleBlock(
         height: number,
         babylonClient: BabylonClient
     ): Promise<boolean> {
@@ -148,7 +160,7 @@ export class MissedBlocksProcessor {
             logger.info('Processing BTC staking events:', JSON.stringify(btcStakingEvents, null, 2));
 
             for (const event of btcStakingEvents) {
-                await this.eventHandler.handleEvent(event, babylonClient.getNetwork());
+                await this.eventHandler.handleEvent(event);
             }
 
             return true;

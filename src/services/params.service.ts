@@ -1,5 +1,4 @@
 import { BabylonClient } from '../clients/BabylonClient';
-import { Network } from '../types/finality';
 import { CacheService } from './CacheService';
 import { logger } from '../utils/logger';
 
@@ -7,21 +6,21 @@ class ParamsService {
   private static readonly CACHE_TTL = 7200; // 2 hours in seconds
   private static readonly CACHE_KEY_PREFIX = 'params:';
 
-  private static getClient(network?: Network): BabylonClient {
-    // Use the network parameter if specified, otherwise use the default from environment
-    return BabylonClient.getInstance(network);
-    // The getInstance method now handles fallbacks and proper error messages internally
+  private static getClient(): BabylonClient {
+    // Get the singleton instance from environment configuration
+    return BabylonClient.getInstance();
+    // The getInstance method handles configuration and proper error messages internally
   }
 
-  private static getCacheKey(network: Network): string {
-    return `${this.CACHE_KEY_PREFIX}${network}`;
+  private static getCacheKey(): string {
+    return this.CACHE_KEY_PREFIX;
   }
 
-  static async getAllParams(network?: Network) {
+  static async getAllParams() {
     try {
-      const client = ParamsService.getClient(network);
+      const client = ParamsService.getClient();
       const actualNetwork = client.getNetwork();
-      const cacheKey = this.getCacheKey(actualNetwork);
+      const cacheKey = this.getCacheKey();
       
       // Try to get from cache first
       const cacheService = CacheService.getInstance();
@@ -65,7 +64,7 @@ class ParamsService {
       ]);
 
       const params = {
-        network: actualNetwork,
+        network: actualNetwork, // Keep network for reference, but we're using a single-network setup
         // Babylon Bitcoin protocol specific parameters
         btccheckpoint: btccheckpointParams,
         btclightclient: btclightclientParams,

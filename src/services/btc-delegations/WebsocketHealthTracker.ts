@@ -62,7 +62,6 @@ export class WebsocketHealthTracker {
                 
                 // Process missing blocks
                 await this.missedBlocksProcessor.processMissedBlocks(
-                    this.babylonClient.getNetwork(),
                     this.state.lastProcessedHeight + 1,
                     height - 1, // Except last block
                     this.babylonClient
@@ -95,11 +94,11 @@ export class WebsocketHealthTracker {
         logger.info(`Websocket disconnected at height ${this.state.lastProcessedHeight}`);
     }
 
-    public async handleReconnection() {
+    public async handleReconnection(client: BabylonClient = this.babylonClient) {
         // Lock with mutex
         const release = await this.mutex.acquire();
         try {
-            const currentHeight = await this.babylonClient.getCurrentHeight();
+            const currentHeight = await client.getCurrentHeight();
             const lastProcessedHeight = this.state.lastProcessedHeight;
 
             // Process if there are missing blocks
@@ -107,10 +106,9 @@ export class WebsocketHealthTracker {
                 logger.debug(`Gap detected during reconnection: ${lastProcessedHeight} -> ${currentHeight}`);
                 
                 await this.missedBlocksProcessor.processMissedBlocks(
-                    this.babylonClient.getNetwork(),
                     lastProcessedHeight + 1,
                     currentHeight,
-                    this.babylonClient
+                    client
                 );
 
                 this.state.lastProcessedHeight = currentHeight;

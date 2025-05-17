@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { WebSocketConnectionService } from './WebSocketConnectionService';
 import { WebSocketConfigService } from './WebSocketConfigService';
@@ -20,8 +19,8 @@ export class WebSocketOrchestratorService {
     private validatorHistoricalSync: ValidatorHistoricalSyncService;
     private healthMonitor: WebSocketHealthMonitor;
     
-    // Map to track reconnection locks
-    private reconnectLocks: Map<Network, boolean> = new Map();
+    // Flag to track reconnection in progress
+    private reconnectInProgress: boolean = false;
     
     private constructor() {
         // Initialize services
@@ -42,36 +41,34 @@ export class WebSocketOrchestratorService {
     }
     
     public startListening(): void {
-        // Connect to all configured networks
-        const networks = this.configService.getAllNetworks();
-        for (const network of networks) {
-            this.connectToNetwork(network);
-        }
+        // Connect to the configured network
+        this.connect();
         
         // Start health monitoring
         this.healthMonitor.startMonitoring();
     }
     
-    private connectToNetwork(network: Network): void {
-        const config = this.configService.getNetworkConfig(network);
+    private connect(): void {
+        const config = this.configService.getConfig();
         if (!config) {
-            logger.error(`[WebSocketOrchestrator] Network configuration for ${network} not found`);
+            logger.error(`[WebSocketOrchestrator] WebSocket configuration not found`);
             return;
         }
         
         const wsUrl = config.getWsUrl();
         if (!wsUrl) {
-            logger.warn(`[WebSocketOrchestrator] WebSocket URL for ${network} is not defined, skipping this network`);
+            logger.warn(`[WebSocketOrchestrator] WebSocket URL is not defined, unable to connect`);
             // If BabylonClient exists, log the information
             const client = config.getClient();
             if (client) {
+                const network = client.getNetwork();
                 logger.info(`[WebSocketOrchestrator] ${network} is configured with baseURL: ${client.getBaseUrl()} and rpcURL: ${client.getRpcUrl()}`);
-                logger.info(`[WebSocketOrchestrator] But WebSocket URL is missing. Please check BABYLON_WS_URLS or BABYLON_TESTNET_WS_URLS in your .env file`);
+                logger.info(`[WebSocketOrchestrator] But WebSocket URL is missing. Please check BABYLON_WS_URL in your .env file`);
             }
             return;
         }
         
-        logger.info(`[WebSocketOrchestrator] Connecting to ${network} WebSocket at ${wsUrl}`);
+        logger.info(`[WebSocketOrchestrator] Connecting to WebSocket at ${wsUrl}`);
         
         // Create event handlers
         const eventHandlers: IWebSocketEventHandlers = {
@@ -82,31 +79,31 @@ export class WebSocketOrchestratorService {
         };
         
         // Create and connect
-        const connection = this.connectionService.createConnection(wsUrl, network, eventHandlers);
+        const connection = this.connectionService.createConnection(wsUrl, eventHandlers);
         connection.connect();
     }
     
-    private async handleOpen(network: Network): Promise<void> {
-        logger.info(`Connected to ${network} websocket`);
-        this.reconnectionService.resetAttempts(network);
+    private async handleOpen(): Promise<void> {
+        logger.info(`Connected to websocket`);
+        this.reconnectionService.resetAttempts();
         
         try {
             // Start historical sync
-            const config = this.configService.getNetworkConfig(network);
+            const config = this.configService.getConfig();
             const client = config?.getClient();
             if (client) {
-                await this.validatorHistoricalSync.startSync(network, client);
+                await this.validatorHistoricalSync.startSync(client);
             }
             
             // Send subscriptions
-            this.sendSubscriptions(network);
+            this.sendSubscriptions();
         } catch (error) {
-            logger.error(`[WebSocket] Error during connection setup for ${network}:`, error);
+            logger.error(`[WebSocket] Error during connection setup:`, error);
         }
     }
     
-    private sendSubscriptions(network: Network): void {
-        const connection = this.connectionService.getConnection(network);
+    private sendSubscriptions(): void {
+        const connection = this.connectionService.getConnection();
         if (!connection) return;
         
         const subscriptions = this.messageService.getSubscriptions();
@@ -124,38 +121,37 @@ export class WebSocketOrchestratorService {
         }
     }
     
-    private async handleMessage(data: Buffer, network: Network): Promise<void> {
+    private async handleMessage(data: Buffer): Promise<void> {
         try {
             const message = JSON.parse(data.toString());
-            await this.messageService.processMessage(message, network);
+            await this.messageService.processMessage(message);
         } catch (error) {
-            logger.error(`Error handling ${network} websocket message:`, error);
+            logger.error(`Error handling websocket message:`, error);
         }
     }
     
-    private async handleClose(network: Network): Promise<void> {
-        logger.info(`${network} websocket connection closed`);
-        this.healthTracker.markDisconnected(network);
+    private async handleClose(): Promise<void> {
+        logger.info(`Websocket connection closed`);
+        this.healthTracker.markDisconnected();
         
-        const config = this.configService.getNetworkConfig(network);
+        const config = this.configService.getConfig();
         await this.reconnectionService.handleReconnect(
-            network, 
             config?.getClient(),
-            () => this.reconnect(network)
+            () => this.reconnect()
         );
     }
     
-    private handleError(error: Error, network: Network): void {
-        logger.error(`${network} websocket error:`, error);
-        const connection = this.connectionService.getConnection(network);
+    private handleError(error: Error): void {
+        logger.error(`Websocket error:`, error);
+        const connection = this.connectionService.getConnection();
         if (connection) {
             connection.disconnect();
         }
     }
     
-    private reconnect(network: Network): void {
-        this.connectionService.removeConnection(network);
-        this.connectToNetwork(network);
+    public reconnect(): void {
+        this.connectionService.removeConnection();
+        this.connect();
     }
     
     public stop(): void {
@@ -164,33 +160,32 @@ export class WebSocketOrchestratorService {
     }
 
     /**
-     * Reconnect to a specific network
-     * @param network The network to reconnect to
+     * Force a reconnection to the WebSocket
      */
-    public reconnectNetwork(network: Network): void {
-        // If there is already a reconnection process for this network, cancel it
-        if (this.reconnectLocks.get(network)) {
-            logger.debug(`[WebSocketOrchestrator] Already reconnecting to ${network}, skipping duplicate request`);
+    public reconnectNow(): void {
+        // If there is already a reconnection process, cancel it
+        if (this.reconnectInProgress) {
+            logger.debug(`[WebSocketOrchestrator] Already reconnecting, skipping duplicate request`);
             return;
         }
 
         try {
-            // Set the lock
-            this.reconnectLocks.set(network, true);
+            // Set the flag
+            this.reconnectInProgress = true;
             
-            logger.info(`[WebSocketOrchestrator] Manually reconnecting to ${network}`);
-            this.connectionService.removeConnection(network);
+            logger.info(`[WebSocketOrchestrator] Manually reconnecting`);
+            this.connectionService.removeConnection();
             
             // add a short wait before reconnecting
             setTimeout(() => {
-                this.connectToNetwork(network);
-                // Remove the lock
-                this.reconnectLocks.set(network, false);
+                this.connect();
+                // Remove the flag
+                this.reconnectInProgress = false;
             }, 1000);
         } catch (error) {
-            // Remove the lock in case of error
-            this.reconnectLocks.set(network, false);
-            logger.error(`[WebSocketOrchestrator] Error during reconnection to ${network}:`, error);
+            // Remove the flag in case of error
+            this.reconnectInProgress = false;
+            logger.error(`[WebSocketOrchestrator] Error during reconnection:`, error);
         }
     }
 }

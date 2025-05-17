@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
@@ -6,7 +5,7 @@ import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracke
 // WebSocket Reconnection Service
 export class WebSocketReconnectionService {
     private static instance: WebSocketReconnectionService | null = null;
-    private reconnectAttempts: Map<Network, number> = new Map();
+    private reconnectAttempts: number = 0;
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
     private readonly RECONNECT_INTERVAL = 5000; // 5 seconds
     
@@ -21,34 +20,31 @@ export class WebSocketReconnectionService {
     }
     
     public async handleReconnect(
-        network: Network, 
         client: BabylonClient | undefined,
         reconnectAction: () => void
     ): Promise<void> {
-        const attempts = this.reconnectAttempts.get(network) || 0;
-        
-        if (attempts < this.MAX_RECONNECT_ATTEMPTS) {
-            this.reconnectAttempts.set(network, attempts + 1);
-            logger.info(`[${network}] Attempting to reconnect (attempt ${attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
+        if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
+            this.reconnectAttempts++;
+            logger.info(`Attempting to reconnect (attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`);
             
             try {
                 if (client) {
-                    await this.healthTracker.handleReconnection(network, client);
+                    await this.healthTracker.handleReconnection(client);
                 }
 
                 setTimeout(reconnectAction, this.RECONNECT_INTERVAL);
             } catch (error) {
-                logger.error(`[${network}] Error handling reconnection:`, error);
+                logger.error(`Error handling reconnection:`, error);
                 // Retry even if there's an error
-                this.handleReconnect(network, client, reconnectAction);
+                this.handleReconnect(client, reconnectAction);
             }
         } else {
-            logger.error(`[${network}] Max reconnection attempts reached`);
-            this.reconnectAttempts.set(network, 0); // Reset attempts for future reconnections
+            logger.error(`Max reconnection attempts reached`);
+            this.reconnectAttempts = 0; // Reset attempts for future reconnections
         }
     }
     
-    public resetAttempts(network: Network): void {
-        this.reconnectAttempts.set(network, 0);
+    public resetAttempts(): void {
+        this.reconnectAttempts = 0;
     }
 } 

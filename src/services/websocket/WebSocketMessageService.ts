@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { IMessageProcessor, ISubscription } from './interfaces';
 import { BTCDelegationEventHandler } from '../btc-delegations/BTCDelegationEventHandler';
@@ -10,6 +9,7 @@ import { CovenantEventHandler } from '../covenant/CovenantEventHandler';
 import { GovernanceEventHandler } from '../governance/GovernanceEventHandler';
 import { BlockTransactionHandler } from '../block-processor/handlers/BlockTransactionHandler';
 import { BlockProcessorModule } from '../block-processor/BlockProcessorModule';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 // Subscription implementation
 export class Subscription implements ISubscription {
@@ -30,7 +30,7 @@ export class Subscription implements ISubscription {
 // Abstract message processor
 export abstract class BaseMessageProcessor implements IMessageProcessor {
     abstract canProcess(message: any): boolean;
-    abstract process(message: any, network: Network): Promise<void>;
+    abstract process(message: any): Promise<void>;
 }
 
 // BTC Staking events processor
@@ -45,7 +45,7 @@ export class BTCStakingMessageProcessor extends BaseMessageProcessor {
                message.id === 'btc_staking';
     }
 
-    async process(message: any, network: Network): Promise<void> {
+    async process(message: any): Promise<void> {
         const messageValue = message.result.data.value;
         const height = parseInt(message.result.events['tx.height']?.[0]);
         
@@ -56,8 +56,8 @@ export class BTCStakingMessageProcessor extends BaseMessageProcessor {
         };
 
         if (txData.height && txData.hash && txData.events) {
-            await this.healthTracker.updateBlockHeight(network, height);
-            await this.eventHandler.handleEvent(txData, network);
+            await this.healthTracker.updateBlockHeight(height);
+            await this.eventHandler.handleEvent(txData);
         }
     }
 }
@@ -73,7 +73,7 @@ export class CovenantMessageProcessor extends BaseMessageProcessor {
         return value?.TxResult?.result?.events;
     }
 
-    async process(message: any, network: Network): Promise<void> {
+    async process(message: any): Promise<void> {
         const messageValue = message.result.data.value;
         const height = parseInt(message.result.events['tx.height']?.[0]);
         
@@ -84,7 +84,7 @@ export class CovenantMessageProcessor extends BaseMessageProcessor {
         };
 
         if (txData.height && txData.hash && txData.events) {
-            await this.covenantEventHandler.handleEvent(txData, network);
+            await this.covenantEventHandler.handleEvent(txData);
         }
     }
 }
@@ -101,11 +101,10 @@ export class BLSCheckpointMessageProcessor extends BaseMessageProcessor {
                message.id === 'checkpoint_for_bls';
     }
 
-    async process(message: any, network: Network): Promise<void> {
+    async process(message: any): Promise<void> {
         const messageValue = message.result.data.value;
         await this.blsCheckpointService.handleCheckpoint(
-            messageValue.result_finalize_block, 
-            network
+            messageValue.result_finalize_block
         );
     }
 }
@@ -126,17 +125,17 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
                (message?.result?.data?.type === 'tendermint/event/NewBlock');
     }
 
-    async process(message: any, network: Network): Promise<void> {
+    async process(message: any): Promise<void> {
         // Handle checkpoint status updates
         if (message?.result?.data?.value?.result_finalize_block && 
             message.id === 'new_block') {
-            await this.checkpointStatusHandler.handleNewBlock(message, network);
+            await this.checkpointStatusHandler.handleNewBlock(message);
         }
 
         // Handle validator signatures
         if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
             const blockData = message.result.data.value;
-            await this.validatorSignatureService.handleNewBlock(blockData, network);
+            await this.validatorSignatureService.handleNewBlock(blockData);
         }
 
         // Handle block transactions
@@ -144,7 +143,7 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
             // Check block data and pass it correctly
             const blockData = message.result.data.value;
             if (blockData && blockData.block) {
-                await this.blockTransactionHandler.handleNewBlock(blockData, network);
+                await this.blockTransactionHandler.handleNewBlock(blockData);
             } else {
                 logger.warn(`[BlockMessageProcessor] Block data structure is not as expected: ${JSON.stringify(blockData).substring(0, 200)}...`);
             }
@@ -163,7 +162,7 @@ export class GovernanceMessageProcessor extends BaseMessageProcessor {
                message?.result?.data?.value?.TxResult?.result?.events;
     }
 
-    async process(message: any, network: Network): Promise<void> {
+    async process(message: any): Promise<void> {
         const messageValue = message.result.data.value;
         const height = parseInt(message.result.events['tx.height']?.[0]);
         
@@ -174,7 +173,7 @@ export class GovernanceMessageProcessor extends BaseMessageProcessor {
         };
 
         if (txData.height && txData.hash && txData.events) {
-            await this.governanceEventHandler.handleEvent(txData, network);
+            await this.governanceEventHandler.handleEvent(txData);
         }
     }
 }
@@ -249,13 +248,17 @@ export class WebSocketMessageService {
         return this.subscriptions;
     }
     
-    public async processMessage(message: any, network: Network): Promise<void> {
+    public async processMessage(message: any): Promise<void> {
         // Initialize message processors before processing the first message
         if (!this.initialized) {
             this.initializeMessageProcessors();
         }
         
         try {
+            // Get the network for logging purposes
+            const client = BabylonClient.getInstance();
+            const network = client.getNetwork();
+
             // Check if this is a subscription confirmation message
             if (message.result && !message.result.data) {
                 logger.info(`${network} subscription confirmed:`, message);
@@ -267,7 +270,7 @@ export class WebSocketMessageService {
             
             for (const processor of this.messageProcessors) {
                 if (processor.canProcess(message)) {
-                    processPromises.push(processor.process(message, network));
+                    processPromises.push(processor.process(message));
                 }
             }
 
@@ -278,7 +281,7 @@ export class WebSocketMessageService {
                 logger.info(`${network} received unhandled message type:`, message);
             }
         } catch (error) {
-            logger.error(`Error handling ${network} websocket message:`, error);
+            logger.error(`Error handling websocket message:`, error);
         }
     }
 } 

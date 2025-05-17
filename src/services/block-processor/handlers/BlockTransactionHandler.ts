@@ -6,7 +6,7 @@
 import { BlockProcessorError, TxProcessorError } from '../types/common';
 import { IBlockProcessorService, IBlockStorage, ITransactionProcessorService, ITxStorage } from '../types/interfaces';
 import { logger } from '../../../utils/logger';
-import { Network } from '../../../types/finality';
+import { BabylonClient } from '../../../clients/BabylonClient';
 
 /**
  * Singleton class for Block and Transaction Handler
@@ -57,7 +57,9 @@ export class BlockTransactionHandler {
     /**
      * Called when a new block arrives and processes it
      */
-    public async handleNewBlock(blockData: any, network: Network): Promise<void> {
+    public async handleNewBlock(blockData: any): Promise<void> {
+        // Get current network from BabylonClient
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             this.validateInitialization();
             
@@ -93,7 +95,8 @@ export class BlockTransactionHandler {
     /**
      * Called when a new transaction arrives and processes it
      */
-    public async handleNewTransaction(txData: any, network: Network): Promise<void> {
+    public async handleNewTransaction(txData: any): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             if (!this.txProcessor || !this.txStorage) {
                 throw new TxProcessorError('Transaction processor or storage not initialized');
@@ -123,7 +126,8 @@ export class BlockTransactionHandler {
     /**
      * Synchronizes historical blocks
      */
-    public async syncHistoricalBlocks(network: Network, fromHeight: number, toHeight?: number): Promise<void> {
+    public async syncHistoricalBlocks(fromHeight: number, toHeight?: number): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             this.validateInitialization();
             
@@ -141,7 +145,7 @@ export class BlockTransactionHandler {
             // Process blocks
             for (let height = fromHeight; height <= syncToHeight; height++) {
                 try {
-                    await this.syncBlockAtHeight(height, network);
+                    await this.syncBlockAtHeight(height);
                     
                     // Log every 100 blocks
                     if (height % 100 === 0) {
@@ -155,7 +159,7 @@ export class BlockTransactionHandler {
                 }
             }
             
-            this.logSyncSummary(failedBlocks, fromHeight, syncToHeight, network);
+            this.logSyncSummary(failedBlocks, fromHeight, syncToHeight);
             
         } catch (error) {
             this.logError('[BlockHandler] Error syncing historical blocks', error);
@@ -166,15 +170,16 @@ export class BlockTransactionHandler {
     /**
      * Synchronizes block and its transactions at a specific height
      */
-    private async syncBlockAtHeight(height: number, network: Network, retryCount: number = 0): Promise<void> {
+    private async syncBlockAtHeight(height: number, retryCount: number = 0): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             this.validateInitialization();
             
             // Get block and process it
-            const { blockData } = await this.fetchAndProcessBlock(height, network);
+            const { blockData } = await this.fetchAndProcessBlock(height);
             
             // Process transactions
-            await this.processBlockTransactions(height, blockData, network);
+            await this.processBlockTransactions(height, blockData);
             
         } catch (error) {
             logger.error(`[BlockHandler] Error syncing block at height ${height}: ${error instanceof Error ? error.message : String(error)}`);
@@ -187,7 +192,7 @@ export class BlockTransactionHandler {
                 await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY));
                 
                 // Retry
-                return this.syncBlockAtHeight(height, network, retryCount + 1);
+                return this.syncBlockAtHeight(height, retryCount + 1);
             }
             
             throw error;
@@ -197,7 +202,7 @@ export class BlockTransactionHandler {
     /**
      * Synchronizes latest blocks
      */
-    public async syncLatestBlocks(network: Network, blockCount: number = 100): Promise<void> {
+    public async syncLatestBlocks(blockCount: number = 100): Promise<void> {
         try {
             this.validateInitialization();
             
@@ -208,7 +213,7 @@ export class BlockTransactionHandler {
             const fromHeight = Math.max(1, currentHeight - blockCount + 1);
             
             // Call historical synchronization method
-            await this.syncHistoricalBlocks(network, fromHeight, currentHeight);
+            await this.syncHistoricalBlocks(fromHeight, currentHeight);
             
         } catch (error) {
             this.logError('[BlockHandler] Error syncing latest blocks', error);
@@ -268,7 +273,8 @@ export class BlockTransactionHandler {
     /**
      * Logs sync summary
      */
-    private logSyncSummary(failedBlocks: number[], fromHeight: number, syncToHeight: number, network: Network): void {
+    private logSyncSummary(failedBlocks: number[], fromHeight: number, syncToHeight: number): void {
+        const network = BabylonClient.getInstance().getNetwork();
         // Report failed blocks
         if (failedBlocks.length > 0) {
             logger.warn(`[BlockHandler] Failed to sync ${failedBlocks.length} blocks: ${failedBlocks.join(', ')}`);
@@ -281,7 +287,7 @@ export class BlockTransactionHandler {
     /**
      * Fetches and processes a block at a specific height
      */
-    private async fetchAndProcessBlock(height: number, network: Network): Promise<{ blockData: any }> {
+    private async fetchAndProcessBlock(height: number): Promise<{ blockData: any }> {
         // Get block
         const blockData = await this.rpcClient!.getBlockByHeight(height);
         
@@ -329,19 +335,20 @@ export class BlockTransactionHandler {
     /**
      * Processes transactions for a block
      */
-    private async processBlockTransactions(height: number, blockData: any, network: Network): Promise<void> {
+    private async processBlockTransactions(height: number, blockData: any): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         let processedTxCount = 0;
         let savedTxCount = 0;
         let errorTxCount = 0;
         
         try {
             // Try to get transactions using getTxSearch
-            await this.processTransactionsWithTxSearch(height, network, processedTxCount, savedTxCount, errorTxCount);
+            await this.processTransactionsWithTxSearch(height, processedTxCount, savedTxCount, errorTxCount);
         } catch (txSearchError) {
             logger.error(`[BlockHandler] Error getting transactions for block ${height}: ${txSearchError instanceof Error ? txSearchError.message : String(txSearchError)}`);
             
             // Fallback to processing transactions from block data
-            await this.processTransactionsFromBlockData(height, blockData, network, processedTxCount, savedTxCount, errorTxCount);
+            await this.processTransactionsFromBlockData(height, blockData, processedTxCount, savedTxCount, errorTxCount);
         }
     }
 
@@ -350,11 +357,11 @@ export class BlockTransactionHandler {
      */
     private async processTransactionsWithTxSearch(
         height: number, 
-        network: Network, 
         processedTxCount: number, 
         savedTxCount: number, 
         errorTxCount: number
     ): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         const txSearchResult = await this.rpcClient!.getTxSearch(height);
         
         // Check txSearchResult
@@ -362,7 +369,7 @@ export class BlockTransactionHandler {
             const totalTxCount = txSearchResult.result.txs.length;
             logger.info(`[BlockHandler] Found ${totalTxCount} transactions for block ${height} on ${network}`);
             
-            const txResults = await this.processTxBatch(txSearchResult.result.txs, network);
+            const txResults = await this.processTxBatch(txSearchResult.result.txs);
             processedTxCount += txResults.processed;
             savedTxCount += txResults.saved;
             errorTxCount += txResults.errors;
@@ -380,12 +387,12 @@ export class BlockTransactionHandler {
      */
     private async processTransactionsFromBlockData(
         height: number, 
-        blockData: any, 
-        network: Network, 
+        blockData: any,
         processedTxCount: number, 
         savedTxCount: number, 
         errorTxCount: number
     ): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         if (blockData.result.block.data?.txs && blockData.result.block.data.txs.length > 0) {
             logger.warn(`[BlockHandler] Falling back to getTxByHash for block ${height}`);
             
@@ -427,7 +434,8 @@ export class BlockTransactionHandler {
     /**
      * Processes a batch of transactions
      */
-    private async processTxBatch(txs: any[], network: Network): Promise<{ processed: number, saved: number, errors: number }> {
+    private async processTxBatch(txs: any[]): Promise<{ processed: number, saved: number, errors: number }> {
+        const network = BabylonClient.getInstance().getNetwork();
         let processed = 0;
         let saved = 0;
         let errors = 0;

@@ -1,5 +1,4 @@
 import WebSocket from 'ws';
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { 
     IWebSocketConnection, 
@@ -21,7 +20,6 @@ export class WebSocketConnection implements IWebSocketConnection {
 
     constructor(
         private url: string,
-        private network: Network,
         private webSocketFactory: IWebSocketFactory,
         private eventHandlers: IWebSocketEventHandlers
     ) {}
@@ -34,23 +32,23 @@ export class WebSocketConnection implements IWebSocketConnection {
             
             this.ws.on('open', async () => {
                 this.connected = true;
-                await this.eventHandlers.onOpen(this.network);
+                await this.eventHandlers.onOpen();
             });
             
             this.ws.on('message', async (data: Buffer) => {
-                await this.eventHandlers.onMessage(data, this.network);
+                await this.eventHandlers.onMessage(data);
             });
             
             this.ws.on('close', async () => {
                 this.connected = false;
-                await this.eventHandlers.onClose(this.network);
+                await this.eventHandlers.onClose();
             });
             
             this.ws.on('error', (error: Error) => {
-                this.eventHandlers.onError(error, this.network);
+                this.eventHandlers.onError(error);
             });
         } catch (error) {
-            logger.error(`Error creating WebSocket for ${this.network}:`, error);
+            logger.error(`Error creating WebSocket connection:`, error);
             throw error;
         }
     }
@@ -71,7 +69,7 @@ export class WebSocketConnection implements IWebSocketConnection {
         if (this.ws && this.connected) {
             this.ws.send(typeof message === 'string' ? message : JSON.stringify(message));
         } else {
-            logger.warn(`Attempted to send message to ${this.network} but not connected`);
+            logger.warn(`Attempted to send message but WebSocket is not connected`);
         }
     }
 }
@@ -79,7 +77,7 @@ export class WebSocketConnection implements IWebSocketConnection {
 // WebSocket Connection Service
 export class WebSocketConnectionService {
     private static instance: WebSocketConnectionService | null = null;
-    private connections: Map<Network, IWebSocketConnection> = new Map();
+    private connection: IWebSocketConnection | null = null;
     private webSocketFactory: IWebSocketFactory;
     
     private constructor() {
@@ -95,36 +93,38 @@ export class WebSocketConnectionService {
     
     public createConnection(
         url: string,
-        network: Network,
         eventHandlers: IWebSocketEventHandlers
     ): IWebSocketConnection {
+        // Close any existing connection first
+        if (this.connection) {
+            this.connection.disconnect();
+        }
+        
         const connection = new WebSocketConnection(
             url,
-            network,
             this.webSocketFactory,
             eventHandlers
         );
         
-        this.connections.set(network, connection);
+        this.connection = connection;
         return connection;
     }
     
-    public getConnection(network: Network): IWebSocketConnection | undefined {
-        return this.connections.get(network);
+    public getConnection(): IWebSocketConnection | null {
+        return this.connection;
     }
     
-    public removeConnection(network: Network): void {
-        const connection = this.connections.get(network);
-        if (connection) {
-            connection.disconnect();
-            this.connections.delete(network);
+    public removeConnection(): void {
+        if (this.connection) {
+            this.connection.disconnect();
+            this.connection = null;
         }
     }
     
     public disconnectAll(): void {
-        for (const connection of this.connections.values()) {
-            connection.disconnect();
+        if (this.connection) {
+            this.connection.disconnect();
+            this.connection = null;
         }
-        this.connections.clear();
     }
 } 

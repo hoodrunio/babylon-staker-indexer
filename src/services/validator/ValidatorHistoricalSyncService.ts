@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { ValidatorSignatureService } from './ValidatorSignatureService';
 import { logger } from '../../utils/logger';
@@ -6,7 +5,7 @@ import { logger } from '../../utils/logger';
 export class ValidatorHistoricalSyncService {
     private static instance: ValidatorHistoricalSyncService | null = null;
     private validatorSignatureService: ValidatorSignatureService;
-    private syncInProgress: Map<Network, boolean> = new Map();
+    private syncInProgress: boolean = false;
     private readonly MAX_HISTORICAL_BLOCKS = 10000;
     private readonly BATCH_SIZE = 100;
 
@@ -21,27 +20,29 @@ export class ValidatorHistoricalSyncService {
         return ValidatorHistoricalSyncService.instance;
     }
 
-    public async startSync(network: Network, client: BabylonClient): Promise<void> {
+    public async startSync(client: BabylonClient): Promise<void> {
+        const network = client.getNetwork();
+        
         // Skip historical sync in non-production environment
         if (process.env.NODE_ENV !== 'production') {
             logger.info(`[ValidatorHistoricalSyncService] Skipping sync for ${network} in non-production environment`);
             return;
         }
         
-        // Prevent multiple syncs for the same network
-        if (this.syncInProgress.get(network)) {
-            logger.info(`[ValidatorHistoricalSyncService] Sync already in progress for ${network}`);
+        // Prevent multiple syncs
+        if (this.syncInProgress) {
+            logger.info(`[ValidatorHistoricalSyncService] Sync already in progress`);
             return;
         }
 
         try {
-            this.syncInProgress.set(network, true);
+            this.syncInProgress = true;
 
             // Get current block height - Use BabylonClient's failover mechanism
             const currentHeight = await client.getCurrentHeight();
             
             // Get last processed block
-            const lastProcessedBlock = await this.validatorSignatureService.getLastProcessedBlock(network);
+            const lastProcessedBlock = await this.validatorSignatureService.getLastProcessedBlock();
             
             // Calculate sync range
             let startHeight = Math.max(
@@ -57,7 +58,7 @@ export class ValidatorHistoricalSyncService {
                 const batchPromises: Promise<void>[] = [];
 
                 for (let height = startHeight; height <= endHeight; height++) {
-                    batchPromises.push(this.processBlock(height, network, client));
+                    batchPromises.push(this.processBlock(height, client));
                 }
 
                 try {
@@ -81,15 +82,15 @@ export class ValidatorHistoricalSyncService {
                 startHeight = endHeight + 1;
             }
 
-            logger.info(`[ValidatorHistoricalSyncService] Completed historical sync for ${network} up to block ${currentHeight}`);
+            logger.info(`[ValidatorHistoricalSyncService] Completed historical sync up to block ${currentHeight}`);
         } catch (error) {
-            logger.error(`[ValidatorHistoricalSyncService] Error during historical sync for ${network}:`, error);
+            logger.error(`[ValidatorHistoricalSyncService] Error during historical sync:`, error);
         } finally {
-            this.syncInProgress.set(network, false);
+            this.syncInProgress = false;
         }
     }
 
-    private async processBlock(height: number, network: Network, client: BabylonClient): Promise<void> {
+    private async processBlock(height: number, client: BabylonClient): Promise<void> {
         try {
             // Use BabylonClient's getBlockByHeight method - utilize failover feature
             const blockData = await client.getBlockByHeight(height);
@@ -112,7 +113,7 @@ export class ValidatorHistoricalSyncService {
                 }
             };
 
-            await this.validatorSignatureService.handleNewBlock(formattedBlock, network);
+            await this.validatorSignatureService.handleNewBlock(formattedBlock);
         } catch (error) {
             if (this.isPruningError(error)) {
                 throw error;

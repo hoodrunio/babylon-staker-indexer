@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
 import { DelegationResponse } from '../../types/finality/btcstaking';
 import { formatSatoshis } from '../../utils/util';
@@ -6,6 +5,7 @@ import { getTxHash } from '../../utils/generate-tx-hash';
 import { extractAmountFromBTCTransaction, extractAddressesFromTransaction } from '../../utils/btc-transaction';
 import { logger } from '../../utils/logger';
 import { NewStakerService } from './NewStakerService';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 export class NewBTCDelegationService {
     private static instance: NewBTCDelegationService | null = null;
@@ -64,10 +64,10 @@ export class NewBTCDelegationService {
     public async updateDelegationState(
         stakingTxIdHex: string, 
         state: string, 
-        network: Network,
         endHeight?: number,
         startHeight?: number
     ) {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             logger.info(`[Updating delegation state] ${stakingTxIdHex}`);
             
@@ -109,7 +109,8 @@ export class NewBTCDelegationService {
         }
     }
 
-    public async updateUnbondingInfo(stakingTxHex: string, network: Network, unbondingTxHex: string) {
+    public async updateUnbondingInfo(stakingTxHex: string, unbondingTxHex: string) {
+        const network = BabylonClient.getInstance().getNetwork();
         const unbondingTxIdHex = getTxHash(unbondingTxHex, false);
         
         const result = await NewBTCDelegation.findOneAndUpdate(
@@ -135,7 +136,8 @@ export class NewBTCDelegationService {
         return result;
     }
 
-    public async updateSpendStakeInfo(stakingTxHex: string, network: Network, spendStakeTxHex: string) {
+    public async updateSpendStakeInfo(stakingTxHex: string, spendStakeTxHex: string) {
+        const network = BabylonClient.getInstance().getNetwork();
         const spendStakeTxIdHex = getTxHash(spendStakeTxHex, false);
         
         return NewBTCDelegation.findOneAndUpdate(
@@ -148,7 +150,8 @@ export class NewBTCDelegationService {
         );
     }
 
-    public async getDelegationsByState(state: string, network: Network, page: number = 1, limit: number = 10) {
+    public async getDelegationsByState(state: string, page: number = 1, limit: number = 10) {
+        const network = BabylonClient.getInstance().getNetwork();
         const skip = (page - 1) * limit;
         
         const [delegations, total] = await Promise.all([
@@ -178,7 +181,8 @@ export class NewBTCDelegationService {
         };
     }
 
-    public async getDelegationByTxHash(stakingTxHex: string, network: Network) {
+    public async getDelegationByTxHash(stakingTxHex: string) {
+        const network = BabylonClient.getInstance().getNetwork();
         const delegation = await NewBTCDelegation.findOne({ 
             stakingTxHex, 
             networkType: network.toLowerCase() 
@@ -189,7 +193,8 @@ export class NewBTCDelegationService {
         return this.formatDelegationResponse(delegation);
     }
 
-    public async getDelegationByTxId(stakingTxIdHex: string, network: Network) {
+    public async getDelegationByTxId(stakingTxIdHex: string) {
+        const network = BabylonClient.getInstance().getNetwork();
         const delegation = await NewBTCDelegation.findOne({ 
             stakingTxIdHex, 
             networkType: network.toLowerCase() 
@@ -225,7 +230,8 @@ export class NewBTCDelegationService {
         };
     }
 
-    public async handleNewDelegationFromWebsocket(eventData: any, network: Network) {
+    public async handleNewDelegationFromWebsocket(eventData: any) {
+        const network = BabylonClient.getInstance().getNetwork();
         // logger.info('Raw event data received:', JSON.stringify(eventData, null, 2));
         
         const attributes = this.parseEventAttributes(eventData);
@@ -278,7 +284,7 @@ export class NewBTCDelegationService {
         };
 
         try {
-            const existingDelegation = await this.getDelegationByTxHash(delegationData.stakingTxHex, network);
+            const existingDelegation = await this.getDelegationByTxHash(delegationData.stakingTxHex);
             if (existingDelegation) {
                 logger.info(`Delegation already exists for tx: ${delegationData.stakingTxIdHex}`);
                 return existingDelegation;

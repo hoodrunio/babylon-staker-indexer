@@ -1,4 +1,3 @@
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { ProposalVotes } from '../../database/models/ProposalVotes';
 import { Proposal } from '../../database/models/Proposal';
@@ -17,30 +16,32 @@ export class GovernanceEventHandler {
         return GovernanceEventHandler.instance;
     }
 
-    public async handleEvent(txData: any, network: Network): Promise<void> {
+    public async handleEvent(txData: any): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             const events = txData.events;
             
             // Handle vote events
             if (events.some((event: any) => event.type === 'proposal_vote')) {
-                await this.handleVoteEvent(events, network);
+                await this.handleVoteEvent(events);
             }
 
             // Handle proposal submission events
             if (events.some((event: any) => event.type === 'submit_proposal')) {
-                await this.handleProposalSubmission(events, network);
+                await this.handleProposalSubmission(events);
             }
 
             // Handle proposal status change events
             if (events.some((event: any) => event.type === 'proposal_status')) {
-                await this.handleProposalStatusChange(events, network);
+                await this.handleProposalStatusChange(events);
             }
         } catch (error) {
             logger.error('[Governance] Error handling event:', error);
         }
     }
 
-    private async handleVoteEvent(events: any, network: Network): Promise<void> {
+    private async handleVoteEvent(events: any): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             const voteEvent = events.find((event: any) => event.type === 'proposal_vote');
             if (!voteEvent?.attributes) return;
@@ -109,7 +110,7 @@ export class GovernanceEventHandler {
             let isValidator = false;
             try {
                 const validatorInfoService = ValidatorInfoService.getInstance();
-                const validator = await validatorInfoService.getValidatorByAccountAddress(voter, network);
+                const validator = await validatorInfoService.getValidatorByAccountAddress(voter);
                 if (validator && validator.active) {
                     isValidator = true;
                     if (validator.voting_power) {
@@ -143,7 +144,8 @@ export class GovernanceEventHandler {
         }
     }
 
-    private async handleProposalSubmission(events: any[], network: Network): Promise<void> {
+    private async handleProposalSubmission(events: any[]): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             const submitEvent = events.find(event => event.type === 'submit_proposal');
             if (!submitEvent?.attributes) return;
@@ -155,9 +157,9 @@ export class GovernanceEventHandler {
             }
 
             // Fetch full proposal details and update database
-            const proposal = await this.fetchProposalDetails(parseInt(proposalId), network);
+            const proposal = await this.fetchProposalDetails(parseInt(proposalId));
             if (proposal) {
-                await this.updateProposal(proposal, network);
+                await this.updateProposal(proposal);
                 logger.info(`[Governance] Recorded new proposal ${proposalId}`);
             }
         } catch (error) {
@@ -165,7 +167,8 @@ export class GovernanceEventHandler {
         }
     }
 
-    private async handleProposalStatusChange(events: any[], network: Network): Promise<void> {
+    private async handleProposalStatusChange(events: any[]): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             const statusEvent = events.find(event => event.type === 'proposal_status');
             if (!statusEvent?.attributes) return;
@@ -200,9 +203,9 @@ export class GovernanceEventHandler {
         return attribute ? attribute.value : null;
     }
 
-    private async fetchProposalDetails(proposalId: number, network: Network): Promise<any> {
+    private async fetchProposalDetails(proposalId: number): Promise<any> {
         try {
-            const client = BabylonClient.getInstance(network);
+            const client = BabylonClient.getInstance();
             return await client.getProposalDetails(proposalId);
         } catch (error) {
             logger.error(`[Governance] Error fetching proposal ${proposalId}:`, error);
@@ -210,7 +213,8 @@ export class GovernanceEventHandler {
         }
     }
 
-    private async updateProposal(proposalData: any, network: Network): Promise<void> {
+    private async updateProposal(proposalData: any): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             await Proposal.findOneAndUpdate(
                 {

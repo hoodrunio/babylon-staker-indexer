@@ -1,18 +1,12 @@
-import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { logger } from '../../utils/logger';
-import { INetworkConfig } from './interfaces';
+import { IWebSocketConfig } from './interfaces';
 
-// Network configuration implementation
-export class NetworkConfig implements INetworkConfig {
+// WebSocket configuration implementation
+export class WebSocketConfig implements IWebSocketConfig {
     constructor(
-        private network: Network,
         private client?: BabylonClient
     ) {}
-
-    getNetwork(): Network {
-        return this.network;
-    }
 
     getWsUrl(): string | undefined {
         // If BabylonClient is available, get WebSocket URL from it
@@ -20,14 +14,13 @@ export class NetworkConfig implements INetworkConfig {
             try {
                 return this.client.getWsEndpoint();
             } catch (err) {
-                logger.warn(`[WebSocketConfig] Error getting WebSocket endpoint for ${this.network}: ${err instanceof Error ? err.message : String(err)}`);
+                const network = this.client.getNetwork();
+                logger.warn(`[WebSocketConfig] Error getting WebSocket endpoint: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
         
-        // If BabylonClient is not available or there is an error, try the old method (for backward compatibility)
-        return this.network === Network.MAINNET 
-            ? process.env.BABYLON_WS_URL 
-            : process.env.BABYLON_TESTNET_WS_URL;
+        // If BabylonClient is not available or there is an error, try to get from environment
+        return process.env.BABYLON_WS_URL;
     }
 
     getClient(): BabylonClient | undefined {
@@ -38,10 +31,10 @@ export class NetworkConfig implements INetworkConfig {
 // WebSocket Configuration Service
 export class WebSocketConfigService {
     private static instance: WebSocketConfigService | null = null;
-    private networkConfigs: Map<Network, INetworkConfig> = new Map();
+    private config: IWebSocketConfig | null = null;
     
     private constructor() {
-        this.initializeNetworkConfigs();
+        this.initializeConfig();
     }
     
     public static getInstance(): WebSocketConfigService {
@@ -51,133 +44,37 @@ export class WebSocketConfigService {
         return WebSocketConfigService.instance;
     }
     
-    private initializeNetworkConfigs(): void {
-        let configuredNetworkCount = 0;
-        
-        // First try to get a client using environment-based configuration
+    private initializeConfig(): void {
         try {
-            const defaultClient = BabylonClient.getInstance();
-            const defaultNetwork = defaultClient.getNetwork();
-            const baseUrl = defaultClient.getBaseUrl();
-            const rpcUrl = defaultClient.getRpcUrl();
-            const wsUrl = defaultClient.getWsEndpoint();
+            // Get the client from BabylonClient singleton
+            const client = BabylonClient.getInstance();
+            const network = client.getNetwork();
+            const baseUrl = client.getBaseUrl();
+            const rpcUrl = client.getRpcUrl();
+            const wsUrl = client.getWsEndpoint();
             
             if (baseUrl && rpcUrl) {
-                const networkConfig = new NetworkConfig(defaultNetwork, defaultClient);
-                this.networkConfigs.set(defaultNetwork, networkConfig);
-                configuredNetworkCount++;
+                this.config = new WebSocketConfig(client);
                 
                 // Log WS URL status
                 if (wsUrl) {
-                    logger.info(`[WebSocketConfig] ${defaultNetwork} initialized with WebSocket URL: ${wsUrl} (from environment)`);
+                    logger.info(`[WebSocketConfig] Initialized with WebSocket URL: ${wsUrl} for network ${network}`);
                 } else {
-                    logger.warn(`[WebSocketConfig] ${defaultNetwork} initialized but WebSocket URL is not available`);
+                    logger.warn(`[WebSocketConfig] Initialized but WebSocket URL is not available for network ${network}`);
+                    logger.info(`[WebSocketConfig] Please check BABYLON_WS_URL in your .env file`);
                 }
                 
-                logger.info(`[WebSocketConfig] ${defaultNetwork} client initialized successfully from environment configuration`);
-                
-                // Try to initialize the other network if possible
-                const otherNetwork = defaultNetwork === Network.MAINNET ? Network.TESTNET : Network.MAINNET;
-                try {
-                    const otherClient = BabylonClient.getInstance(otherNetwork);
-                    const otherBaseUrl = otherClient.getBaseUrl();
-                    const otherRpcUrl = otherClient.getRpcUrl();
-                    const otherWsUrl = otherClient.getWsEndpoint();
-                    
-                    if (otherBaseUrl && otherRpcUrl) {
-                        const otherNetworkConfig = new NetworkConfig(otherNetwork, otherClient);
-                        this.networkConfigs.set(otherNetwork, otherNetworkConfig);
-                        configuredNetworkCount++;
-                        
-                        // Log WS URL status
-                        if (otherWsUrl) {
-                            logger.info(`[WebSocketConfig] ${otherNetwork} initialized with WebSocket URL: ${otherWsUrl}`);
-                        } else {
-                            logger.warn(`[WebSocketConfig] ${otherNetwork} initialized but WebSocket URL is not available`);
-                        }
-                        
-                        logger.info(`[WebSocketConfig] ${otherNetwork} client initialized successfully`);
-                    }
-                } catch (error) {
-                    logger.info(`[WebSocketConfig] ${otherNetwork} is not configured, using only ${defaultNetwork}`);
-                }
+                logger.info(`[WebSocketConfig] Client initialized successfully from environment configuration`);
+            } else {
+                throw new Error(`Base URL or RPC URL not configured properly`);
             }
         } catch (error) {
-            // If environment-based configuration fails, fall back to specific network configurations
-            logger.warn(`[WebSocketConfig] Failed to get client from environment configuration: ${error instanceof Error ? error.message : String(error)}`);
-            
-            // Add mainnet configuration if exists
-            try {
-                const client = BabylonClient.getInstance(Network.MAINNET);
-                // Get base URL, RPC URL and WS URL from BabylonClient and check
-                const baseUrl = client.getBaseUrl();
-                const rpcUrl = client.getRpcUrl();
-                const wsUrl = client.getWsEndpoint();
-                
-                if (baseUrl && rpcUrl) {
-                    const networkConfig = new NetworkConfig(Network.MAINNET, client);
-                    this.networkConfigs.set(Network.MAINNET, networkConfig);
-                    configuredNetworkCount++;
-                    
-                    // Log WS URL status
-                    if (wsUrl) {
-                        logger.info(`[WebSocketConfig] Mainnet initialized with WebSocket URL: ${wsUrl}`);
-                    } else {
-                        logger.warn('[WebSocketConfig] Mainnet initialized but WebSocket URL is not available');
-                    }
-                    
-                    logger.info('[WebSocketConfig] Mainnet client initialized successfully');
-                } else {
-                    logger.info('[WebSocketConfig] Mainnet is not configured properly, skipping');
-                }
-            } catch (err) {
-                logger.warn(`[WebSocketConfig] Failed to initialize Mainnet client: ${err instanceof Error ? err.message : String(err)}`);
-            }
-
-            // Add testnet configuration if exists
-            try {
-                const client = BabylonClient.getInstance(Network.TESTNET);
-                // Get base URL, RPC URL and WS URL from BabylonClient and check
-                const baseUrl = client.getBaseUrl();
-                const rpcUrl = client.getRpcUrl();
-                const wsUrl = client.getWsEndpoint();
-                
-                if (baseUrl && rpcUrl) {
-                    const networkConfig = new NetworkConfig(Network.TESTNET, client);
-                    this.networkConfigs.set(Network.TESTNET, networkConfig);
-                    configuredNetworkCount++;
-                    
-                    // Log WS URL status
-                    if (wsUrl) {
-                        logger.info(`[WebSocketConfig] Testnet initialized with WebSocket URL: ${wsUrl}`);
-                    } else {
-                        logger.warn('[WebSocketConfig] Testnet initialized but WebSocket URL is not available');
-                    }
-                    
-                    logger.info('[WebSocketConfig] Testnet client initialized successfully');
-                } else {
-                    logger.info('[WebSocketConfig] Testnet is not configured properly, skipping');
-                }
-            } catch (err) {
-                logger.warn(`[WebSocketConfig] Failed to initialize Testnet client: ${err instanceof Error ? err.message : String(err)}`);
-            }
-        }
-
-        // At least one network must be configured
-        if (configuredNetworkCount === 0) {
-            throw new Error('[WebSocketConfig] No network configurations found. Please configure at least one network (MAINNET or TESTNET)');
+            logger.error(`[WebSocketConfig] Failed to initialize WebSocket configuration: ${error instanceof Error ? error.message : String(error)}`);
+            throw new Error(`Failed to initialize WebSocket configuration: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
     
-    public getNetworkConfig(network: Network): INetworkConfig | undefined {
-        return this.networkConfigs.get(network);
-    }
-    
-    public getAllNetworks(): Network[] {
-        return Array.from(this.networkConfigs.keys());
-    }
-    
-    public hasNetworkConfig(network: Network): boolean {
-        return this.networkConfigs.has(network);
+    public getConfig(): IWebSocketConfig | null {
+        return this.config;
     }
 }

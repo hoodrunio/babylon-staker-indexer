@@ -1,10 +1,9 @@
 import WebSocket from 'ws';
-import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 
 // Event handler interface for all event handlers to implement
 export interface IEventHandler {
-    handleEvent(data: any, network: Network): Promise<void>;
+    handleEvent(data: any): Promise<void>;
 }
 
 // WebSocket connection interface
@@ -21,9 +20,8 @@ export interface ISubscription {
     getQuery(): string;
 }
 
-// Network configuration interface
-export interface INetworkConfig {
-    getNetwork(): Network;
+// WebSocket configuration interface
+export interface IWebSocketConfig {
     getWsUrl(): string | undefined;
     getClient(): BabylonClient | undefined;
 }
@@ -36,13 +34,13 @@ export interface IWebSocketFactory {
 // Message processor interface
 export interface IMessageProcessor {
     canProcess(message: any): boolean;
-    process(message: any, network: Network): Promise<void>;
+    process(message: any): Promise<void>;
 }
 
 // WebSocket event handlers interface
 export interface IWebSocketEventHandlers {
-    onOpen: (network: Network) => Promise<void>;
-    onMessage: (data: Buffer, network: Network) => Promise<void>;
-    onClose: (network: Network) => Promise<void>;
-    onError: (error: Error, network: Network) => void;
+    onOpen: () => Promise<void>;
+    onMessage: (data: Buffer) => Promise<void>;
+    onClose: () => Promise<void>;
+    onError: (error: Error) => void;
 } 

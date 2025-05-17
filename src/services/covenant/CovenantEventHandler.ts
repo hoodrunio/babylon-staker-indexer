@@ -1,8 +1,8 @@
-import { Network } from '../../types/finality';
 import { CovenantSignatureService } from './CovenantSignatureService';
 import { getTxHash } from '../../utils/generate-tx-hash';
 import { logger } from '../../utils/logger';
 import covenantMembers from '../../config/covenant-members.json';
+import { BabylonClient } from '../../clients/BabylonClient';
 
 interface TxData {
     height: number;
@@ -25,7 +25,8 @@ export class CovenantEventHandler {
         return CovenantEventHandler.instance;
     }
 
-    public async handleEvent(txData: TxData, network: Network): Promise<void> {
+    public async handleEvent(txData: TxData): Promise<void> {
+        const network = BabylonClient.getInstance().getNetwork();
         try {
             const { height, events } = txData;
 
@@ -37,12 +38,13 @@ export class CovenantEventHandler {
             if (delegationCreatedEvent) {
                 const stakingTxHex = this.findAttributeValue(delegationCreatedEvent, 'staking_tx_hex');
                 const stakingTxIdHex = this.extractTxId(stakingTxHex);
-                const covenantMembers = this.getCovenantMembers(network);
+                const covenantMembers = this.getCovenantMembers();
+                const networkType = BabylonClient.getInstance().getNetwork();
 
                 if (stakingTxIdHex && covenantMembers.length > 0) {
                     await this.covenantSignatureService.createPendingSignatures(
                         stakingTxIdHex,
-                        network,
+                        networkType,
                         covenantMembers,
                         height
                     );
@@ -105,10 +107,13 @@ export class CovenantEventHandler {
         return getTxHash(txHex, false);
     }
 
-    private getCovenantMembers(network: Network): string[] {
+    private getCovenantMembers(): string[] {
         try {
+            const client = BabylonClient.getInstance();
+            const network = client.getNetwork();
+            
             // Select public key list according to network
-            const keyField = network === Network.MAINNET ? 'mainnetPublicKeys' : 'testnetPublicKeys';
+            const keyField = network === 'mainnet' ? 'mainnetPublicKeys' : 'testnetPublicKeys';
             
             // Collect public keys of all members
             const allKeys = covenantMembers.reduce((keys: string[], member) => {

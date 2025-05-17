@@ -1,5 +1,4 @@
 import { ValidatorInfo } from '../../database/models/ValidatorInfo';
-import { Network } from '../../types/finality';
 import { Buffer } from 'buffer';
 import { BabylonClient } from '../../clients/BabylonClient';
 import axios from 'axios';
@@ -132,7 +131,7 @@ export class ValidatorInfoService {
                 try {
                     // Get consensus key and convert to hex address and valcons address
                     const consensusHexAddress = this.getConsensusHexAddress(validator.consensus_pubkey.key);
-                    const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key, network);
+                    const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key);
                     const accountAddress = this.getAccountAddressFromValoper(validator.operator_address);
 
                     // Check if this validator exists in tendermint validators
@@ -215,7 +214,7 @@ export class ValidatorInfoService {
         }
     }
 
-    private getValconsAddress(consensusPubkey: string, network: Network): string {
+    private getValconsAddress(consensusPubkey: string): string {
         try {
             const hexAddress = this.getConsensusHexAddress(consensusPubkey);
             const prefix = 'bbnvalcons';
@@ -234,10 +233,11 @@ export class ValidatorInfoService {
         }
     }
 
-    public async updateValidatorInfo(validatorData: any, network: Network): Promise<void> {
+    public async updateValidatorInfo(validatorData: any): Promise<void> {
+        const network = this.babylonClient.getNetwork();
         try {
             const consensusHexAddress = this.getConsensusHexAddress(validatorData.consensus_pubkey);
-            const valconsAddress = this.getValconsAddress(validatorData.consensus_pubkey, network);
+            const valconsAddress = this.getValconsAddress(validatorData.consensus_pubkey);
             const logoUrl = await getKeybaseLogo(validatorData.description.identity);
 
             await ValidatorInfo.findOneAndUpdate(
@@ -306,7 +306,8 @@ export class ValidatorInfoService {
         }
     }
 
-    public async getValidatorByAccountAddress(accountAddress: string, network: Network): Promise<any> {
+    public async getValidatorByAccountAddress(accountAddress: string): Promise<any> {
+        const network = this.babylonClient.getNetwork();
         try {
             return await ValidatorInfo.findOne({
                 account_address: accountAddress,
@@ -371,7 +372,7 @@ export class ValidatorInfoService {
                 }
             }
 
-            const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key, network);
+            const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key);
 
             // Update validator info with match results
             await ValidatorInfo.findOneAndUpdate(
@@ -410,11 +411,11 @@ export class ValidatorInfoService {
     }
 
     public async getAllValidators(
-        network: Network, 
         showInactive: boolean = false,
         page: number = 1,
         limit: number = 100
     ): Promise<{ validators: any[], total: number }> {
+        const network = this.babylonClient.getNetwork();
         try {
             const query: any = { 
                 network,
@@ -457,18 +458,18 @@ export class ValidatorInfoService {
         }
     }
 
-    public async getValidatorById(id: string, network?: Network): Promise<any> {
+    public async getValidatorById(id: string): Promise<any> {
         try {
             if (!mongoose.Types.ObjectId.isValid(id)) {
                 throw new Error('Invalid validator ID format');
             }
             
-            const query: any = { _id: id };
-            
-            // Add network filter if provided
-            if (network) {
-                query.network = network;
-            }
+            // Use the current network by default
+            const network = this.babylonClient.getNetwork();
+            const query: any = { 
+                _id: id,
+                network 
+            };
             
             return await ValidatorInfo.findOne(query);
         } catch (error) {
