@@ -31,10 +31,7 @@ export class ValidatorInfoController {
                 return;
             }
 
-            const validator = await this.validatorInfoService.getValidatorByHexAddress(
-                hexAddress,
-                network as Network
-            );
+            const validator = await this.validatorInfoService.getValidatorByHexAddress(hexAddress);
 
             if (!validator) {
                 res.status(404).json({
@@ -70,10 +67,7 @@ export class ValidatorInfoController {
                 return;
             }
 
-            const validator = await this.validatorInfoService.getValidatorByConsensusAddress(
-                consensusAddress,
-                network as Network
-            );
+            const validator = await this.validatorInfoService.getValidatorByConsensusAddress(consensusAddress);
 
             if (!validator) {
                 res.status(404).json({
@@ -109,10 +103,7 @@ export class ValidatorInfoController {
                 return;
             }
 
-            const validator = await this.validatorInfoService.getValidatorByValoperAddress(
-                valoperAddress,
-                network as Network
-            );
+            const validator = await this.validatorInfoService.getValidatorByValoperAddress(valoperAddress);
 
             if (!validator) {
                 res.status(404).json({
@@ -148,7 +139,6 @@ export class ValidatorInfoController {
             }
 
             const result = await this.validatorInfoService.getAllValidators(
-                network as Network,
                 inactive === 'true',
                 page ? parseInt(page as string) : undefined,
                 limit ? parseInt(limit as string) : undefined

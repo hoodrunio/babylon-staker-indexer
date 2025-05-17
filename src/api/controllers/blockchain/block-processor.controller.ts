@@ -274,12 +274,12 @@ export class BlockProcessorController {
           try {
             // Block not found in database, check if it's a future block
             const heightNum = parseInt(height.toString());
-            const babylonClient = BabylonClient.getInstance(network as Network);
+            const babylonClient = BabylonClient.getInstance();
             const currentHeight = await babylonClient.getCurrentHeight();
             
             // If the requested height is greater than current height, it's a future block
             if (heightNum > currentHeight) {
-              const blockTimeService = BlockTimeService.getInstance(network as Network);
+              const blockTimeService = BlockTimeService.getInstance();
               const estimate = await blockTimeService.getEstimatedTimeToBlock(heightNum);
               
               res.status(404).json({
@@ -344,11 +344,11 @@ export class BlockProcessorController {
           
           try {
             // Get current height from BlockTimeService
-            const blockTimeService = BlockTimeService.getInstance(network as Network);
+            const blockTimeService = BlockTimeService.getInstance();
             const heightNum = parseInt(height.toString());
             
             // Get current height directly from BabylonClient
-            const babylonClient = BabylonClient.getInstance(network as Network);
+            const babylonClient = BabylonClient.getInstance();
             const currentHeight = await babylonClient.getCurrentHeight();
             
             // If requested height is in the future
