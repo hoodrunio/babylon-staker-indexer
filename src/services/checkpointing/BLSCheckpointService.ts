@@ -11,16 +11,26 @@ export class BLSCheckpointService {
     private validatorInfoService: ValidatorInfoService;
     private checkpointFetcher: BLSCheckpointFetcher;
     private checkpointHandler: BLSCheckpointHandler;
+    private network: Network;
 
     private constructor() {
         this.validatorInfoService = ValidatorInfoService.getInstance();
         this.checkpointFetcher = BLSCheckpointFetcher.getInstance();
         this.checkpointHandler = BLSCheckpointHandler.getInstance();
 
-        // If CHECKPOINT_SYNC is true, synchronize historical checkpoints
-        if (process.env.CHECKPOINT_SYNC === 'true') {
-            logger.info('[BLSCheckpoint] Full sync enabled, starting historical checkpoint sync');
-            this.initializeHistoricalSync();
+        try {
+            const babylonClient = this.validatorInfoService.getBabylonClient();
+            this.network = babylonClient.getNetwork();
+            logger.info(`[BLSCheckpoint] Initialized with network: ${this.network}`);
+
+            // If CHECKPOINT_SYNC is true, synchronize historical checkpoints
+            if (process.env.CHECKPOINT_SYNC === 'true') {
+                logger.info(`[BLSCheckpoint] Full sync enabled, starting historical checkpoint sync for ${this.network}`);
+                this.initializeHistoricalSync();
+            }
+        } catch (error) {
+            logger.error('[BLSCheckpoint] Error initializing with BabylonClient:', error);
+            throw new Error('[BLSCheckpoint] Failed to initialize. Please check your NETWORK environment variable.');
         }
     }
 
@@ -87,22 +97,11 @@ export class BLSCheckpointService {
 
     private async initializeHistoricalSync() {
         try {
-            // Start synchronization for each network
-            const networks = [Network.MAINNET, Network.TESTNET];
-            
-            for (const network of networks) {
-                try {
-                    const client = this.validatorInfoService.getBabylonClient(network);
-                    if (client) {
-                        logger.info(`[BLSCheckpoint] Starting historical sync for ${network}`);
-                        await this.syncHistoricalCheckpoints(network);
-                    }
-                } catch (error) {
-                    logger.error(`[BLSCheckpoint] Error syncing historical checkpoints for ${network}:`, error);
-                }
-            }
+            // Start synchronization for the configured network
+            logger.info(`[BLSCheckpoint] Starting historical sync for ${this.network}`);
+            await this.syncHistoricalCheckpoints(this.network);
         } catch (error) {
-            logger.error('[BLSCheckpoint] Error initializing historical sync:', error);
+            logger.error(`[BLSCheckpoint] Error syncing historical checkpoints for ${this.network}:`, error);
         }
     }
 } 

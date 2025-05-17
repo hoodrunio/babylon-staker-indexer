@@ -7,19 +7,30 @@ import { logger } from '../../utils/logger';
 export class CheckpointStatusHandler {
     private static instance: CheckpointStatusHandler | null = null;
     private checkpointStatusFetcher: CheckpointStatusFetcher;
+    private network: Network;
 
     private constructor() {
         this.checkpointStatusFetcher = CheckpointStatusFetcher.getInstance();
 
-        // If CHECKPOINT_SYNC is true, synchronize historical checkpoints
-        if (process.env.CHECKPOINT_SYNC === 'true') {
-            logger.info('[CheckpointStatus] Full sync enabled, starting historical checkpoint sync');
-            // Start asynchronous process but don't wait
-            this.initializeHistoricalSync().catch(error => {
-                logger.error('[CheckpointStatus] Error in historical sync initialization:', error);
-            });
-        } else {
-            logger.info('[CheckpointStatus] Full sync disabled, skipping historical checkpoint sync');
+        try {
+            // Get the network from the BabylonClient
+            const client = this.checkpointStatusFetcher.getBabylonClient();
+            this.network = client.getNetwork();
+            logger.info(`[CheckpointStatus] Initialized with network: ${this.network}`);
+
+            // If CHECKPOINT_SYNC is true, synchronize historical checkpoints
+            if (process.env.CHECKPOINT_SYNC === 'true') {
+                logger.info(`[CheckpointStatus] Full sync enabled, starting historical checkpoint sync for ${this.network}`);
+                // Start asynchronous process but don't wait
+                this.initializeHistoricalSync().catch(error => {
+                    logger.error('[CheckpointStatus] Error in historical sync initialization:', error);
+                });
+            } else {
+                logger.info('[CheckpointStatus] Full sync disabled, skipping historical checkpoint sync');
+            }
+        } catch (error) {
+            logger.error('[CheckpointStatus] Error initializing with BabylonClient:', error);
+            throw new Error('[CheckpointStatus] Failed to initialize. Please check your NETWORK environment variable.');
         }
     }
 
@@ -271,25 +282,16 @@ export class CheckpointStatusHandler {
 
     private async initializeHistoricalSync() {
         try {
-            logger.info('[CheckpointStatus] Starting historical sync initialization');
-            // Start synchronization for each network
-            const networks = [Network.MAINNET, Network.TESTNET];
+            logger.info(`[CheckpointStatus] Starting historical sync initialization for ${this.network}`);
             
-            for (const network of networks) {
-                try {
-                    const client = this.checkpointStatusFetcher.getBabylonClient(network);
-                    if (client) {
-                        logger.info(`[CheckpointStatus] Starting historical sync for ${network}`);
-                        await this.checkpointStatusFetcher.syncHistoricalCheckpoints(network);
-                        logger.info(`[CheckpointStatus] Completed historical sync for ${network}`);
-                    }
-                } catch (error) {
-                    logger.error(`[CheckpointStatus] Error syncing historical checkpoints for ${network}:`, error);
-                }
-            }
+            // Start synchronization only for the configured network
+            logger.info(`[CheckpointStatus] Starting historical sync for ${this.network}`);
+            await this.checkpointStatusFetcher.syncHistoricalCheckpoints(this.network);
+            logger.info(`[CheckpointStatus] Completed historical sync for ${this.network}`);
+            
             logger.info('[CheckpointStatus] Completed historical sync initialization');
         } catch (error) {
-            logger.error('[CheckpointStatus] Error initializing historical sync:', error);
+            logger.error(`[CheckpointStatus] Error syncing historical checkpoints for ${this.network}:`, error);
             throw error;
         }
     }

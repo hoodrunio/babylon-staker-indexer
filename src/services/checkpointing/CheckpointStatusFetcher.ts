@@ -12,8 +12,8 @@ export class CheckpointStatusFetcher {
         this.validatorInfoService = ValidatorInfoService.getInstance();
     }
 
-    public getBabylonClient(network: Network) {
-        return this.validatorInfoService.getBabylonClient(network);
+    public getBabylonClient() {
+        return this.validatorInfoService.getBabylonClient();
     }
 
     public static getInstance(): CheckpointStatusFetcher {
@@ -45,10 +45,8 @@ export class CheckpointStatusFetcher {
                 const statusUpdates = await Promise.all(
                     batch.map(async checkpoint => {
                         try {
-                            const client = await this.validatorInfoService.getBabylonClient(network);
-                            if (!client) {
-                                throw new Error(`No Babylon client found for network ${network}`);
-                            }
+                            const client = this.validatorInfoService.getBabylonClient();
+                            // Network parameter is still preserved for the database records
 
                             const baseUrl = client.getBaseUrl();
                             const [statusResponse, checkpointResponse] = await Promise.all([
@@ -135,10 +133,8 @@ export class CheckpointStatusFetcher {
 
     public async getCurrentEpoch(network: Network): Promise<number> {
         try {
-            const client = this.validatorInfoService.getBabylonClient(network);
-            if (!client) {
-                throw new Error(`No Babylon client found for network ${network}`);
-            }
+            const client = this.validatorInfoService.getBabylonClient();
+            // Network parameter is still preserved for consistent API
 
             const baseUrl = client.getBaseUrl();
             const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`);
