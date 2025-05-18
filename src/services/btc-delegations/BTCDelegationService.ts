@@ -428,7 +428,7 @@ export class BTCDelegationService {
         }
     }
 
-    private mapStatusToEnum(status: string): 'PENDING' | 'VERIFIED' | 'ACTIVE' | 'UNBONDED' {
+    private mapStatusToEnum(status: string): 'PENDING' | 'VERIFIED' | 'ACTIVE' | 'UNBONDED' | 'EXPIRED' {
         const normalizedStatus = status.toUpperCase();
         switch (normalizedStatus) {
             case 'PENDING':
@@ -439,6 +439,8 @@ export class BTCDelegationService {
                 return 'ACTIVE';
             case 'UNBONDED':
                 return 'UNBONDED';
+            case 'EXPIRED':
+                return 'EXPIRED';
             default:
                 logger.warn(`Unknown status: ${status}, defaulting to PENDING`);
                 return 'PENDING';
