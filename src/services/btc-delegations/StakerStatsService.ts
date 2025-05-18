@@ -248,7 +248,8 @@ export class StakerStatsService {
                 PENDING: 0,
                 VERIFIED: 0,
                 ACTIVE: 0,
-                UNBONDED: 0
+                UNBONDED: 0,
+                EXPIRED: 0
             };
             staker.networkStats = {
                 mainnet: {

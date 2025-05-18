@@ -95,6 +95,18 @@ async function createTransactionIndexes() {
       logger.info('Index for meta.content.contract already exists');
     }
     
+    // Check and create optimized index for finality signature queries (meta.typeUrl)
+    if (!indexExists({ network: 1, 'meta.typeUrl': 1, isLite: 1, createdAt: 1 })) {
+      logger.info('Creating optimized index for finality signature queries...');
+      await transactionsCollection.createIndex(
+        { network: 1, 'meta.typeUrl': 1, isLite: 1, createdAt: 1 },
+        { background: true, name: 'idx_finality_signatures_optimized' }
+      );
+      logger.info('Successfully created optimized index for finality signature queries');
+    } else {
+      logger.info('Optimized index for finality signature queries already exists');
+    }
+    
     // Check and create index for code_id if it exists
     if (!indexExists({ 'meta.content.code_id': 1, time: -1 })) {
       logger.info('Creating index for meta.content.code_id and time...');

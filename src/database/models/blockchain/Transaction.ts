@@ -123,6 +123,8 @@ TransactionSchema.index({ type: 1, time: 1 });
 TransactionSchema.index({ 'meta.typeUrl': 1 });
 // Optimized index for aggregation pipeline
 TransactionSchema.index({ network: 1, height: -1, time: -1 }, { collation: { locale: 'en_US', numericOrdering: true } });
+// Optimized index for countRecentFullTxsByType query - this query is causing performance issues
+TransactionSchema.index({ network: 1, 'meta.typeUrl': 1, isLite: 1, createdAt: 1 });
 
 // Model create and export
 export const BlockchainTransaction = mongoose.model<ITransaction>('BlockchainTransaction', TransactionSchema); 

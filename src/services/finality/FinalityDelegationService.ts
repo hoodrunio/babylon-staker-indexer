@@ -1,13 +1,10 @@
 import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { 
-    QueryFinalityProviderDelegationsResponse,
     DelegationResponse,
-    BTCDelegation,
     BTCDelegationStatus
 } from '../../types/finality/btcstaking';
 import { formatSatoshis } from '../../utils/util';
-import { getTxHash } from '../../utils/generate-tx-hash';
 import { NewBTCDelegation } from '../../database/models/NewBTCDelegation';
 import { Document } from 'mongoose';
 import { logger } from '../../utils/logger';
