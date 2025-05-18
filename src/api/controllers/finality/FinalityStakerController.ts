@@ -37,21 +37,63 @@ export class FinalityStakerController {
     public async getStakersForProvider(req: Request, res: Response): Promise<Response> {
         try {
             const { fpBtcPkHex } = req.params;
+            const { 
+                page = '1', 
+                limit = '100' 
+            } = req.query;
             const network = req.network || Network.MAINNET;
             
-            const stakers = await this.finalityStakerService.getStakersByFinalityProvider(fpBtcPkHex, network);
+            // Parse pagination parameters
+            const pageNum = parseInt(page as string, 10);
+            const limitNum = parseInt(limit as string, 10);
+
+            // Validate pagination parameters
+            if (isNaN(pageNum) || pageNum < 1) {
+                return res.status(400).json({
+                    error: 'Invalid page parameter. Must be a positive number'
+                });
+            }
+
+            if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+                return res.status(400).json({
+                    error: 'Invalid limit parameter. Must be between 1 and 100'
+                });
+            }
+            
+            // Get all stakers for the provider
+            const allStakers = await this.finalityStakerService.getStakersByFinalityProvider(fpBtcPkHex, network);
             
             // Calculate total stats
-            const totalAmountSat = stakers.reduce((sum, staker) => sum + staker.total_amount_sat, 0);
-            const totalDelegations = stakers.reduce((sum, staker) => sum + staker.delegation_count, 0);
+            const totalAmountSat = allStakers.reduce((sum, staker) => sum + staker.total_amount_sat, 0);
+            const totalDelegations = allStakers.reduce((sum, staker) => sum + staker.delegation_count, 0);
+            
+            // Apply pagination
+            const start = (pageNum - 1) * limitNum;
+            const end = start + limitNum;
+            const paginatedStakers = allStakers.slice(start, end);
+            
+            // Calculate pagination info
+            const totalCount = allStakers.length;
+            const totalPages = Math.ceil(totalCount / limitNum);
+            const hasNext = pageNum < totalPages;
+            const hasPrevious = pageNum > 1;
             
             return res.json({
-                stakers,
+                stakers: paginatedStakers,
                 stats: {
-                    staker_count: stakers.length,
+                    staker_count: totalCount,
                     total_delegation_count: totalDelegations,
                     total_amount: formatSatoshis(totalAmountSat),
                     total_amount_sat: totalAmountSat
+                },
+                pagination: {
+                    total_count: totalCount,
+                    total_pages: totalPages,
+                    current_page: pageNum,
+                    has_next: hasNext,
+                    has_previous: hasPrevious,
+                    next_page: hasNext ? pageNum + 1 : null,
+                    previous_page: hasPrevious ? pageNum - 1 : null
                 }
             });
         } catch (error) {
@@ -68,21 +110,63 @@ export class FinalityStakerController {
      */
     public async getAllStakers(req: Request, res: Response): Promise<Response> {
         try {
+            const { 
+                page = '1', 
+                limit = '100' 
+            } = req.query;
             const network = req.network || Network.MAINNET;
             
-            const stakers = await this.finalityStakerService.getAllStakers(network);
+            // Parse pagination parameters
+            const pageNum = parseInt(page as string, 10);
+            const limitNum = parseInt(limit as string, 10);
+
+            // Validate pagination parameters
+            if (isNaN(pageNum) || pageNum < 1) {
+                return res.status(400).json({
+                    error: 'Invalid page parameter. Must be a positive number'
+                });
+            }
+
+            if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+                return res.status(400).json({
+                    error: 'Invalid limit parameter. Must be between 1 and 100'
+                });
+            }
+            
+            // Get all stakers
+            const allStakers = await this.finalityStakerService.getAllStakers(network);
             
             // Calculate total stats
-            const totalAmountSat = stakers.reduce((sum, staker) => sum + staker.total_amount_sat, 0);
-            const totalDelegations = stakers.reduce((sum, staker) => sum + staker.delegation_count, 0);
+            const totalAmountSat = allStakers.reduce((sum, staker) => sum + staker.total_amount_sat, 0);
+            const totalDelegations = allStakers.reduce((sum, staker) => sum + staker.delegation_count, 0);
+            
+            // Apply pagination
+            const start = (pageNum - 1) * limitNum;
+            const end = start + limitNum;
+            const paginatedStakers = allStakers.slice(start, end);
+            
+            // Calculate pagination info
+            const totalCount = allStakers.length;
+            const totalPages = Math.ceil(totalCount / limitNum);
+            const hasNext = pageNum < totalPages;
+            const hasPrevious = pageNum > 1;
             
             return res.json({
-                stakers,
+                stakers: paginatedStakers,
                 stats: {
-                    staker_count: stakers.length,
+                    staker_count: totalCount,
                     total_delegation_count: totalDelegations,
                     total_amount: formatSatoshis(totalAmountSat),
                     total_amount_sat: totalAmountSat
+                },
+                pagination: {
+                    total_count: totalCount,
+                    total_pages: totalPages,
+                    current_page: pageNum,
+                    has_next: hasNext,
+                    has_previous: hasPrevious,
+                    next_page: hasNext ? pageNum + 1 : null,
+                    previous_page: hasPrevious ? pageNum - 1 : null
                 }
             });
         } catch (error) {
