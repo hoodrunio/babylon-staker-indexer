@@ -28,7 +28,7 @@ const delegationDetailSchema = new mongoose.Schema({
     state: { 
         type: String, 
         required: true,
-        enum: ['PENDING', 'VERIFIED', 'ACTIVE', 'UNBONDED']
+        enum: ['PENDING', 'VERIFIED', 'ACTIVE', 'UNBONDED', 'EXPIRED']
     },
     networkType: {
         type: String,
@@ -131,7 +131,8 @@ const newStakerSchema = new mongoose.Schema({
         PENDING: { type: Number, default: 0 },
         VERIFIED: { type: Number, default: 0 },
         ACTIVE: { type: Number, default: 0 },
-        UNBONDED: { type: Number, default: 0 }
+        UNBONDED: { type: Number, default: 0 },
+        EXPIRED: { type: Number, default: 0 }
     },
     // Staker'ın ağ bazında delegasyon sayıları
     networkStats: {

@@ -40,7 +40,7 @@ const newBTCDelegationSchema = new mongoose.Schema({
     state: { 
         type: String, 
         required: true,
-        enum: ['PENDING', 'VERIFIED', 'ACTIVE', 'UNBONDED'],
+        enum: ['PENDING', 'VERIFIED', 'ACTIVE', 'UNBONDED', 'EXPIRED'],
         index: true
     },
     networkType: {
