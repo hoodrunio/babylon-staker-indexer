@@ -13,9 +13,35 @@ import { TransactionStatsService } from '../stats/TransactionStatsService';
 
 export class TxRepository implements ITxRepository {
   private static instance: TxRepository | null = null;
+  // Cache for storing countRecentFullTxsByType results
+  private recentFullTxsCache: Map<string, {count: number, timestamp: number}> = new Map();
+  private readonly CACHE_TTL = 30000; // 30 seconds TTL for cache
   
   private constructor() {
     // Private constructor to enforce singleton pattern
+    // Set up periodic cache cleanup every 5 minutes
+    setInterval(() => this.cleanupCache(), 5 * 60 * 1000);
+  }
+  
+  /**
+   * Cleans up expired cache entries to prevent memory leaks
+   * @private
+   */
+  private cleanupCache(): void {
+    const now = Date.now();
+    let expiredCount = 0;
+    
+    // Remove expired entries
+    for (const [key, data] of this.recentFullTxsCache.entries()) {
+      if (now - data.timestamp > this.CACHE_TTL) {
+        this.recentFullTxsCache.delete(key);
+        expiredCount++;
+      }
+    }
+    
+    if (expiredCount > 0) {
+      logger.debug(`[TxRepository] Cache cleanup: removed ${expiredCount} expired entries, ${this.recentFullTxsCache.size} remaining`);
+    }
   }
   
   /**
@@ -459,17 +485,36 @@ export class TxRepository implements ITxRepository {
     hoursAgo: number
   ): Promise<number> {
     try {
+      // Generate cache key
+      const cacheKey = `${network}-${messageType}-${hoursAgo}`;
+      
+      // Check cache first
+      const cached = this.recentFullTxsCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
+        logger.debug(`[TxRepository] Using cached count for ${messageType} (${cached.count})`);
+        return cached.count;
+      }
+      
       // Calculate the date for a certain number of hours ago from now
       const date = new Date();
       date.setHours(date.getHours() - hoursAgo);
       
       // Count transactions with metadata of a specific type
-      return await BlockchainTransaction.countDocuments({
+      const count = await BlockchainTransaction.countDocuments({
         network,
         'meta.typeUrl': messageType,
         isLite: { $ne: true }, // Not in lite mode
         createdAt: { $gte: date }
       });
+      
+      // Cache the result
+      this.recentFullTxsCache.set(cacheKey, {
+        count,
+        timestamp: Date.now()
+      });
+      
+      logger.debug(`[TxRepository] Cached new count for ${messageType} (${count})`);
+      return count;
     } catch (error) {
       logger.error(`[TxRepository] Error counting recent full txs by type: ${this.formatError(error)}`);
       return 0;

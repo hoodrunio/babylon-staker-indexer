@@ -53,9 +53,16 @@ export class Database {
         throw new Error('MONGODB_URI is not defined in environment variables');
       }
 
-      logger.info('Connecting to MongoDB...');
+      logger.info('Connecting to MongoDB with optimized connection pool settings...');
       
-      await mongoose.connect(mongoUri);
+      await mongoose.connect(mongoUri, {
+        // Connection pool optimization settings
+        maxPoolSize: 20,             // Limit maximum number of connections
+        minPoolSize: 5,              // Maintain a minimum number of connections
+        socketTimeoutMS: 45000,      // Reduce socket timeout
+        connectTimeoutMS: 30000,     // Reduce connection timeout
+        serverSelectionTimeoutMS: 30000
+      });
       this.isConnected = true;
       this.db = mongoose.connection;
       

@@ -81,6 +81,19 @@ async function createTransactionIndexes(mongoUri = process.env.MONGODB_URI || 'm
       logger.info('Index for timestamp-based queries already exists with a different name, skipping creation');
     }
     
+    // Optimized index for finality signature queries (meta.typeUrl)
+    const finalitySigIndexKey = { network: 1, 'meta.typeUrl': 1, isLite: 1, createdAt: 1 };
+    if (!indexExists(finalitySigIndexKey)) {
+      logger.info('Creating optimized index for finality signature queries...');
+      await collection.createIndex(
+        finalitySigIndexKey,
+        { name: 'idx_finality_signatures_optimized', background: true }
+      );
+      logger.info('Created index: idx_finality_signatures_optimized');
+    } else {
+      logger.info('Optimized index for finality signature queries already exists, skipping creation');
+    }
+    
     logger.info('Transaction indexes created successfully');
   } catch (error) {
     logger.error(`Error creating indexes: ${error.message}`);
