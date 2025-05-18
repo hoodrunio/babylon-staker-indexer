@@ -12,11 +12,13 @@ declare global {
 
 export const networkSelector = (req: Request, res: Response, next: NextFunction) => {
     // Get network from query or header
-    const networkInput = (
-        (req.query.network as string) || 
-        (req.headers['x-network'] as string) || 
-        Network.TESTNET
-    ).toLowerCase();
+    // First get the raw input without toLowerCase() to avoid errors with enum values
+    const rawNetworkInput = (req.query.network as string) || (req.headers['x-network'] as string) || Network.TESTNET;
+    
+    // Convert to string before calling toLowerCase() to handle enum values
+    const networkInput = typeof rawNetworkInput === 'string' ? 
+        rawNetworkInput.toLowerCase() : 
+        String(rawNetworkInput).toLowerCase();
     
     // Map the lowercase input to the correct Network enum value
     let network: Network;
