@@ -105,6 +105,7 @@ export class IBCTransferService {
             
             // Handle different transfer types
             switch (event.type) {
+                case 'send_packet':
                 case 'fungible_token_packet':
                 case 'transfer_packet': {
                     // Extract client and connection information from channel if available
@@ -115,21 +116,20 @@ export class IBCTransferService {
                     const tokenSymbol = this.extractTokenSymbol(transferData.denom);
                     const displayAmount = this.formatTokenAmount(transferData.amount, tokenSymbol);
                     
-                    // Generate the packet ID for consistent reference
-                    const packetId = this.createPacketId(sourcePort, sourceChannel, sequence);
-                    
                     // Create a unique packet key for tracing/debugging
                     const packetKey = `${sourcePort}/${sourceChannel}/${sequence}`;
                     
-                    // Basic transfer data fields
+                    // Generate the packet ID for consistent reference (only once)
+                    const packetId = this.createPacketId(sourcePort, sourceChannel, sequence);
+                    
+                    // Log the packet information for debugging
+                    logger.debug(`[IBCTransferService] Processing transfer with packet key: ${packetKey} and packetId: ${packetId}`);
+
+                    
+                    // Basic transfer data fields - match schema exactly
                     const transfer = {
-                        // Packet identification
-                        packet_id: packetId,  // Store the packet_id directly
-                        source_port: sourcePort,
-                        source_channel: sourceChannel,
-                        dest_port: destPort,
-                        dest_channel: destChannel,
-                        sequence: sequence,
+                        // Packet identification - don't include in transfer object
+                        // packet_id will be handled by repository
                         
                         // Transfer details
                         sender: transferData.sender,
@@ -139,11 +139,11 @@ export class IBCTransferService {
                         
                         // Transaction metadata
                         tx_hash: txHash,
-                        height: height,
+                        
+                        // Timing information - match schema field name
                         send_time: timestamp,
                         
                         // Status tracking
-                        status: 'SENT',
                         success: false,
                         
                         // Display information
@@ -158,48 +158,135 @@ export class IBCTransferService {
                         network: network.toString()
                     };
                     
-                    logger.debug(`[IBCTransferService] Saving transfer with packet_id=${packetId} for packet ${packetKey}`);
-                    await this.transferRepository.saveTransfer(transfer, packetId, network);
-                    logger.info(`[IBCTransferService] Token transfer: ${transferData.amount} ${transferData.denom} from ${transferData.sender} to ${transferData.receiver} at height ${height}`);
+                    try {
+                        logger.debug(`[IBCTransferService] Saving transfer with packet_id=${packetId} for packet ${packetKey}`);
+                        const savedTransfer = await this.transferRepository.saveTransfer(transfer, packetId, network);
+                        
+                        if (savedTransfer) {
+                            logger.info(`[IBCTransferService] Token transfer saved: ${transferData.amount} ${transferData.denom} from ${transferData.sender} to ${transferData.receiver} at height ${height}`);
+                        } else {
+                            logger.error(`[IBCTransferService] Failed to save transfer for packet ${packetKey}`);
+                        }
+                    } catch (err) {
+                        logger.error(`[IBCTransferService] Error saving transfer: ${err instanceof Error ? err.message : String(err)}`);
+                    }
                     break;
                 }
                     
-                case 'recv_packet': {
+                case 'acknowledge_packet': {
+                    logger.debug(`[IBCTransferService] Processing acknowledgment event in tx ${txHash}`);
+                    
+                    // Create a unique packet key for tracing/debugging
+                    const packetKey = `${sourcePort}/${sourceChannel}/${sequence}`;
+                    
+                    // Generate packet ID for looking up transfer
+                    const packetId = this.createPacketId(sourcePort, sourceChannel, sequence);
+                    
+                    // Get the acknowledgement status
+                    const isSuccessful = this.isSuccessfulAcknowledgement(attributes);
+                    
                     // Check if this is a completed transfer
                     const existingTransfer = await this.transferRepository.getTransferByPacketId(packetId, network);
                     
                     if (existingTransfer) {
-                        // Update status for existing transfer
-                        const updatedTransfer = {
-                            ...existingTransfer,
-                            status: 'COMPLETED',
-                            completion_tx_hash: txHash,
-                            completion_height: height,
-                            completion_timestamp: timestamp
-                        };
+                        try {
+                            // Extract only the original fields from _doc to prevent data loss
+                            // This ensures we don't lose required fields during the update
+                            const originalData = existingTransfer._doc || existingTransfer;
+                            
+                            // Create update fields that will be merged with original data
+                            const updateFields = {
+                                // Update success flag based on ack result
+                                success: isSuccessful,
+                                
+                                // Add completion information
+                                complete_time: timestamp,
+                                
+                                // Add additional metadata for debugging
+                                updated_at: timestamp
+                            };
+                            
+                            // Combine original data with update fields
+                            // This ensures all original fields are preserved
+                            const updatedTransfer = {
+                                ...originalData,  // Keep all original fields
+                                ...updateFields   // Apply updates
+                            };
+                            
+                            // Save the updated transfer
+                            const savedTransfer = await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
+                            
+                            if (savedTransfer) {
+                                logger.info(`[IBCTransferService] Token transfer ${isSuccessful ? 'completed' : 'failed'}: ${packetKey} at height ${height}`);
+                            } else {
+                                logger.error(`[IBCTransferService] Failed to update transfer for packet ${packetKey}`);
+                            }
+                        } catch (error) {
+                            logger.error(`[IBCTransferService] Error updating transfer: ${error instanceof Error ? error.message : String(error)}`);
+                        }
+                    } else {
+                        // Log detailed debugging info if transfer not found
+                        logger.warn(`[IBCTransferService] No transfer found for packet ${packetKey}, packetId=${packetId}`);
                         
-                        await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
-                        logger.info(`[IBCTransferService] Token transfer completed: ${sourcePort}/${sourceChannel}/${sequence} at height ${height}`);
+                        // Try to find transfer by tx hash as fallback
+                        const sendTxHash = attributes.packet_tx_hash || attributes.packet_ack_tx_hash;
+                        if (sendTxHash) {
+                            logger.debug(`[IBCTransferService] Trying to find transfer by tx hash: ${sendTxHash}`);
+                            const transferByTx = await this.transferRepository.getTransferByTxHash(sendTxHash, network);
+                            if (transferByTx) {
+                                logger.info(`[IBCTransferService] Found transfer by tx hash instead of packetId`);
+                            } else {
+                                logger.warn(`[IBCTransferService] No transfer found by tx hash: ${sendTxHash}`);
+                            }
+                        }
                     }
                     break;
                 }
                     
                 case 'timeout_packet': {
+                    logger.debug(`[IBCTransferService] Processing timeout event in tx ${txHash}`);
+                    
+                    // Create a unique packet key for tracing/debugging
+                    const packetKey = `${sourcePort}/${sourceChannel}/${sequence}`;
+                    
+                    // Generate packet ID for looking up transfer
+                    const packetId = this.createPacketId(sourcePort, sourceChannel, sequence);
+                    
                     // Check if this is a timed-out transfer
                     const timedOutTransfer = await this.transferRepository.getTransferByPacketId(packetId, network);
                     
                     if (timedOutTransfer) {
-                        // Update status for timed-out transfer
-                        const updatedTransfer = {
-                            ...timedOutTransfer,
-                            status: 'TIMEOUT',
-                            timeout_tx_hash: txHash,
-                            timeout_height: height,
-                            timeout_timestamp: timestamp
-                        };
-                        
-                        await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
-                        logger.info(`[IBCTransferService] Token transfer timed out: ${sourcePort}/${sourceChannel}/${sequence} at height ${height}`);
+                        try {
+                            // Extract only the original fields from _doc to prevent data loss
+                            const originalData = timedOutTransfer._doc || timedOutTransfer;
+                            
+                            // Create update fields that will be merged with original data
+                            const updateFields = {
+                                success: false, // Timeout is never successful
+                                updated_at: timestamp,
+                                timeout_time: timestamp,  // Match schema field name
+                                timeout_tx_hash: txHash,
+                                timeout_height: height
+                            };
+                            
+                            // Combine original data with update fields
+                            // This ensures all original fields are preserved
+                            const updatedTransfer = {
+                                ...originalData,  // Keep all original fields
+                                ...updateFields   // Apply updates
+                            };
+                            
+                            const savedTransfer = await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
+                            if (savedTransfer) {
+                                logger.info(`[IBCTransferService] Token transfer timed out: ${packetKey} at height ${height}`);
+                            } else {
+                                logger.error(`[IBCTransferService] Failed to update timed-out transfer for packet ${packetKey}`);
+                            }
+                        } catch (error) {
+                            logger.error(`[IBCTransferService] Error updating timed-out transfer: ${error instanceof Error ? error.message : String(error)}`);
+                        }
+                    } else {
+                        logger.warn(`[IBCTransferService] No transfer found for timed-out packet ${packetKey}, packetId=${packetId}`);
                     }
                     break;
                 }
@@ -420,7 +507,6 @@ export class IBCTransferService {
         
         return denom.toUpperCase();
     }
-    
     /**
      * Format token amount for human-readable display
      * @param amount Amount in smallest unit (e.g., 1000000)
@@ -466,5 +552,44 @@ export class IBCTransferService {
             logger.warn(`[IBCTransferService] Error formatting amount ${amount}: ${error instanceof Error ? error.message : String(error)}`);
             return amount;
         }
+    }
+
+    /**
+     * Determine if an acknowledgment was successful based on event attributes
+     */
+    private isSuccessfulAcknowledgement(attributes: Record<string, string>): boolean {
+        // First check for explicit error indicators
+        if (attributes.packet_ack_error || attributes.error) {
+            logger.debug(`[IBCTransferService] Ack contains error: ${attributes.packet_ack_error || attributes.error}`);
+            return false;
+        }
+        
+        // Check the packet_ack field which contains the acknowledgment
+        const ack = attributes.packet_ack;
+        if (ack) {
+            // All successful acks have a 'result' field with a value
+            // Failed acks will have an 'error' field instead
+            try {
+                const parsed = JSON.parse(ack);
+                // If there's a result field, it's a success
+                if (parsed.result) {
+                    return true;
+                }
+                // If there's an error field, it's a failure
+                if (parsed.error) {
+                    return false;
+                }
+            } catch (e) {
+                // If we can't parse the JSON, check if it contains error text
+                if (ack.toLowerCase().includes('error')) {
+                    return false;
+                }
+            }
+        }
+        
+        // Default to true as most acks are successful
+        // This is a safe default since failures are explicitly indicated
+        logger.debug(`[IBCTransferService] No explicit ack status found in attributes: ${JSON.stringify(attributes)}`);
+        return true;
     }
 }
