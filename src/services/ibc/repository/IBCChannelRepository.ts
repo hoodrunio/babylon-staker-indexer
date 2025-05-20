@@ -236,4 +236,43 @@ export class IBCChannelRepository {
             throw error;
         }
     }
+
+    /**
+     * Get all channels for a network
+     * @param network Network to query
+     * @returns Array of all channels
+     */
+    public async getAllChannels(network: Network): Promise<any[]> {
+        try {
+            return await IBCChannelModel.find({
+                network: network.toString()
+            });
+        } catch (error) {
+            logger.error(`[IBCChannelRepository] Error getting all channels: ${error instanceof Error ? error.message : String(error)}`);
+            return [];
+        }
+    }
+
+    /**
+     * Save or update a channel
+     * @param channelData Channel data to save
+     * @param network Network for this channel
+     * @returns The saved channel document
+     */
+    public async saveChannel(channelData: any, network: Network): Promise<any> {
+        try {
+            return await IBCChannelModel.findOneAndUpdate(
+                { 
+                    channel_id: channelData.channel_id,
+                    port_id: channelData.port_id,
+                    network: network.toString() 
+                },
+                { ...channelData, network: network.toString(), updated_at: new Date() },
+                { upsert: true, new: true }
+            );
+        } catch (error) {
+            logger.error(`[IBCChannelRepository] Error saving channel: ${error instanceof Error ? error.message : String(error)}`);
+            throw error;
+        }
+    }
 }

@@ -6,6 +6,7 @@ import { IBCEventHandler } from './IBCEventHandler';
 import { IBCMessageProcessor } from './IBCMessageProcessor';
 import { IBCStateRepository } from './repository/IBCStateRepository';
 import { IBCBlockProcessor } from './block/IBCBlockProcessor';
+import { IBCReconciliationService } from './reconciliation/IBCReconciliationService';
 
 /**
  * Main module for the IBC indexer system
@@ -18,9 +19,11 @@ export class IBCModule {
     private ibcMessageProcessor: IBCMessageProcessor;
     private stateRepository: IBCStateRepository;
     private blockProcessor: IBCBlockProcessor;
+    private reconciliationService: IBCReconciliationService;
     private babylonClient: BabylonClient;
     private initialized: boolean = false;
     private syncInProgress: boolean = false;
+    private reconciliationIntervalMs: number = 10 * 60 * 1000; // 10 minutes by default
 
     private constructor() {
         // Initialize services
@@ -29,6 +32,17 @@ export class IBCModule {
         this.ibcMessageProcessor = new IBCMessageProcessor(this.ibcEventHandler);
         this.stateRepository = new IBCStateRepository();
         this.blockProcessor = new IBCBlockProcessor(this.babylonClient);
+        this.reconciliationService = new IBCReconciliationService();
+        
+        // Get reconciliation interval from environment variable if present
+        const intervalEnv = process.env.IBC_RECONCILIATION_INTERVAL_MS;
+        if (intervalEnv) {
+            const parsedInterval = parseInt(intervalEnv);
+            if (!isNaN(parsedInterval) && parsedInterval > 0) {
+                this.reconciliationIntervalMs = parsedInterval;
+                logger.info(`[IBCModule] Using reconciliation interval from environment: ${this.reconciliationIntervalMs}ms`);
+            }
+        }
     }
 
     public static getInstance(): IBCModule {
@@ -53,6 +67,9 @@ export class IBCModule {
         try {
             // Register IBC message processor to handle messages from existing subscriptions
             this.registerMessageProcessor();
+            
+            // Start the reconciliation service
+            this.startReconciliationService();
             
             this.initialized = true;
             logger.info('[IBCModule] IBC module initialized successfully');
@@ -105,6 +122,32 @@ export class IBCModule {
      */
     public getBlockProcessor(): IBCBlockProcessor {
         return this.blockProcessor;
+    }
+    
+    /**
+     * Get the reconciliation service
+     * This allows external access to the reconciliation service if needed
+     */
+    public getReconciliationService(): IBCReconciliationService {
+        return this.reconciliationService;
+    }
+    
+    /**
+     * Start the reconciliation service
+     * This service periodically checks channel and client state against authoritative sources
+     * Implements the hybrid approach for tracking client/channel states
+     */
+    private startReconciliationService(): void {
+        logger.info(`[IBCModule] Starting reconciliation service with interval ${this.reconciliationIntervalMs}ms`);
+        this.reconciliationService.start(this.reconciliationIntervalMs);
+    }
+    
+    /**
+     * Stop the reconciliation service
+     */
+    public stopReconciliationService(): void {
+        logger.info('[IBCModule] Stopping reconciliation service');
+        this.reconciliationService.stop();
     }
 
     /**
@@ -163,6 +206,14 @@ export class IBCModule {
             }
             
             logger.info(`[IBCModule] Historical sync completed. Processed from height ${startHeight} to ${currentHeight}`);
+            
+            // After historical sync is complete, perform initial reconciliation
+            try {
+                logger.info('[IBCModule] Performing initial state reconciliation after historical sync');
+                await this.reconciliationService.performReconciliation(targetNetwork);
+            } catch (reconciliationError) {
+                logger.error(`[IBCModule] Error during initial reconciliation: ${reconciliationError instanceof Error ? reconciliationError.message : String(reconciliationError)}`);
+            }
         } catch (error) {
             logger.error(`[IBCModule] Error during historical sync: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
