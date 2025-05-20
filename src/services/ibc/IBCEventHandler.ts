@@ -113,10 +113,25 @@ export class IBCEventHandler {
                             this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
                         );
                         
-                        // Check if this packet represents an IBC transfer
+                        // Check if this packet represents an IBC transfer or acknowledgment
+                        // 1. New transfer packets
                         if (this.isTransferEvent(event)) {
                             eventProcessingPromises.push(
                                 this.transferService.processTransferEvent(event, hash, height, timestamp, network)
+                            );
+                        }
+                        // 2. Acknowledgments of existing transfers
+                        else if (this.isAcknowledgmentEvent(event)) {
+                            // For ack events, we need to update any associated transfer
+                            eventProcessingPromises.push(
+                                this.transferService.processAcknowledgmentEvent(event, hash, height, timestamp, network)
+                            );
+                        }
+                        // 3. Timeouts of existing transfers
+                        else if (this.isTimeoutEvent(event)) {
+                            // For timeout events, we need to update any associated transfer as failed
+                            eventProcessingPromises.push(
+                                this.transferService.processTimeoutEvent(event, hash, height, timestamp, network)
                             );
                         }
                     }
@@ -183,6 +198,20 @@ export class IBCEventHandler {
      * Check if packet event represents an IBC transfer
      */
     private isTransferEvent(event: any): boolean {
-        return event.type.includes('transfer_packet');
+        return event.type.includes('transfer_packet') || event.type.includes('fungible_token_packet');
+    }
+    
+    /**
+     * Check if packet event represents an acknowledgment
+     */
+    private isAcknowledgmentEvent(event: any): boolean {
+        return event.type.includes('acknowledge_packet');
+    }
+    
+    /**
+     * Check if packet event represents a timeout
+     */
+    private isTimeoutEvent(event: any): boolean {
+        return event.type.includes('timeout_packet');
     }
 }

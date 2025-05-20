@@ -3,6 +3,7 @@ import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import IBCChannelModel from '../../../database/models/ibc/IBCChannel';
 import IBCConnectionModel from '../../../database/models/ibc/IBCConnection';
+import { getChainName, formatChannelIdentifier } from '../constants/chainMapping';
 
 /**
  * Repository for IBC Channel data
@@ -78,14 +79,32 @@ export class IBCChannelRepository {
      * @param channelId Channel ID to find
      * @param portId Port ID for the channel
      * @param network Network to query
+     * @returns Channel with human-readable chain information
      */
     public async getChannel(channelId: string, portId: string, network: Network): Promise<any> {
         try {
-            return await IBCChannelModel.findOne({
+            const channel = await IBCChannelModel.findOne({
                 channel_id: channelId,
                 port_id: portId,
                 network: network.toString()
             });
+            
+            if (!channel) return null;
+            
+            // Add human-readable chain information
+            const sourceChainId = 'babylonchain'; // Default for this chain
+            const destChainId = channel.counterparty_chain_id;
+            
+            return {
+                ...channel.toObject(),
+                source_chain_name: getChainName(sourceChainId),
+                counterparty_chain_name: getChainName(destChainId),
+                display_name: formatChannelIdentifier(
+                    sourceChainId,
+                    destChainId,
+                    channel.channel_id
+                )
+            };
         } catch (error) {
             logger.error(`[IBCChannelRepository] Error getting channel ${channelId}: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
@@ -240,12 +259,34 @@ export class IBCChannelRepository {
     /**
      * Get all channels for a network
      * @param network Network to query
-     * @returns Array of all channels
+     * @returns Array of all channels with enhanced human-readable information
      */
     public async getAllChannels(network: Network): Promise<any[]> {
         try {
-            return await IBCChannelModel.find({
+            const channels = await IBCChannelModel.find({
                 network: network.toString()
+            });
+            
+            // Enhance the channel data with human-readable chain information
+            return channels.map(channel => {
+                const sourceChainId = 'Babylon Genesis'; // Default for this chain
+                const destChainId = channel.counterparty_chain_id;
+                
+                const sourceName = getChainName(sourceChainId);
+                const destName = getChainName(destChainId);
+                
+                // Create a new object with both the original data and enhanced fields
+                return {
+                    ...channel.toObject(),
+                    // Add human-readable fields
+                    source_chain_name: sourceName,
+                    counterparty_chain_name: destName,
+                    display_name: formatChannelIdentifier(
+                        sourceChainId,
+                        destChainId,
+                        channel.channel_id
+                    )
+                };
             });
         } catch (error) {
             logger.error(`[IBCChannelRepository] Error getting all channels: ${error instanceof Error ? error.message : String(error)}`);

@@ -73,16 +73,30 @@ export class IBCRelayerService {
             
             // Determine the relayer action based on event type
             let action = '';
+            // Track if packet was successful or not
+            let success = true;
+            
             switch (event.type) {
                 case 'recv_packet':
                     action = 'RECEIVE_PACKET';
+                    // Check for error attribute
+                    if (attributes.error || attributes.packet_error) {
+                        success = false;
+                    }
                     break;
+                    
                 case 'acknowledge_packet':
                     action = 'ACKNOWLEDGE_PACKET';
+                    // Acknowledgments are generally considered successful
+                    success = true;
                     break;
+                    
                 case 'timeout_packet':
                     action = 'TIMEOUT_PACKET';
+                    // Timeouts indicate a failure to deliver within the expected timeframe
+                    success = false;
                     break;
+                    
                 default:
                     // Other packet events are not typically relayed
                     return;
@@ -98,8 +112,16 @@ export class IBCRelayerService {
                 source_port: sourcePort,
                 source_channel: sourceChannel,
                 sequence,
+                success,  // Track whether the relay was successful
                 network: network.toString()
             };
+            
+            // Log success or failure for monitoring
+            if (success) {
+                logger.info(`[IBCRelayerService] Successful relay by ${signer} for ${sourcePort}/${sourceChannel}/${sequence}`);
+            } else {
+                logger.warn(`[IBCRelayerService] Failed relay by ${signer} for ${sourcePort}/${sourceChannel}/${sequence}`);
+            }
             
             await this.relayerRepository.trackRelayerActivity(relayerData, network);
             logger.info(`[IBCRelayerService] Recorded relayer activity: ${signer} ${action} at height ${height}`);

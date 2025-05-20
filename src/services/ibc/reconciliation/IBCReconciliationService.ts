@@ -250,17 +250,43 @@ export class IBCReconciliationService {
         try {
             // Use BabylonClient to get the LCD URL for the specific network
             const lcdEndpoint = this.getLCDEndpoint(network);
-            const response = await axios.get(`${lcdEndpoint}/ibc/core/client/v1/clients`);
+            logger.debug(`[IBCReconciliationService] Using LCD endpoint: ${lcdEndpoint} for network: ${network}`);
+            const response = await axios.get(`${lcdEndpoint}/ibc/core/client/v1/client_states`);
             
-            if (response.data && response.data.clients) {
-                return response.data.clients.map((client: any) => ({
-                    client_id: client.client_id,
-                    client_type: client.client_type,
-                    client_state: client.client_state,
-                    latest_height: client.latest_height,
-                    status: 'ACTIVE',
-                    updated_at: new Date()
-                }));
+            if (response.data && response.data.client_states) {
+                return response.data.client_states.map((client: any) => {
+                    // Extract chain_id from client_state if it exists (for tendermint clients)
+                    let chain_id = '';
+                    let latest_height = 0;
+                    
+                    if (client.client_state) {
+                        if (client.client_state['@type']?.includes('tendermint')) {
+                            chain_id = client.client_state.chain_id || '';
+                        }
+                        
+                        if (client.client_state.latest_height) {
+                            if (typeof client.client_state.latest_height === 'object') {
+                                // Handle complex height structure
+                                latest_height = parseInt(client.client_state.latest_height.revision_height || '0', 10);
+                            } else {
+                                latest_height = parseInt(client.client_state.latest_height || '0', 10);
+                            }
+                        }
+                    }
+                    
+                    // Extract client type from client_id (e.g., '07-tendermint-3' => '07-tendermint')
+                    const client_type = client.client_id.split('-').slice(0, 2).join('-');
+                    
+                    return {
+                        client_id: client.client_id,
+                        client_type: client_type,
+                        chain_id: chain_id,
+                        latest_height: latest_height,
+                        status: 'ACTIVE',
+                        updated_at: new Date(),
+                        frozen: false
+                    };
+                });
             }
             
             return [];

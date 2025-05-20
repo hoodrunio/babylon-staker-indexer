@@ -188,22 +188,46 @@ export class IBCModule {
                 }
             }
             
-            logger.info(`[IBCModule] Starting historical sync for ${targetNetwork} from height ${startHeight} to ${currentHeight}`);
+            // Save sync start state
+            await this.stateRepository.setStateEntry('ibc_sync_status', {
+                is_syncing: true,
+                sync_start_time: new Date(),
+                start_height: startHeight,
+                target_height: currentHeight
+            }, targetNetwork);
             
-            // Process blocks sequentially
-            for (let height = startHeight; height <= currentHeight; height++) {
-                try {
-                    await this.blockProcessor.processBlock(height, targetNetwork);
-                    await this.stateRepository.updateLastProcessedBlock(height, targetNetwork);
-                    
-                    if (height % 100 === 0) {
-                        logger.info(`[IBCModule] Historical sync progress: ${height}/${currentHeight} (${Math.round((height - startHeight) / (currentHeight - startHeight) * 100)}%)`);
-                    }
-                } catch (blockError) {
-                    logger.error(`[IBCModule] Error processing block ${height}: ${blockError instanceof Error ? blockError.message : String(blockError)}`);
-                    // Continue to next block
+            // Process all blocks from start height to current height
+            logger.info(`[IBCModule] Starting historical sync from height ${startHeight} to ${currentHeight}`);
+            
+            const batchSize = 100; // Process in batches to provide progress updates
+            for (let height = startHeight; height <= currentHeight; height += batchSize) {
+                const endBatch = Math.min(height + batchSize - 1, currentHeight);
+                logger.info(`[IBCModule] Processing blocks ${height} to ${endBatch}`);
+                
+                // Process each block in the batch
+                for (let blockHeight = height; blockHeight <= endBatch; blockHeight++) {
+                    await this.blockProcessor.processBlock(blockHeight, targetNetwork);
+                    // Update state after each block processing
+                    await this.stateRepository.updateLastProcessedBlock(blockHeight, targetNetwork);
                 }
+                
+                // Update sync progress periodically
+                await this.stateRepository.setStateEntry('ibc_sync_progress', {
+                    is_syncing: true,
+                    current_height: endBatch,
+                    progress_percentage: Math.floor(((endBatch - startHeight) / (currentHeight - startHeight)) * 100)
+                }, targetNetwork);
             }
+            
+            // Mark sync as complete
+            await this.stateRepository.setStateEntry('ibc_sync_status', {
+                is_syncing: false,
+                sync_start_time: new Date(),
+                sync_end_time: new Date(),
+                start_height: startHeight,
+                end_height: currentHeight,
+                completed: true
+            }, targetNetwork);
             
             logger.info(`[IBCModule] Historical sync completed. Processed from height ${startHeight} to ${currentHeight}`);
             
@@ -216,6 +240,19 @@ export class IBCModule {
             }
         } catch (error) {
             logger.error(`[IBCModule] Error during historical sync: ${error instanceof Error ? error.message : String(error)}`);
+            
+            try {
+                // Mark sync as failed using the same network that was requested
+                await this.stateRepository.setStateEntry('ibc_sync_status', {
+                    is_syncing: false,
+                    sync_end_time: new Date(),
+                    error: error instanceof Error ? error.message : String(error),
+                    completed: false
+                }, network);
+            } catch (stateError) {
+                // If we can't even update the state, just log the error
+                logger.error(`[IBCModule] Failed to update sync status after error: ${stateError instanceof Error ? stateError.message : String(stateError)}`);
+            }
         } finally {
             this.syncInProgress = false;
         }
