@@ -75,7 +75,11 @@ export class IBCBlockProcessor {
                         };
                         
                         // Delegate event processing to the event dispatcher
-                        await this.eventDispatcher.dispatchEvents(events, context);
+                        const txData = {
+                            hash: txHash,
+                            events: events
+                        };
+                        await this.eventDispatcher.dispatchEvents(txData, context, network);
                     }
                 } catch (txError) {
                     logger.error(`[IBCBlockProcessor] Error processing transaction in block ${height}: ${txError instanceof Error ? txError.message : String(txError)}`);

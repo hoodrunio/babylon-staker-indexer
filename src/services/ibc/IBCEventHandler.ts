@@ -108,7 +108,7 @@ export class IBCEventHandler {
                         );
                         
                         // Check if this packet represents an IBC transfer
-                        if (this.isTransferPacket(event)) {
+                        if (this.isTransferEvent(event)) {
                             eventProcessingPromises.push(
                                 this.transferService.processTransferEvent(event, hash, height, timestamp, network)
                             );

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { decodeTx } from '../services/decoders/transaction';
 
 // RPC endpoint (can be modified by the user)
-const DEFAULT_RPC_ENDPOINT = 'https://babylon-testnet-rpc-pruned-1.nodes.guru';
+const DEFAULT_RPC_ENDPOINT = 'https://babylon.nodes.guru/rpc';
 
 /**
  * Retrieves all transactions for a specific block height
