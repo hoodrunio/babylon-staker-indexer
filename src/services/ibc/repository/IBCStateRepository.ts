@@ -1,6 +1,6 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
-import { IndexerState as IndexerStateModel } from '../../../database/models/IndexerState';
+import IBCState from '../../../database/models/ibc/IBCState';
 
 /**
  * Repository for managing IBC indexer state
@@ -8,7 +8,7 @@ import { IndexerState as IndexerStateModel } from '../../../database/models/Inde
  */
 export class IBCStateRepository {
     // Keys for state entries
-    private readonly IBC_LAST_BLOCK_KEY = 'ibc_last_processed_block';
+    private readonly IBC_LAST_BLOCK_KEY = 'last_processed_block';
 
     /**
      * Get the last processed block height for IBC indexing
@@ -16,18 +16,19 @@ export class IBCStateRepository {
      */
     public async getLastProcessedBlock(network: Network): Promise<number> {
         try {
-            // Find the indexer state document for IBC processing
-            const indexerState = await IndexerStateModel.findOne({
-                _id: `${this.IBC_LAST_BLOCK_KEY}_${network.toString()}`
+            // Find the IBC state document for processing
+            const ibcState = await IBCState.findOne({
+                key: this.IBC_LAST_BLOCK_KEY,
+                network: network.toString()
             });
             
             // If no state exists, return default value or from env
-            if (!indexerState) {
+            if (!ibcState) {
                 const defaultHeight = parseInt(process.env.IBC_SYNC_FROM_HEIGHT || '0');
                 return defaultHeight;
             }
             
-            return indexerState.lastProcessedBlock;
+            return ibcState.last_processed_block;
         } catch (error) {
             logger.error(`[IBCStateRepository] Error getting last processed block: ${error instanceof Error ? error.message : String(error)}`);
             
@@ -44,14 +45,15 @@ export class IBCStateRepository {
     public async updateLastProcessedBlock(height: number, network: Network): Promise<void> {
         try {
             // Use upsert to create document if it doesn't exist
-            await IndexerStateModel.updateOne(
+            await IBCState.updateOne(
                 {
-                    _id: `${this.IBC_LAST_BLOCK_KEY}_${network.toString()}`
+                    key: this.IBC_LAST_BLOCK_KEY,
+                    network: network.toString()
                 },
                 {
                     $set: {
-                        lastProcessedBlock: height,
-                        updatedAt: new Date()
+                        last_processed_block: height,
+                        last_processed_time: new Date()
                     }
                 },
                 { upsert: true }
@@ -71,8 +73,8 @@ export class IBCStateRepository {
      */
     public async getStateEntry(key: string, network: Network): Promise<any> {
         try {
-            const state = await IndexerStateModel.findOne({
-                indexer_name: key,
+            const state = await IBCState.findOne({
+                key: key,
                 network: network.toString()
             });
             
@@ -91,15 +93,19 @@ export class IBCStateRepository {
      */
     public async setStateEntry(key: string, value: any, network: Network): Promise<void> {
         try {
-            await IndexerStateModel.updateOne(
+            await IBCState.updateOne(
                 {
-                    indexer_name: key,
+                    key: key,
                     network: network.toString()
                 },
                 {
                     $set: {
-                        data: value,
-                        updated_at: new Date()
+                        // Store custom data in various fields depending on what kind of data it is
+                        // For now, we'll assume it's related to the sync status
+                        is_syncing: value.is_syncing !== undefined ? value.is_syncing : false,
+                        sync_start_time: value.sync_start_time,
+                        sync_end_time: value.sync_end_time,
+                        last_processed_time: new Date()
                     }
                 },
                 { upsert: true }

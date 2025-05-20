@@ -5,6 +5,7 @@ import IBCPacket from './IBCPacket';
 import IBCTransfer from './IBCTransfer';
 import IBCRelayer from './IBCRelayer';
 import IBCMetrics from './IBCMetrics';
+import IBCState from './IBCState';
 
 export {
   IBCChannel,
@@ -13,5 +14,6 @@ export {
   IBCPacket,
   IBCTransfer,
   IBCRelayer,
-  IBCMetrics
+  IBCMetrics,
+  IBCState
 };
