@@ -148,7 +148,7 @@ export class BlockClient extends BaseClient {
      */
     public async getBlockByHeight(height: number): Promise<any> {
         try {
-            logger.debug(`[BlockClient] Getting block at height ${height} for ${this.network}`);
+            //logger.debug(`[BlockClient] Getting block at height ${height} for ${this.network}`);
 
             const response = await this.client.get(`${this.baseRpcUrl}/block?height=${height}`);
 

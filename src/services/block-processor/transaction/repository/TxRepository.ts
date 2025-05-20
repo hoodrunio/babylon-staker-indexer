@@ -491,7 +491,7 @@ export class TxRepository implements ITxRepository {
       // Check cache first
       const cached = this.recentFullTxsCache.get(cacheKey);
       if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
-        logger.debug(`[TxRepository] Using cached count for ${messageType} (${cached.count})`);
+       // logger.debug(`[TxRepository] Using cached count for ${messageType} (${cached.count})`);
         return cached.count;
       }
       
@@ -513,7 +513,7 @@ export class TxRepository implements ITxRepository {
         timestamp: Date.now()
       });
       
-      logger.debug(`[TxRepository] Cached new count for ${messageType} (${count})`);
+      // logger.debug(`[TxRepository] Cached new count for ${messageType} (${count})`);
       return count;
     } catch (error) {
       logger.error(`[TxRepository] Error counting recent full txs by type: ${this.formatError(error)}`);

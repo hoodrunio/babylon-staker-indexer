@@ -41,7 +41,7 @@ export class BlockCacheManager {
     const now = Date.now();
     
     if (cachedData && (now - cachedData.timestamp) < this.CACHE_TTL) {
-      logger.debug(`[BlockCacheManager] Returning cached block for key: ${cacheKey}`);
+      //logger.debug(`[BlockCacheManager] Returning cached block for key: ${cacheKey}`);
       return cachedData.data;
     }
     
@@ -58,7 +58,7 @@ export class BlockCacheManager {
       data, 
       timestamp: Date.now() 
     });
-    logger.debug(`[BlockCacheManager] Cached block for key: ${cacheKey}`);
+    //logger.debug(`[BlockCacheManager] Cached block for key: ${cacheKey}`);
   }
   
   /**
@@ -71,7 +71,7 @@ export class BlockCacheManager {
     const now = Date.now();
     
     if (cachedData && (now - cachedData.timestamp) < this.PAGINATED_BLOCKS_CACHE_TTL) {
-      logger.debug(`[BlockCacheManager] Returning cached paginated blocks for key: ${cacheKey}`);
+      //logger.debug(`[BlockCacheManager] Returning cached paginated blocks for key: ${cacheKey}`);
       return cachedData.data;
     }
     
@@ -88,7 +88,7 @@ export class BlockCacheManager {
       data, 
       timestamp: Date.now() 
     });
-    logger.debug(`[BlockCacheManager] Cached paginated blocks for key: ${cacheKey}`);
+    //logger.debug(`[BlockCacheManager] Cached paginated blocks for key: ${cacheKey}`);
   }
   
   /**
@@ -97,7 +97,7 @@ export class BlockCacheManager {
   public clearAllCaches(): void {
     this.blockCache.clear();
     this.paginatedBlocksCache.clear();
-    logger.info(`[BlockCacheManager] All caches cleared`);
+    //logger.info(`[BlockCacheManager] All caches cleared`);
   }
   
   /**
@@ -106,7 +106,7 @@ export class BlockCacheManager {
    */
   public clearBlockCache(cacheKey: string): void {
     this.blockCache.delete(cacheKey);
-    logger.debug(`[BlockCacheManager] Block cache cleared for key: ${cacheKey}`);
+    //logger.debug(`[BlockCacheManager] Block cache cleared for key: ${cacheKey}`);
   }
   
   /**
@@ -115,6 +115,6 @@ export class BlockCacheManager {
    */
   public clearPaginatedBlocksCache(cacheKey: string): void {
     this.paginatedBlocksCache.delete(cacheKey);
-    logger.debug(`[BlockCacheManager] Paginated blocks cache cleared for key: ${cacheKey}`);
+    //logger.debug(`[BlockCacheManager] Paginated blocks cache cleared for key: ${cacheKey}`);
   }
 } 

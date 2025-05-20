@@ -55,7 +55,7 @@ export class BlockRepository implements IBlockRepository {
         }
       );
       
-      logger.debug(`[BlockRepository] Block saved to database: ${block.height}`);
+      //logger.debug(`[BlockRepository] Block saved to database: ${block.height}`);
     } catch (error) {
       logger.error(`[BlockRepository] Error saving block to database: ${this.formatError(error)}`);
       throw error;

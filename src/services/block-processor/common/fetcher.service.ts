@@ -53,7 +53,7 @@ export class FetcherService implements IFetcherService {
   public async fetchTxDetails(txHash: string, network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching transaction details for ${txHash} on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Fetching transaction details for ${txHash} on ${actualNetwork}`);
       
       const txDetails = await this.babylonClient.getTransaction(txHash);
       if (!txDetails) {
@@ -61,7 +61,7 @@ export class FetcherService implements IFetcherService {
         return null;
       }
       
-      logger.debug(`[FetcherService] Successfully fetched transaction details for ${txHash} on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Successfully fetched transaction details for ${txHash} on ${actualNetwork}`);
       return txDetails;
     } catch (error) {
       logger.error(`[FetcherService] Error fetching transaction details for ${txHash} on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
@@ -96,7 +96,7 @@ export class FetcherService implements IFetcherService {
         return [];
       }
       
-      logger.debug(`[FetcherService] Successfully fetched ${txSearchResult.result.txs.length} transactions for height ${height} on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Successfully fetched ${txSearchResult.result.txs.length} transactions for height ${height} on ${actualNetwork}`);
       return txSearchResult.result.txs;
     } catch (error) {
       logger.error(`[FetcherService] Error fetching transactions for height ${height} on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
@@ -113,7 +113,7 @@ export class FetcherService implements IFetcherService {
   public async fetchBlockByHeight(height: number | string, network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching block at height ${height} on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Fetching block at height ${height} on ${actualNetwork}`);
       
       const blockData = await this.babylonClient.getBlockByHeight(Number(height));
       if (!blockData) {
@@ -121,7 +121,7 @@ export class FetcherService implements IFetcherService {
         return null;
       }
       
-      logger.debug(`[FetcherService] Successfully fetched block at height ${height} on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Successfully fetched block at height ${height} on ${actualNetwork}`);
       return blockData;
     } catch (error) {
       // Check if this is a future block error
@@ -165,7 +165,7 @@ export class FetcherService implements IFetcherService {
   public async fetchBlockByHash(blockHash: string, network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching block with hash ${blockHash} on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Fetching block with hash ${blockHash} on ${actualNetwork}`);
       
       const blockData = await this.babylonClient.getBlockByHash(blockHash);
       if (!blockData) {
@@ -173,7 +173,7 @@ export class FetcherService implements IFetcherService {
         return null;
       }
       
-      logger.debug(`[FetcherService] Successfully fetched block with hash ${blockHash} on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Successfully fetched block with hash ${blockHash} on ${actualNetwork}`);
       return blockData;
      
     } catch (error) {
@@ -190,7 +190,7 @@ export class FetcherService implements IFetcherService {
   public async fetchLatestBlock(network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
-      logger.debug(`[FetcherService] Fetching latest block on ${actualNetwork}`);
+      //logger.debug(`[FetcherService] Fetching latest block on ${actualNetwork}`);
       
       const latestBlock = await this.babylonClient.getLatestBlock();
       if (!latestBlock) {
@@ -198,7 +198,7 @@ export class FetcherService implements IFetcherService {
         return null;
       }
       
-      logger.debug(`[FetcherService] Successfully fetched latest block on ${actualNetwork} at height ${latestBlock.block.header.height}`);
+      //logger.debug(`[FetcherService] Successfully fetched latest block on ${actualNetwork} at height ${latestBlock.block.header.height}`);
       return latestBlock;
     } catch (error) {
       logger.error(`[FetcherService] Error fetching latest block on ${actualNetwork}: ${error instanceof Error ? error.message : String(error)}`);
