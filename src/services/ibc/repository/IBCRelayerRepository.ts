@@ -1,58 +1,210 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
+import IBCRelayer from '../../../database/models/ibc/IBCRelayer';
 
 /**
  * Repository for managing IBC relayer data
  */
 export class IBCRelayerRepository {
     /**
-     * Save or update a relayer record in the database
+     * Track relayer activity and update statistics
      */
-    public async saveRelayerActivity(relayerData: any, network: Network): Promise<void> {
+    public async trackRelayerActivity(relayerData: any, network: Network): Promise<any> {
         try {
-            // For now, we'll just log the data as the actual DB schema is not established yet
-            // In a real implementation, this would save to MongoDB
-            logger.debug(`[IBCRelayerRepository] Save relayer activity for network ${network}: ${JSON.stringify(relayerData)}`);
+            logger.debug(`[IBCRelayerRepository] Track relayer activity for network ${network}: ${JSON.stringify(relayerData)}`);
             
-            // TODO: Implement once DB schema is finalized
-            // const relayerModel = getRelayerModel();
-            // await relayerModel.updateOne(
-            //    { 
-            //      address: relayerData.address,
-            //      tx_hash: relayerData.tx_hash
-            //    },
-            //    { $set: relayerData },
-            //    { upsert: true }
-            // );
+            // Find or create the relayer record
+            const relayer = await IBCRelayer.findOneAndUpdate(
+                { 
+                    address: relayerData.address,
+                    network: network.toString()
+                },
+                {
+                    $setOnInsert: {
+                        first_seen_at: new Date(),
+                        chains_served: [],
+                        active_channels: []
+                    },
+                    $set: {
+                        last_active_at: new Date()
+                    },
+                    $inc: {
+                        total_packets_relayed: 1
+                    }
+                },
+                { upsert: true, new: true }
+            );
+
+            // Update successful/failed packet counts
+            if (relayerData.success) {
+                await IBCRelayer.updateOne(
+                    { address: relayerData.address, network: network.toString() },
+                    { $inc: { successful_packets: 1 } }
+                );
+            } else {
+                await IBCRelayer.updateOne(
+                    { address: relayerData.address, network: network.toString() },
+                    { $inc: { failed_packets: 1 } }
+                );
+            }
+
+            // Update relay time if we have timing data
+            if (relayerData.relay_time_ms) {
+                // We calculate a running average for relay time
+                await this.updateRelayerAvgTime(relayerData.address, relayerData.relay_time_ms, network);
+            }
+
+            // Update channel stats
+            if (relayerData.channel_id && relayerData.port_id) {
+                await this.updateRelayerChannelStats(
+                    relayerData.address,
+                    relayerData.channel_id,
+                    relayerData.port_id,
+                    network
+                );
+            }
+
+            // Update chains served
+            if (relayerData.source_chain_id && relayerData.destination_chain_id) {
+                await this.updateRelayerChains(
+                    relayerData.address,
+                    [relayerData.source_chain_id, relayerData.destination_chain_id],
+                    network
+                );
+            }
+
+            return relayer;
         } catch (error) {
-            logger.error(`[IBCRelayerRepository] Error saving relayer activity: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[IBCRelayerRepository] Error tracking relayer activity: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
         }
     }
 
     /**
-     * Get aggregated stats for a relayer
+     * Update the average relay time for a relayer
      */
-    public async getRelayerStats(address: string, network: Network): Promise<any> {
+    private async updateRelayerAvgTime(address: string, relayTimeMs: number, network: Network): Promise<void> {
         try {
-            // TODO: Implement once DB schema is finalized
-            // const relayerModel = getRelayerModel();
-            // return await relayerModel.aggregate([
-            //    { $match: { address, network: network.toString() } },
-            //    { $group: { 
-            //      _id: "$address",
-            //      totalTxs: { $sum: 1 },
-            //      totalPackets: { $sum: "$packet_count" },
-            //      firstActive: { $min: "$timestamp" },
-            //      lastActive: { $max: "$timestamp" }
-            //    }}
-            // ]);
-            
-            logger.debug(`[IBCRelayerRepository] Get relayer stats for ${address} on network ${network}`);
-            return null; // Placeholder
+            const relayer = await IBCRelayer.findOne({ address, network: network.toString() });
+            if (!relayer) return;
+
+            // Calculate new average based on current average and new value
+            const currentTotal = relayer.avg_relay_time_ms * relayer.total_packets_relayed;
+            const newTotal = currentTotal + relayTimeMs;
+            const newAvg = newTotal / (relayer.total_packets_relayed);
+
+            await IBCRelayer.updateOne(
+                { address, network: network.toString() },
+                { $set: { avg_relay_time_ms: newAvg } }
+            );
         } catch (error) {
-            logger.error(`[IBCRelayerRepository] Error getting relayer stats: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[IBCRelayerRepository] Error updating relayer avg time: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Update the channel stats for a relayer
+     */
+    private async updateRelayerChannelStats(
+        address: string, 
+        channelId: string, 
+        portId: string,
+        network: Network
+    ): Promise<void> {
+        try {
+            // Check if the channel already exists in the relayer's active channels
+            const relayer = await IBCRelayer.findOne({ 
+                address, 
+                network: network.toString(),
+                'active_channels.channel_id': channelId,
+                'active_channels.port_id': portId
+            });
+
+            if (relayer) {
+                // Update the existing channel count
+                await IBCRelayer.updateOne(
+                    {
+                        address,
+                        network: network.toString(),
+                        'active_channels.channel_id': channelId,
+                        'active_channels.port_id': portId
+                    },
+                    { $inc: { 'active_channels.$.count': 1 } }
+                );
+            } else {
+                // Add the new channel to the array
+                await IBCRelayer.updateOne(
+                    { address, network: network.toString() },
+                    { 
+                        $push: { 
+                            active_channels: {
+                                channel_id: channelId,
+                                port_id: portId,
+                                count: 1
+                            }
+                        }
+                    }
+                );
+            }
+        } catch (error) {
+            logger.error(`[IBCRelayerRepository] Error updating relayer channel stats: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Update the chains served by a relayer
+     */
+    private async updateRelayerChains(address: string, chains: string[], network: Network): Promise<void> {
+        try {
+            // Add chains to the relayer's chains_served array if they don't already exist
+            await IBCRelayer.updateOne(
+                { address, network: network.toString() },
+                { $addToSet: { chains_served: { $each: chains } } }
+            );
+        } catch (error) {
+            logger.error(`[IBCRelayerRepository] Error updating relayer chains: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Get a relayer by address
+     */
+    public async getRelayer(address: string, network: Network): Promise<any> {
+        try {
+            logger.debug(`[IBCRelayerRepository] Get relayer ${address} for network ${network}`);
+            return await IBCRelayer.findOne({ address, network: network.toString() });
+        } catch (error) {
+            logger.error(`[IBCRelayerRepository] Error getting relayer: ${error instanceof Error ? error.message : String(error)}`);
             return null;
+        }
+    }
+
+    /**
+     * Get top relayers by number of packets relayed
+     */
+    public async getTopRelayers(limit: number, network: Network): Promise<any[]> {
+        try {
+            return await IBCRelayer.find({ network: network.toString() })
+                .sort({ total_packets_relayed: -1 })
+                .limit(limit);
+        } catch (error) {
+            logger.error(`[IBCRelayerRepository] Error getting top relayers: ${error instanceof Error ? error.message : String(error)}`);
+            return [];
+        }
+    }
+
+    /**
+     * Get relayers active on a specific chain
+     */
+    public async getRelayersByChain(chainId: string, network: Network): Promise<any[]> {
+        try {
+            return await IBCRelayer.find({
+                chains_served: chainId,
+                network: network.toString()
+            });
+        } catch (error) {
+            logger.error(`[IBCRelayerRepository] Error getting relayers by chain: ${error instanceof Error ? error.message : String(error)}`);
+            return [];
         }
     }
 }
