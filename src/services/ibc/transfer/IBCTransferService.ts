@@ -36,17 +36,49 @@ export class IBCTransferService {
             const attributes = this.extractEventAttributes(event);
             
             // For transfer events, we need to extract data from the packet data
-            const packetData = attributes.packet_data;
+            // Different event types may have packet data in different attributes
+            let packetData = attributes.packet_data || attributes.data;
             
+            // Handle the cases where packet data might be missing
             if (!packetData) {
-                logger.warn(`[IBCTransferService] Missing packet_data for transfer event`);
-                return;
+                // Look for IBC ack packet success/errors
+                if (event.type === 'acknowledge_packet' || event.type === 'write_acknowledgement') {
+                    // For acks, we only need packet routing info which we already have
+                    // So we can just continue processing even without packet data
+                    logger.debug(`[IBCTransferService] Processing acknowledgment without packet data`);
+                } else if (event.type === 'fungible_token_packet') {
+                    // fungible_token_packet events may have data in a different format
+                    // Extract data from denom_trace attributes if available
+                    const denom = attributes.denom;
+                    const amount = attributes.amount;
+                    const sender = attributes.sender;
+                    const receiver = attributes.receiver;
+                    
+                    if (denom && amount && sender && receiver) {
+                        // Construct packet data manually
+                        packetData = JSON.stringify({ denom, amount, sender, receiver });
+                        logger.debug(`[IBCTransferService] Reconstructed packet data from fungible_token_packet attributes`);
+                    } else {
+                        logger.warn(`[IBCTransferService] Missing packet_data and required attributes for transfer event`);
+                        return;
+                    }
+                } else {
+                    logger.warn(`[IBCTransferService] Missing packet_data for transfer event type: ${event.type}`);
+                    return;
+                }
             }
             
             let transferData;
             try {
                 // Try to parse packet data as JSON
-                transferData = typeof packetData === 'string' ? JSON.parse(packetData) : packetData;
+                if (typeof packetData === 'string') {
+                    transferData = JSON.parse(packetData);
+                } else {
+                    transferData = packetData;
+                }
+                
+                // Log parsed transfer data for debugging
+                logger.debug(`[IBCTransferService] Parsed transfer data: ${JSON.stringify(transferData).substring(0, 200)}...`);
             } catch (error) {
                 logger.error(`[IBCTransferService] Error parsing packet data: ${error instanceof Error ? error.message : String(error)}`);
                 return;
@@ -68,6 +100,9 @@ export class IBCTransferService {
             // This will be used as a unique identifier for the packet across different events
             const packetId = this.createPacketId(sourcePort, sourceChannel, sequence);
             
+            // Log the packet ID creation for debugging
+            logger.debug(`[IBCTransferService] Created packet ID: ${packetId} for packet: ${sourcePort}/${sourceChannel}/${sequence}`);
+            
             // Handle different transfer types
             switch (event.type) {
                 case 'fungible_token_packet':
@@ -80,29 +115,50 @@ export class IBCTransferService {
                     const tokenSymbol = this.extractTokenSymbol(transferData.denom);
                     const displayAmount = this.formatTokenAmount(transferData.amount, tokenSymbol);
                     
+                    // Generate the packet ID for consistent reference
+                    const packetId = this.createPacketId(sourcePort, sourceChannel, sequence);
+                    
+                    // Create a unique packet key for tracing/debugging
+                    const packetKey = `${sourcePort}/${sourceChannel}/${sequence}`;
+                    
                     // Basic transfer data fields
                     const transfer = {
+                        // Packet identification
+                        packet_id: packetId,  // Store the packet_id directly
                         source_port: sourcePort,
                         source_channel: sourceChannel,
                         dest_port: destPort,
                         dest_channel: destChannel,
                         sequence: sequence,
+                        
+                        // Transfer details
                         sender: transferData.sender,
                         receiver: transferData.receiver,
                         denom: transferData.denom,
                         amount: transferData.amount,
+                        
+                        // Transaction metadata
                         tx_hash: txHash,
                         height: height,
                         send_time: timestamp,
+                        
+                        // Status tracking
                         status: 'SENT',
                         success: false,
+                        
+                        // Display information
                         token_symbol: tokenSymbol,
                         token_display_amount: displayAmount,
-                        source_chain_id: sourceChainId,
-                        destination_chain_id: destChainId,
+                        
+                        // Chain information
+                        source_chain_id: sourceChainId || 'babylonchain',
+                        destination_chain_id: destChainId || 'unknown',
+                        
+                        // Network
                         network: network.toString()
                     };
                     
+                    logger.debug(`[IBCTransferService] Saving transfer with packet_id=${packetId} for packet ${packetKey}`);
                     await this.transferRepository.saveTransfer(transfer, packetId, network);
                     logger.info(`[IBCTransferService] Token transfer: ${transferData.amount} ${transferData.denom} from ${transferData.sender} to ${transferData.receiver} at height ${height}`);
                     break;
@@ -215,7 +271,7 @@ export class IBCTransferService {
             
             await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
             
-            logger.info(`[IBCTransferService] Transfer ${isSuccessful ? 'completed' : 'failed'}: ${sourcePort}/${sourceChannel}/${sequence} at height ${height}`);
+            logger.info(`[IBCTransferService] Transfer ${isSuccessful ? 'completed' : 'failed'}: ${sourcePort}/${sourceChannel}/${sequence} from ${transfer.sender} to ${transfer.receiver} (${transfer.amount} ${transfer.denom}) at height ${height}`);
         } catch (error) {
             logger.error(`[IBCTransferService] Error processing acknowledgment event: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -277,7 +333,7 @@ export class IBCTransferService {
             
             await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
             
-            logger.info(`[IBCTransferService] Transfer timed out: ${sourcePort}/${sourceChannel}/${sequence} at height ${height}`);
+            logger.info(`[IBCTransferService] Transfer timed out: ${sourcePort}/${sourceChannel}/${sequence} from ${transfer.sender} to ${transfer.receiver} (${transfer.amount} ${transfer.denom}) at height ${height}`);
         } catch (error) {
             logger.error(`[IBCTransferService] Error processing timeout event: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -307,11 +363,29 @@ export class IBCTransferService {
      * This creates a unique identifier for the packet that can be used across different events
      */
     private createPacketId(port: string, channel: string, sequence: string): mongoose.Types.ObjectId {
-        // Create a deterministic ID by hashing the packet details
+        // Create a deterministic ID by properly hashing the packet details
         const packetKey = `${port}/${channel}/${sequence}`;
         
-        // Use a hashed ObjectId to ensure consistent references across events
-        const hash = Buffer.from(packetKey).toString('hex').substring(0, 24);
+        // Use crypto to create a proper hash
+        let hash = '';
+        try {
+            // Create a hash using Node.js crypto module
+            const crypto = require('crypto');
+            // Use MD5 which produces a 32 character hex string
+            hash = crypto.createHash('md5').update(packetKey).digest('hex').substring(0, 24);
+        } catch (error) {
+            // Fallback method if crypto isn't available
+            // Simple but consistent hash function
+            let hashCode = 0;
+            for (let i = 0; i < packetKey.length; i++) {
+                hashCode = ((hashCode << 5) - hashCode) + packetKey.charCodeAt(i);
+                hashCode = hashCode & hashCode; // Convert to 32bit integer
+            }
+            // Convert to positive hex and ensure it's 24 chars
+            hash = (Math.abs(hashCode).toString(16) + '000000000000000000000000').substring(0, 24);
+        }
+        
+        logger.debug(`[IBCTransferService] Created packet ID: ${hash} for packet: ${packetKey}`);
         return new mongoose.Types.ObjectId(hash);
     }
     

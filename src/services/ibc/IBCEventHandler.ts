@@ -198,7 +198,27 @@ export class IBCEventHandler {
      * Check if packet event represents an IBC transfer
      */
     private isTransferEvent(event: any): boolean {
-        return event.type.includes('transfer_packet') || event.type.includes('fungible_token_packet');
+        // Check event type first
+        const isTransferType = event.type.includes('transfer_packet') || 
+                           event.type.includes('fungible_token_packet') || 
+                           event.type === 'send_packet';
+        
+        if (isTransferType) {
+            // For send_packet, only consider it a transfer if it's from/to the transfer port
+            if (event.type === 'send_packet') {
+                // Need to check attributes to verify it's a transfer
+                const hasTransferPort = event.attributes?.some?.((attr: { key: string; value: string }) => 
+                    (attr.key === 'packet_src_port' && attr.value === 'transfer') || 
+                    (attr.key === 'packet_dst_port' && attr.value === 'transfer')
+                );
+                
+                return hasTransferPort;
+            }
+            
+            return true;
+        }
+        
+        return false;
     }
     
     /**

@@ -73,7 +73,7 @@ async function startServer() {
 
     // Initialize and start the FinalitySignatureService
     const finalityService = FinalitySignatureService.getInstance();
-    await finalityService.start();
+   // await finalityService.start();
 
     // Initialize BTCDelegationService (this will start initial sync)
     logger.info('Initializing BTCDelegationService...');
@@ -174,9 +174,8 @@ async function startServer() {
             finalityService.stop();
 
             // Wait a bit for cleanup
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
             logger.info('All services stopped. Waiting for final cleanup...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
             // Allow PM2 to use its own logging mechanism
             if (process.env.PM2_USAGE) {
