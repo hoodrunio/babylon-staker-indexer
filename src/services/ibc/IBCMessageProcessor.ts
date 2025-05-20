@@ -20,16 +20,14 @@ export class IBCMessageProcessor extends BaseMessageProcessor {
      */
     canProcess(message: any): boolean {
         // Check if this is an IBC-related transaction message
-        // We can process messages either from a specific IBC subscription or
-        // general tx messages that contain IBC events
         return (
             // Check for IBC-specific subscription
             (message.id === 'ibc' && 
              message?.result?.data?.value?.TxResult?.result?.events) || 
-            // Or check for general transaction with IBC-related events
+            // Or check for general transaction with IBC module in message attributes
             (message.id === 'new_tx' &&
              message?.result?.data?.value?.TxResult?.result?.events &&
-             this.containsIBCEvents(message?.result?.data?.value?.TxResult?.result?.events))
+             this.containsIBCModule(message?.result?.data?.value?.TxResult?.result?.events))
         );
     }
 
@@ -91,19 +89,22 @@ export class IBCMessageProcessor extends BaseMessageProcessor {
     }
 
     /**
-     * Helper method to check if events list contains IBC-related events
+     * Helper method to check if events list contains an IBC module
      * @param events Transaction events
-     * @returns true if IBC events found
+     * @returns true if IBC module found in message attributes
      */
-    private containsIBCEvents(events: any[]): boolean {
+    private containsIBCModule(events: any[]): boolean {
         if (!Array.isArray(events)) return false;
         
+        // Look for message events with module attribute containing 'ibc'
         return events.some(event => 
-            event.type.startsWith('ibc.') || 
-            event.type.includes('channel') || 
-            event.type.includes('client') || 
-            event.type.includes('connection') || 
-            event.type.includes('packet')
+            event.type === 'message' && 
+            Array.isArray(event.attributes) &&
+            event.attributes.some((attr: any) => 
+                attr.key === 'module' && 
+                typeof attr.value === 'string' && 
+                attr.value.includes('ibc')
+            )
         );
     }
 }
