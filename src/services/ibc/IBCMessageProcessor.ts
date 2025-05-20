@@ -2,6 +2,7 @@ import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { BaseMessageProcessor } from '../websocket/WebSocketMessageService';
 import { IBCEventHandler } from './IBCEventHandler';
+import { decodeTx } from '../decoders/transaction';
 
 /**
  * Message processor for IBC-related events received via websocket
@@ -42,10 +43,42 @@ export class IBCMessageProcessor extends BaseMessageProcessor {
             const messageValue = message.result.data.value;
             const height = parseInt(message.result.events['tx.height']?.[0]);
             
+            const hash = message.result.events['tx.hash']?.[0];
+            const txBase64 = messageValue.TxResult.tx;
+            const events = messageValue.TxResult.result.events;
+            const timestamp = new Date().toISOString(); // Get current timestamp or extract from message if available
+            
+            // Extract signer information using the decoder service
+            let signer: string = '';
+            if (txBase64) {
+                try {
+                    const decodedTx = decodeTx(txBase64);
+                    
+                    // Extract signer directly from the IBC message content
+                    // Each IBC message has its own signer field in the content
+                    // For multiple IBC messages in a single transaction, the signer is the same for all messages
+                    const ibcMessage = decodedTx.messages.find(msg => 
+                        msg.typeUrl.startsWith('/ibc.') && 
+                        msg.content && 
+                        typeof msg.content === 'object' && 
+                        'signer' in msg.content
+                    );
+                    
+                    if (ibcMessage) {
+                        signer = (ibcMessage.content as any).signer;
+                        logger.debug(`[IBCMessageProcessor] Found IBC signer: ${signer}`);
+                    }
+                } catch (error) {
+                    logger.error(`[IBCMessageProcessor] Error decoding transaction: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+
             const txData = {
                 height,
-                hash: message.result.events['tx.hash']?.[0],
-                events: messageValue.TxResult.result.events
+                hash,
+                events,
+                signer,
+                timestamp
             };
 
             if (txData.height && txData.hash && txData.events) {

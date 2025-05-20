@@ -20,25 +20,44 @@ export class IBCRelayerService {
      * @param height Block height
      * @param timestamp Block timestamp
      * @param network Network where the event occurred
+     * @param txSigner Optional transaction signer
      */
     public async processRelayerEvent(
         event: any, 
         txHash: string,
         height: number, 
         timestamp: Date,
-        network: Network
+        network: Network,
+        txSigner?: string
     ): Promise<void> {
         try {
             logger.debug(`[IBCRelayerService] Processing event for relayer tracking: ${event.type} in tx ${txHash}`);
             
-            // Extract attributes from event
+            // For IBC transactions, the signer information comes directly from the message content
+            // and is passed to us via the txSigner parameter
+            
+            // Extract event attributes once (we'll use these for both signer and packet info)
             const attributes = this.extractEventAttributes(event);
             
-            // For relayers, we need to extract the signer from the transaction
-            const signer = attributes.signer;
+            // Use the transaction signer if available (extracted from the IBC message content)
+            let signer = '';
+            if (txSigner) {
+                signer = txSigner;
+                logger.debug(`[IBCRelayerService] Using IBC message signer as relayer: ${signer}`);
+            }
+            
+            // If no signer from IBC message content, fall back to checking event attributes
+            if (!signer) {
+                signer = attributes.signer;
+                
+                if (signer) {
+                    logger.debug(`[IBCRelayerService] Found signer in event attributes: ${signer}`);
+                }
+            }
             
             if (!signer) {
-                // If signer attribute is not present, we can't identify the relayer
+                // If we still can't identify the relayer, skip this event
+                logger.debug(`[IBCRelayerService] Could not identify relayer for tx ${txHash}, skipping`);
                 return;
             }
             
@@ -82,7 +101,7 @@ export class IBCRelayerService {
                 network: network.toString()
             };
             
-            await this.relayerRepository.saveRelayerActivity(relayerData, network);
+            await this.relayerRepository.trackRelayerActivity(relayerData, network);
             logger.info(`[IBCRelayerService] Recorded relayer activity: ${signer} ${action} at height ${height}`);
         } catch (error) {
             logger.error(`[IBCRelayerService] Error processing relayer event: ${error instanceof Error ? error.message : String(error)}`);
@@ -96,7 +115,7 @@ export class IBCRelayerService {
      */
     public async getRelayerStats(address: string, network: Network): Promise<any> {
         try {
-            return await this.relayerRepository.getRelayerStats(address, network);
+            return await this.relayerRepository.getRelayer(address, network);
         } catch (error) {
             logger.error(`[IBCRelayerService] Error getting relayer stats: ${error instanceof Error ? error.message : String(error)}`);
             return null;

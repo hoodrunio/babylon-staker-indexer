@@ -14,6 +14,8 @@ export interface TransactionData {
     height: number;
     hash: string;
     events: any[];
+    signer?: string;
+    timestamp?: string;
 }
 
 /**
@@ -57,7 +59,7 @@ export class IBCEventHandler {
      */
     public async handleEvent(txData: TransactionData, network: Network): Promise<void> {
         try {
-            const { height, hash, events } = txData;
+            const { height, hash, events, signer = '', timestamp: txTimestamp } = txData;
             
             // Skip if no events
             if (!events || !events.length) {
@@ -65,6 +67,9 @@ export class IBCEventHandler {
             }
             
             logger.debug(`[IBCEventHandler] Processing tx ${hash} at height ${height} with ${events.length} events`);
+            if (signer) {
+                logger.debug(`[IBCEventHandler] Transaction signer: ${signer}`);
+            }
             
             // Filter IBC-related events
             const ibcEvents = this.filterIBCEvents(events);
@@ -73,8 +78,8 @@ export class IBCEventHandler {
                 return;
             }
             
-            // Process timestamp (from current time if not available)
-            const timestamp = new Date();
+            // Process timestamp (from transaction or current time if not available)
+            const timestamp = txTimestamp ? new Date(txTimestamp) : new Date();
             
             // Process events by category
             const eventProcessingPromises: Promise<void>[] = [];
@@ -103,8 +108,9 @@ export class IBCEventHandler {
                         );
                         
                         // Also process this event to identify and track relayers
+                        // Pass signer information to help identify the relayer
                         eventProcessingPromises.push(
-                            this.relayerService.processRelayerEvent(event, hash, height, timestamp, network)
+                            this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
                         );
                         
                         // Check if this packet represents an IBC transfer
