@@ -1,6 +1,7 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { IBCTransferRepository } from '../repository/IBCTransferRepository';
+import mongoose from 'mongoose';
 
 /**
  * Service responsible for processing and managing IBC transfer data
@@ -63,10 +64,14 @@ export class IBCTransferService {
                 return;
             }
             
+            // Create a packet ID using the port, channel and sequence
+            // This will be used as a unique identifier for the packet across different events
+            const packetId = this.createPacketId(sourcePort, sourceChannel, sequence);
+            
             // Handle different transfer types
             switch (event.type) {
                 case 'fungible_token_packet':
-                case 'transfer_packet':
+                case 'transfer_packet': {
                     // Basic transfer data fields
                     const transfer = {
                         source_port: sourcePort,
@@ -85,13 +90,14 @@ export class IBCTransferService {
                         network: network.toString()
                     };
                     
-                    await this.transferRepository.saveTransfer(transfer, network);
+                    await this.transferRepository.saveTransfer(transfer, packetId, network);
                     logger.info(`[IBCTransferService] Token transfer: ${transferData.amount} ${transferData.denom} from ${transferData.sender} to ${transferData.receiver} at height ${height}`);
                     break;
+                }
                     
-                case 'recv_packet':
+                case 'recv_packet': {
                     // Check if this is a completed transfer
-                    const existingTransfer = await this.transferRepository.getTransfer(sourcePort, sourceChannel, sequence, network);
+                    const existingTransfer = await this.transferRepository.getTransferByPacketId(packetId, network);
                     
                     if (existingTransfer) {
                         // Update status for existing transfer
@@ -103,14 +109,15 @@ export class IBCTransferService {
                             completion_timestamp: timestamp
                         };
                         
-                        await this.transferRepository.saveTransfer(updatedTransfer, network);
+                        await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
                         logger.info(`[IBCTransferService] Token transfer completed: ${sourcePort}/${sourceChannel}/${sequence} at height ${height}`);
                     }
                     break;
+                }
                     
-                case 'timeout_packet':
+                case 'timeout_packet': {
                     // Check if this is a timed-out transfer
-                    const timedOutTransfer = await this.transferRepository.getTransfer(sourcePort, sourceChannel, sequence, network);
+                    const timedOutTransfer = await this.transferRepository.getTransferByPacketId(packetId, network);
                     
                     if (timedOutTransfer) {
                         // Update status for timed-out transfer
@@ -122,10 +129,11 @@ export class IBCTransferService {
                             timeout_timestamp: timestamp
                         };
                         
-                        await this.transferRepository.saveTransfer(updatedTransfer, network);
+                        await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
                         logger.info(`[IBCTransferService] Token transfer timed out: ${sourcePort}/${sourceChannel}/${sequence} at height ${height}`);
                     }
                     break;
+                }
                     
                 default:
                     logger.debug(`[IBCTransferService] Unhandled transfer event type: ${event.type}`);
@@ -152,5 +160,18 @@ export class IBCTransferService {
         }
         
         return attributes;
+    }
+    
+    /**
+     * Create a packet ID using port, channel, and sequence
+     * This creates a unique identifier for the packet that can be used across different events
+     */
+    private createPacketId(port: string, channel: string, sequence: string): mongoose.Types.ObjectId {
+        // Create a deterministic ID by hashing the packet details
+        const packetKey = `${port}/${channel}/${sequence}`;
+        
+        // Use a hashed ObjectId to ensure consistent references across events
+        const hash = Buffer.from(packetKey).toString('hex').substring(0, 24);
+        return new mongoose.Types.ObjectId(hash);
     }
 }

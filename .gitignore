@@ -28,3 +28,4 @@ m.md
 test-schema/execute.json
 src/utils/btc-transaction.ts
 src/scripts/test-decoder.ts
+exec.json

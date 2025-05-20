@@ -101,7 +101,7 @@ export class IBCBlockProcessor {
      */
     private hasIBCEvents(events: any[]): boolean {
         return events.some(event => 
-            event.type.startsWith('ibc.') || 
+            event.type.startsWith('ibc') || 
             event.type.includes('channel') || 
             event.type.includes('client') || 
             event.type.includes('connection') || 
