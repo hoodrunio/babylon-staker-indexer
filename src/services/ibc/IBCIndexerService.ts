@@ -1,7 +1,6 @@
 import { Network } from '../../types/finality';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { logger } from '../../utils/logger';
-import { EventContext } from './interfaces/IBCEventProcessor';
 import { IBCBlockProcessor } from './block/IBCBlockProcessor';
 import { IBCStateRepository } from './repository/IBCStateRepository';
 
