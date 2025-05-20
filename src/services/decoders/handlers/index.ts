@@ -5,17 +5,19 @@
 export * from './jsonHandlers';
 export * from './ibcHandlers';
 export * from './tendermintHandlers';
+export * from './authzHandlers';
 
 import { SpecialCaseHandler } from '../types';
 import { MESSAGE_TYPES } from '../messageTypes';
 import { createJsonParsingHandler } from './jsonHandlers';
 import { getIBCPacketHandlers } from './ibcHandlers';
 import { createTendermintClientHandler } from './tendermintHandlers';
+import { createAuthzMsgExecHandler } from './authzHandlers';
 
 /**
  * Register all special case handlers
  */
-export function registerSpecialCaseHandlers(): Map<string, SpecialCaseHandler> {
+export function registerSpecialCaseHandlers(messageRegistry?: any): Map<string, SpecialCaseHandler> {
   const handlers = new Map<string, SpecialCaseHandler>();
   
   // Register CosmWasm contract processing handlers
@@ -32,6 +34,9 @@ export function registerSpecialCaseHandlers(): Map<string, SpecialCaseHandler> {
   for (const [typeUrl, handler] of Object.entries(ibcHandlers)) {
     handlers.set(typeUrl, handler);
   }
+  
+  // Register Authz handler for MsgExec
+  handlers.set('/cosmos.authz.v1beta1.MsgExec', createAuthzMsgExecHandler(messageRegistry));
   
   return handlers;
 } 

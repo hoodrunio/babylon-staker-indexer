@@ -50,7 +50,8 @@ export class MessageRegistry {
    */
   private registerSpecialCases(): void {
     // Use the centralized handler registration
-    const handlers = registerSpecialCaseHandlers();
+    // Pass this instance to allow handlers to use the registry for nested decoding
+    const handlers = registerSpecialCaseHandlers(this);
     
     // Copy all handlers to our registry
     handlers.forEach((handler, typeUrl) => {

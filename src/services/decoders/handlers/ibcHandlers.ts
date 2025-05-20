@@ -88,11 +88,41 @@ export function createIBCAcknowledgementHandler(): SpecialCaseHandler {
 }
 
 /**
+ * Creates a handler for IBC transfer messages
+ */
+export function createIBCTransferHandler(): SpecialCaseHandler {
+  return (decoded: any) => {
+    try {
+      // Handle potential binary data in memo field
+      if (decoded.memo && typeof decoded.memo !== 'string') {
+        try {
+          const memoStr = Buffer.from(decoded.memo).toString('utf8');
+          try {
+            decoded.parsedMemo = JSON.parse(memoStr);
+          } catch (e) {
+            decoded.memoString = memoStr;
+          }
+          delete decoded.memo;
+        } catch (e) {
+          // Keep original if conversion fails
+        }
+      }
+      
+      return convertBuffersToHex(decoded);
+    } catch (error) {
+      logger.error(`[Message Decoder] Failed to process IBC transfer data: ${error}`);
+      return decoded;
+    }
+  };
+}
+
+/**
  * Get all IBC packet handlers
  */
 export function getIBCPacketHandlers(): Record<string, SpecialCaseHandler> {
   return {
     '/ibc.core.channel.v1.MsgRecvPacket': createIBCRecvPacketHandler(),
-    '/ibc.core.channel.v1.MsgAcknowledgement': createIBCAcknowledgementHandler()
+    '/ibc.core.channel.v1.MsgAcknowledgement': createIBCAcknowledgementHandler(),
+    '/ibc.applications.transfer.v1.MsgTransfer': createIBCTransferHandler()
   };
 } 

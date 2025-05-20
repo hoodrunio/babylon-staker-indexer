@@ -16,6 +16,12 @@ export const MESSAGE_TYPES = {
   UNDELEGATE: '/cosmos.staking.v1beta1.MsgUndelegate',
   BEGIN_REDELEGATE: '/cosmos.staking.v1beta1.MsgBeginRedelegate',
   
+  // Authorization module
+  AUTHZ_EXEC: '/cosmos.authz.v1beta1.MsgExec',
+  
+  // IBC module
+  IBC_TRANSFER: '/ibc.applications.transfer.v1.MsgTransfer',
+  
   // Other message types can be added here
 };
 
