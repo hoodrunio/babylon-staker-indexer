@@ -249,6 +249,29 @@ export class WebSocketMessageService {
         return this.subscriptions;
     }
     
+    /**
+     * Register a message processor dynamically
+     * This allows modules to add their processors without modifying this service
+     * @param processor Message processor to register
+     */
+    public registerMessageProcessor(processor: IMessageProcessor): void {
+        // Initialize message processors first if not already done
+        if (!this.initialized) {
+            this.initializeMessageProcessors();
+        }
+        
+        // Add the processor if it doesn't already exist
+        const exists = this.messageProcessors.some(existingProcessor => 
+            existingProcessor.constructor.name === processor.constructor.name);
+            
+        if (!exists) {
+            this.messageProcessors.push(processor);
+            logger.info(`[WebSocketMessageService] Registered message processor: ${processor.constructor.name}`);
+        } else {
+            logger.warn(`[WebSocketMessageService] Message processor already registered: ${processor.constructor.name}`);
+        }
+    }
+    
     public async processMessage(message: any, network: Network): Promise<void> {
         // Initialize message processors before processing the first message
         if (!this.initialized) {

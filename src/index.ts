@@ -19,6 +19,7 @@ import { StatsController } from './api/controllers/stats.controller';
 import { CosmWasmScheduler } from './services/cosmwasm/scheduler.service';
 import { errorHandler } from './api/errorHandlers';
 import { initializeTransactionStats } from './services/block-processor/transaction/stats/initializeStats';
+import { IBCModule } from './services/ibc/IBCModule';
 
 // Load environment variables
 dotenv.config();
@@ -152,6 +153,16 @@ async function startServer() {
         
         cosmWasmScheduler.start();
         logger.info('CosmWasm indexer started successfully');
+    }
+    
+    // Initialize IBC module if enabled
+    if (process.env.IBC_INDEXER_ENABLED === 'true') {
+        logger.info('Initializing IBC module...');
+        const ibcModule = IBCModule.getInstance();
+        ibcModule.initialize();
+        logger.info('IBC module initialized successfully');
+    } else {
+        logger.info('IBC module is disabled by configuration');
     }
 
     // Special shutdown process for PM2
