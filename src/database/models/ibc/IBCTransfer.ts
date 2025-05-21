@@ -15,6 +15,8 @@ export interface IBCTransfer extends Document {
   // Chain information
   source_chain_id: string;
   destination_chain_id: string;
+  source_chain_name?: string;      // Human-readable name for source chain
+  destination_chain_name?: string; // Human-readable name for destination chain
   
   // Timing information
   send_time: Date;
@@ -42,6 +44,8 @@ const IBCTransferSchema = new Schema<IBCTransfer>({
   // Chain information
   source_chain_id: { type: String, required: true },
   destination_chain_id: { type: String, required: true },
+  source_chain_name: { type: String },
+  destination_chain_name: { type: String },
   
   // Timing information
   send_time: { type: Date, required: true },

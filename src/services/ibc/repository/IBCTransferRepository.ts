@@ -16,19 +16,67 @@ export class IBCTransferRepository {
             logger.debug(`[IBCTransferRepository] Saving transfer with packetId ${packetId.toString()}`);
             logger.debug(`[IBCTransferRepository] Transfer details: amount=${transferData.amount}, denom=${transferData.denom}, tx=${transferData.tx_hash}`);
             
-            // Ensure we have all required fields
-            if (!transferData.sender || !transferData.receiver || !transferData.amount || !transferData.denom) {
-                logger.error(`[IBCTransferRepository] Missing required transfer data fields: ${JSON.stringify(transferData)}`);
-                throw new Error('Missing required transfer data fields');
+            // Ensure we have all required fields as defined in the schema
+            const requiredFields = [
+                'sender',
+                'receiver',
+                'amount',
+                'denom',
+                'source_chain_id',
+                'destination_chain_id',
+                'send_time',
+                'tx_hash'
+            ];
+            
+            // For updates, try to get existing document first to preserve required fields
+            let existingTransfer = null;
+            try {
+                existingTransfer = await IBCTransfer.findOne({ 
+                    packet_id: packetId,
+                    network: network.toString() 
+                });
+            } catch (error) {
+                logger.debug(`[IBCTransferRepository] No existing transfer found for packetId ${packetId.toString()}`);
+            }
+            
+            // Create merged data preserving required fields from existing document
+            let mergedData = { ...transferData };
+            
+            // If we're updating an existing record, preserve required fields
+            if (existingTransfer) {
+                // Access the document data safely (toObject() is type-safe)
+                const existingDoc = existingTransfer.toObject ? existingTransfer.toObject() : existingTransfer;
+                
+                // For each required field, use existing value if it's missing in the update
+                for (const field of requiredFields) {
+                    // Type-safe way to check and access properties
+                    const hasValue = field in existingDoc && existingDoc[field as keyof typeof existingDoc] !== undefined;
+                    const isMissing = !(field in mergedData) || mergedData[field] === undefined || mergedData[field] === null;
+                    
+                    if (isMissing && hasValue) {
+                        logger.debug(`[IBCTransferRepository] Preserving required field ${field} from existing document`);
+                        // Type assertion to handle the dynamic field access
+                        mergedData[field] = existingDoc[field as keyof typeof existingDoc] as any;
+                    }
+                }
+            }
+            
+            // Verify all required fields are present after merging
+            const missingFields = requiredFields.filter(field => !mergedData[field]);
+            
+            if (missingFields.length > 0) {
+                logger.error(`[IBCTransferRepository] Missing required transfer data fields after merge: ${missingFields.join(', ')}`);
+                logger.error(`[IBCTransferRepository] Transfer data: ${JSON.stringify(mergedData)}`);
+                throw new Error(`Missing required transfer data fields: ${missingFields.join(', ')}`);
             }
 
             // Make sure fields match the schema
             const transferDocument = {
-                ...transferData,
+                ...mergedData,
                 packet_id: packetId,  // Use the provided packet ID
                 network: network.toString(), // Ensure network is a string
-                success: transferData.success ?? false, // Default to false if not provided
-                send_time: transferData.send_time || new Date() // Ensure we have a timestamp
+                success: mergedData.success ?? false, // Default to false if not provided
+                send_time: mergedData.send_time || new Date() // Ensure we have a timestamp
             };
 
             // Save to database with detailed error handling

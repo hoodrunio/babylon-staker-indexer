@@ -38,6 +38,10 @@ export interface IBCPacket extends Document {
   network: string; // 'mainnet' or 'testnet'
   source_chain_id: string;
   destination_chain_id: string;
+  
+  // Human-readable chain names
+  source_chain_name?: string;
+  destination_chain_name?: string;
 }
 
 const IBCPacketSchema = new Schema<IBCPacket>({
@@ -82,7 +86,11 @@ const IBCPacketSchema = new Schema<IBCPacket>({
   // Network metadata
   network: { type: String, enum: ['mainnet', 'testnet'], required: true },
   source_chain_id: { type: String, required: true },
-  destination_chain_id: { type: String, required: true }
+  destination_chain_id: { type: String, required: true },
+  
+  // Human-readable chain names
+  source_chain_name: { type: String },
+  destination_chain_name: { type: String }
 });
 
 // Compound index for uniquely identifying a packet
