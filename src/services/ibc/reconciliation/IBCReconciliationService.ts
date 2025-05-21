@@ -42,9 +42,8 @@ export class IBCReconciliationService {
         // Set up new interval
         this.reconciliationInterval = setInterval(async () => {
             try {
-                for (const network of Object.values(Network)) {
-                    await this.performReconciliation(network);
-                }
+               const network = this.babylonClient.getNetwork()
+                await this.performReconciliation(network);
             } catch (error) {
                 logger.error(`[IBCReconciliationService] Error during reconciliation: ${error instanceof Error ? error.message : String(error)}`);
             }
