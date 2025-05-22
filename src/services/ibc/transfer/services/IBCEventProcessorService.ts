@@ -40,20 +40,35 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             // Extract attributes from event
             const attributes = this.packetService.extractEventAttributes(event);
             
+            // Special handling for fungible_token_packet events
+            if (event.type === 'fungible_token_packet') {
+                // Process as supplementary data for an existing transfer
+                await this.processTokenSupplementaryData(attributes, txHash, height, timestamp, network);
+                return;
+            }
+            
+            // For regular transfer events, extract packet info
+            const packetInfo = this.packetService.handlePacketEvent(event.type, attributes, txHash);
+            if (!packetInfo) {
+                logger.warn(`[IBCEventProcessorService] Could not extract packet info for event type: ${event.type}`);
+                return;
+            }
+            
+            // Create a packet ID using the port, channel and sequence information
+            const packetId = new mongoose.Types.ObjectId(packetInfo.packetId);
+            const packetKey = `${packetInfo.sourcePort}/${packetInfo.sourceChannel}/${packetInfo.sequence}`;
+            logger.debug(`[IBCEventProcessorService] Processing packet: ${packetKey}`);
+            
             // For transfer events, we need to extract data from the packet data
             // Different event types may have packet data in different attributes
             let packetData = attributes.packet_data || attributes.data;
+            let transferData: any = {};
             
             // Handle the cases where packet data might be missing
             if (!packetData) {
-                // Look for IBC ack packet success/errors
-                if (event.type === 'acknowledge_packet' || event.type === 'write_acknowledgement') {
-                    // For acks, we only need packet routing info which we already have
-                    // So we can just continue processing even without packet data
-                    logger.debug(`[IBCEventProcessorService] Processing acknowledgment without packet data`);
-                } else if (event.type === 'fungible_token_packet') {
-                    // fungible_token_packet events may have data in a different format
-                    // Extract data from denom_trace attributes if available
+                // Some events like fungible_token_packet may have the data in separate attributes
+                if (event.type === 'fungible_token_packet') {
+                    // Extract data from individual attributes
                     const denom = attributes.denom;
                     const amount = attributes.amount;
                     const sender = attributes.sender;
@@ -62,102 +77,102 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                     if (denom && amount && sender && receiver) {
                         // Construct packet data manually
                         packetData = JSON.stringify({ denom, amount, sender, receiver });
-                        logger.debug(`[IBCEventProcessorService] Reconstructed packet data from fungible_token_packet attributes`);
+                        logger.debug(`[IBCEventProcessorService] Reconstructed packet data from attributes`);
                     } else {
-                        logger.warn(`[IBCEventProcessorService] Missing packet_data and required attributes for transfer event`);
+                        logger.warn(`[IBCEventProcessorService] Missing required data attributes for fungible_token_packet event`);
                         return;
                     }
+                } else if (event.type === 'write_acknowledgement' || event.type === 'acknowledge_packet') {
+                    // For acknowledgments, we can continue without packet data
+                    logger.debug(`[IBCEventProcessorService] Acknowledgment event without packet data`);
                 } else {
-                    logger.warn(`[IBCEventProcessorService] Missing packet_data for transfer event type: ${event.type}`);
+                    // For non-ack events, we need packet data
+                    logger.warn(`[IBCEventProcessorService] Missing packet_data for event type: ${event.type}`);
                     return;
                 }
             }
             
-            let transferData;
+            // Parse transfer data if available
+            if (packetData) {
+                try {
+                    transferData = this.tokenService.parseTransferData(packetData);
+                    logger.debug(`[IBCEventProcessorService] Parsed transfer data: ${JSON.stringify(transferData).substring(0, 200)}...`);
+                } catch (error) {
+                    logger.error(`[IBCEventProcessorService] Error parsing packet data: ${error instanceof Error ? error.message : String(error)}`);
+                    // For send/recv events, transfer data is required
+                    if (event.type === 'send_packet' || event.type === 'recv_packet') {
+                        return;
+                    }
+                }
+            }
+            
+            // Extract source and destination channel/port information for chain resolution
+            const srcChannel = packetInfo.sourceChannel;
+            const srcPort = packetInfo.sourcePort;
+            const destChannel = packetInfo.destChannel;
+            const destPort = packetInfo.destPort;
+            
+            // Resolve chain information using our improved chain resolver service
+            // Initialize chain information variables
+            let sourceChainId = '';
+            let destChainId = '';
+            let sourceChainName = '';
+            let destChainName = '';
+            
             try {
-                // Try to parse packet data as JSON
-                transferData = this.tokenService.parseTransferData(packetData);
+                // Get comprehensive chain information for both source and destination
+                // Pass the event type to help determine transfer direction
+                const chainInfo = await this.chainResolverService.getTransferChainInfo(
+                    event.type,
+                    srcChannel, 
+                    srcPort, 
+                    destChannel, 
+                    destPort, 
+                    network
+                );
                 
-                // Log parsed transfer data for debugging
-                logger.debug(`[IBCEventProcessorService] Parsed transfer data: ${JSON.stringify(transferData).substring(0, 200)}...`);
-            } catch (error) {
-                logger.error(`[IBCEventProcessorService] Error parsing packet data: ${error instanceof Error ? error.message : String(error)}`);
-                return;
-            }
-            
-            // Extract packet information
-            const packetInfo = this.packetService.extractPacketInfo(attributes);
-            if (!packetInfo) {
-                logger.warn(`[IBCEventProcessorService] Missing required packet attributes for transfer event`);
-                return;
-            }
-            
-            // Create a packet ID using the port, channel and sequence
-            const packetId = new mongoose.Types.ObjectId(packetInfo.packetId);
-            
-            // Handle different transfer types
-            switch (event.type) {
-                case 'send_packet':
-                case 'fungible_token_packet':
-                case 'transfer_packet': {
-                    // Extract channel and port information from attributes
-                    const srcChannel = attributes.packet_src_channel || attributes.source_channel;
-                    const srcPort = attributes.packet_src_port || attributes.source_port;
-                    const destChannel = attributes.packet_dst_channel || attributes.destination_channel;
-                    const destPort = attributes.packet_dst_port || attributes.destination_port;
-                    
-                    // Initialize chain information variables
-                    let sourceChainId = '';
-                    let destChainId = '';
-                    
-                    // Retrieve chain information from channel-connection-client relationships
-                    if (srcChannel && srcPort && destChannel && destPort) {
-                        try {
-                            // Get comprehensive chain information for both source and destination
-                            const chainInfo = await this.chainResolverService.getTransferChainInfo(
-                                srcChannel, 
-                                srcPort, 
-                                destChannel, 
-                                destPort, 
-                                network
-                            );
-                            
-                            // Use chain information from client-connection relationships
-                            if (chainInfo) {
-                                // Use resolved source chain information
-                                if (chainInfo.source && chainInfo.source.chain_id) {
-                                    sourceChainId = chainInfo.source.chain_id;
-                                    logger.debug(`[IBCEventProcessorService] Resolved source chain: ${sourceChainId} (${chainInfo.source.chain_name})`);
-                                }
-                                
-                                // Use resolved destination chain information
-                                if (chainInfo.destination && chainInfo.destination.chain_id) {
-                                    destChainId = chainInfo.destination.chain_id;
-                                    logger.debug(`[IBCEventProcessorService] Resolved destination chain: ${destChainId} (${chainInfo.destination.chain_name})`);
-                                }
-                            }
-                        } catch (error) {
-                            logger.warn(`[IBCEventProcessorService] Error resolving chain information: ${error instanceof Error ? error.message : String(error)}`);
-                        }
+                // Use chain information from the resolver
+                if (chainInfo) {
+                    // Use resolved source chain information
+                    if (chainInfo.source && chainInfo.source.chain_id) {
+                        sourceChainId = chainInfo.source.chain_id;
+                        sourceChainName = chainInfo.source.chain_name;
+                        logger.debug(`[IBCEventProcessorService] Resolved source chain: ${sourceChainId} (${sourceChainName})`);
                     }
                     
+                    // Use resolved destination chain information
+                    if (chainInfo.destination && chainInfo.destination.chain_id) {
+                        destChainId = chainInfo.destination.chain_id;
+                        destChainName = chainInfo.destination.chain_name;
+                        logger.debug(`[IBCEventProcessorService] Resolved destination chain: ${destChainId} (${destChainName})`);
+                    }
+                }
+            } catch (error) {
+                logger.warn(`[IBCEventProcessorService] Error resolving chain information: ${error instanceof Error ? error.message : String(error)}`);
+            }
+            
+            // Handle different transfer event types
+            switch (event.type) {
+                case 'send_packet':
+                case 'recv_packet':
+                case 'fungible_token_packet':
+                case 'transfer_packet': {
+                    
                     // Format token information for display
-                    const tokenSymbol = this.tokenService.extractTokenSymbol(transferData.denom);
-                    const displayAmount = this.tokenService.formatTokenAmount(transferData.amount, tokenSymbol);
+                    const tokenSymbol = this.tokenService.extractTokenSymbol(transferData.denom || '');
+                    const displayAmount = this.tokenService.formatTokenAmount(transferData.amount || '0', tokenSymbol);
                     
-                    // Create a unique packet key for tracing/debugging
-                    const packetKey = `${packetInfo.sourcePort}/${packetInfo.sourceChannel}/${packetInfo.sequence}`;
+                    // Determine the transaction direction and status based on event type
+                    const isRecvPacket = event.type === 'recv_packet';
+                    const status = isRecvPacket ? IBCTransferStatus.RECEIVED : IBCTransferStatus.PENDING;
                     
-                    // Log the packet information for debugging
-                    logger.debug(`[IBCEventProcessorService] Processing transfer with packet key: ${packetKey} and packetId: ${packetId}`);
-
                     // Create the transfer data object
                     const transfer: IBCTransferData = {
                         // Transfer details
-                        sender: transferData.sender,
-                        receiver: transferData.receiver,
-                        denom: transferData.denom,
-                        amount: transferData.amount,
+                        sender: transferData.sender || '',
+                        receiver: transferData.receiver || '',
+                        denom: transferData.denom || '',
+                        amount: transferData.amount || '0',
                         
                         // Transaction metadata
                         tx_hash: txHash,
@@ -166,20 +181,20 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                         send_time: timestamp,
                         
                         // Status tracking
-                        status: IBCTransferStatus.PENDING,
-                        success: false,
+                        status: status,
+                        success: isRecvPacket, // If it's a receive event, it's successful by default
                         
                         // Display information
                         token_symbol: tokenSymbol,
                         token_display_amount: displayAmount,
                         
-                        // Chain information
+                        // Chain information - now guaranteed to be set
                         source_chain_id: sourceChainId,
                         destination_chain_id: destChainId,
                         
                         // Human-readable chain names
-                        source_chain_name: sourceChainId || '',
-                        destination_chain_name: destChainId || '',
+                        source_chain_name: sourceChainName,
+                        destination_chain_name: destChainName,
                         
                         // Network
                         network: network.toString()
@@ -187,10 +202,24 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                     
                     try {
                         logger.debug(`[IBCEventProcessorService] Saving transfer with packet_id=${packetId} for packet ${packetKey}`);
+                        
+                        // Ensure we have required chain IDs
+                        if (!sourceChainId) {
+                            logger.warn(`[IBCEventProcessorService] Missing source_chain_id for transfer, using fallback`); 
+                            transfer.source_chain_id = isRecvPacket ? 'external-chain' : (network === Network.MAINNET ? 'bbn-1' : 'bbn-test-5');
+                            transfer.source_chain_name = isRecvPacket ? 'External Chain' : (network === Network.MAINNET ? 'Babylon Genesis' : 'Babylon Testnet');
+                        }
+                        
+                        if (!destChainId) {
+                            logger.warn(`[IBCEventProcessorService] Missing destination_chain_id for transfer, using fallback`);
+                            transfer.destination_chain_id = isRecvPacket ? (network === Network.MAINNET ? 'bbn-1' : 'bbn-test-5') : 'external-chain';
+                            transfer.destination_chain_name = isRecvPacket ? (network === Network.MAINNET ? 'Babylon Genesis' : 'Babylon Testnet') : 'External Chain';
+                        }
+                        
                         const savedTransfer = await this.transferRepository.saveTransfer(transfer, packetId, network);
                         
                         if (savedTransfer) {
-                            logger.info(`[IBCEventProcessorService] Token transfer saved: ${transferData.amount} ${transferData.denom} from ${transferData.sender} to ${transferData.receiver} at height ${height}`);
+                            logger.info(`[IBCEventProcessorService] Token transfer saved: ${transfer.amount} ${transfer.denom} from ${transfer.sender} to ${transfer.receiver} at height ${height}`);
                         } else {
                             logger.error(`[IBCEventProcessorService] Failed to save transfer for packet ${packetKey}`);
                         }
@@ -239,8 +268,8 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             // Extract attributes from event
             const attributes = this.packetService.extractEventAttributes(event);
             
-            // Extract packet information
-            const packetInfo = this.packetService.extractPacketInfo(attributes);
+            // Extract packet information with transaction context awareness
+            const packetInfo = this.packetService.handlePacketEvent(event.type, attributes, txHash);
             if (!packetInfo) {
                 logger.warn(`[IBCEventProcessorService] Missing required packet attributes for acknowledgment event`);
                 return;
@@ -330,6 +359,69 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             logger.info(`[IBCEventProcessorService] Transfer timed out: ${packetInfo.sourcePort}/${packetInfo.sourceChannel}/${packetInfo.sequence} from ${transfer.sender} to ${transfer.receiver} (${transfer.amount} ${transfer.denom}) at height ${height}`);
         } catch (error) {
             logger.error(`[IBCEventProcessorService] Error processing timeout event: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+    
+    /**
+     * Process fungible_token_packet events as supplementary data to enrich existing transfers
+     * These events don't contain routing info but have detailed token transfer data
+     * @param attributes Event attributes from fungible_token_packet
+     * @param txHash Transaction hash
+     * @param height Block height
+     * @param timestamp Block timestamp
+     * @param network Network where the event occurred
+     */
+    private async processTokenSupplementaryData(
+        attributes: Record<string, string>,
+        txHash: string,
+        height: number,
+        timestamp: Date,
+        network: Network
+    ): Promise<void> {
+        try {
+            // Get the most recently processed transfer for this transaction
+            // We first check for any transfers created or updated in this same transaction
+            const transfer = await this.transferRepository.getTransferByTxHash(txHash, network);
+            
+            if (transfer) {
+                // Found an existing transfer in this transaction - update it with token details
+                const packetId = transfer.packet_id;
+                
+                // Extract token information from the fungible_token_packet event
+                const denom = attributes.denom || transfer.denom;
+                const amount = attributes.amount || transfer.amount;
+                const sender = attributes.sender || transfer.sender;
+                const receiver = attributes.receiver || transfer.receiver;
+                const success = attributes.success === 'true' || attributes.success === '\u0001';
+                
+                // Update the transfer with the supplementary data
+                const updatedTransfer = {
+                    ...transfer,
+                    denom,
+                    amount,
+                    sender,
+                    receiver,
+                    // Only update status if this is a successful token packet
+                    status: success ? IBCTransferStatus.RECEIVED : transfer.status,
+                    // Add any other relevant fields from the token packet
+                    memo: attributes.memo || transfer.memo,
+                    last_updated: timestamp
+                };
+                
+                // Save the updated transfer
+                await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
+                
+                logger.info(`[IBCEventProcessorService] Updated transfer with token details: ${amount} ${denom} from ${sender} to ${receiver}`);
+                return;
+            }
+            
+            // If we get here, we couldn't find a transfer to enrich
+            // This can happen when events arrive out of order
+            // We don't treat this as an error, just log it for debugging
+            logger.debug(`[IBCEventProcessorService] No recent transfer found to update with fungible_token_packet data in tx ${txHash}`);
+            
+        } catch (error) {
+            logger.error(`[IBCEventProcessorService] Error processing token supplementary data: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 }

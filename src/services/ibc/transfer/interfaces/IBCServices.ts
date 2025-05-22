@@ -16,7 +16,7 @@ export interface IIBCEventProcessorService {
  */
 export interface IIBCChainResolverService {
     getChainInfoFromChannel(channelId: string, portId: string, network: Network): Promise<ChainInfo | null>;
-    getTransferChainInfo(sourceChannel: string, sourcePort: string, destChannel: string, destPort: string, network: Network): Promise<TransferChainContext>;
+    getTransferChainInfo(eventType: string, sourceChannel: string, sourcePort: string, destChannel: string, destPort: string, network: Network): Promise<TransferChainContext>;
 }
 
 /**
@@ -26,6 +26,7 @@ export interface IIBCPacketService {
     extractEventAttributes(event: IBCEvent): Record<string, string>;
     createPacketId(port: string, channel: string, sequence: string): mongoose.Types.ObjectId;
     extractPacketInfo(attributes: Record<string, string>): IBCPacketInfo | null;
+    handlePacketEvent(eventType: string, attributes: Record<string, string>, txHash: string): IBCPacketInfo | null;
 }
 
 /**

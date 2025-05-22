@@ -14,6 +14,7 @@ export interface IBCEvent {
  */
 export enum IBCTransferStatus {
     PENDING = 'PENDING',
+    RECEIVED = 'RECEIVED',
     COMPLETED = 'COMPLETED',
     FAILED = 'FAILED',
     TIMEOUT = 'TIMEOUT'

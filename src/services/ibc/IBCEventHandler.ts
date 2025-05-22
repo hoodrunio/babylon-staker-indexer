@@ -72,11 +72,15 @@ export class IBCEventHandler {
             }
             
             // Filter IBC-related events
-            const ibcEvents = this.filterIBCEvents(events);
+            let ibcEvents = this.filterIBCEvents(events);
             
             if (ibcEvents.length === 0) {
                 return;
             }
+            
+            // Sort events to ensure proper processing order
+            // Primary events (with routing info) should be processed before supplementary events
+            ibcEvents = this.sortEventsByProcessingPriority(ibcEvents);
             
             // Process timestamp (from transaction or current time if not available)
             const timestamp = txTimestamp ? new Date(txTimestamp) : new Date();
@@ -103,25 +107,31 @@ export class IBCEventHandler {
                         );
                     }
                     else if (this.isPacketEvent(event)) {
-                        eventProcessingPromises.push(
-                            this.packetService.processPacketEvent(event, hash, height, timestamp, network)
-                        );
-                        
-                        // Also process this event to identify and track relayers
-                        // Pass signer information to help identify the relayer
-                        eventProcessingPromises.push(
-                            this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
-                        );
-                        
-                        // Check if this packet represents an IBC transfer or acknowledgment
-                        // 1. New transfer packets
-                        if (this.isTransferEvent(event)) {
+                        // Special handling for fungible_token_packet events
+                        // These should only go to the transfer service and relayer service
+                        if (event.type === 'fungible_token_packet') {
+                            // Process with relayer service
+                            eventProcessingPromises.push(
+                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
+                            );
+                            
+                            // Process with transfer service
                             eventProcessingPromises.push(
                                 this.transferService.processTransferEvent(event, hash, height, timestamp, network)
                             );
-                        }
+                        } 
                         // 2. Acknowledgments of existing transfers
                         else if (this.isAcknowledgmentEvent(event)) {
+                            // Process with the standard packet service
+                            eventProcessingPromises.push(
+                                this.packetService.processPacketEvent(event, hash, height, timestamp, network)
+                            );
+                            
+                            // Also track relayers
+                            eventProcessingPromises.push(
+                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
+                            );
+                            
                             // For ack events, we need to update any associated transfer
                             eventProcessingPromises.push(
                                 this.transferService.processAcknowledgmentEvent(event, hash, height, timestamp, network)
@@ -129,10 +139,39 @@ export class IBCEventHandler {
                         }
                         // 3. Timeouts of existing transfers
                         else if (this.isTimeoutEvent(event)) {
+                            // Process with the standard packet service
+                            eventProcessingPromises.push(
+                                this.packetService.processPacketEvent(event, hash, height, timestamp, network)
+                            );
+                            
+                            // Also track relayers
+                            eventProcessingPromises.push(
+                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
+                            );
+                            
                             // For timeout events, we need to update any associated transfer as failed
                             eventProcessingPromises.push(
                                 this.transferService.processTimeoutEvent(event, hash, height, timestamp, network)
                             );
+                        }
+                        // Other packet events (send_packet, recv_packet, etc.)
+                        else {
+                            // For all other packet events, use the standard packet service
+                            eventProcessingPromises.push(
+                                this.packetService.processPacketEvent(event, hash, height, timestamp, network)
+                            );
+                            
+                            // Also process this event to identify and track relayers
+                            eventProcessingPromises.push(
+                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
+                            );
+                            
+                            // If this is a transfer event, process it with the transfer service
+                            if (this.isTransferEvent(event)) {
+                                eventProcessingPromises.push(
+                                    this.transferService.processTransferEvent(event, hash, height, timestamp, network)
+                                );
+                            }
                         }
                     }
                 } catch (eventError) {
@@ -233,5 +272,50 @@ export class IBCEventHandler {
      */
     private isTimeoutEvent(event: any): boolean {
         return event.type.includes('timeout_packet');
+    }
+    
+    /**
+     * Sort events to ensure proper processing order
+     * Events with routing information should be processed before supplementary events
+     * @param events Array of events to sort
+     * @returns Sorted events array
+     */
+    private sortEventsByProcessingPriority(events: any[]): any[] {
+        // Define event type priorities (lower number = higher priority)
+        const eventPriority: Record<string, number> = {
+            // Core routing events first
+            'create_client': 10,
+            'update_client': 11,
+            'create_connection': 20,
+            'open_connection': 21,
+            'connection_open': 22,
+            'create_channel': 30,
+            'open_channel': 31,
+            'channel_open': 32,
+            
+            // Packet events with routing information
+            'send_packet': 40,
+            'recv_packet': 41,
+            'acknowledge_packet': 42,
+            'timeout_packet': 43,
+            'write_acknowledgement': 44,
+            
+            // Supplementary events last
+            'fungible_token_packet': 90,
+            'transfer_packet': 91,
+        };
+        
+        // Sort based on priority
+        return [...events].sort((a, b) => {
+            const typeA = a.type;
+            const typeB = b.type;
+            
+            // Get priorities, default to 100 if not found
+            const priorityA = eventPriority[typeA] || 100;
+            const priorityB = eventPriority[typeB] || 100;
+            
+            // Sort by priority
+            return priorityA - priorityB;
+        });
     }
 }

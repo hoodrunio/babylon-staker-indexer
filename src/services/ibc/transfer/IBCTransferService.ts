@@ -12,6 +12,7 @@ import {
     IBCConnectionRepositoryAdapter,
     IBCClientRepositoryAdapter 
 } from './repository/adapters/RepositoryAdapters';
+import { BabylonClient } from '../../../clients/BabylonClient';
 
 /**
  * Service responsible for processing and managing IBC transfer data
@@ -27,9 +28,10 @@ export class IBCTransferService {
         const channelRepository = new IBCChannelRepositoryAdapter();
         const connectionRepository = new IBCConnectionRepositoryAdapter();
         const clientRepository = new IBCClientRepositoryAdapter();
+        const babylonClient = BabylonClient.getInstance();
         
         // Create specialized services
-        const chainResolver = new IBCChainResolverService(channelRepository, connectionRepository, clientRepository);
+        const chainResolver = new IBCChainResolverService(channelRepository, connectionRepository, clientRepository, babylonClient);
         const packetService = new IBCPacketService();
         const tokenService = new IBCTokenService();
         const statusService = new IBCTransferStatusService();

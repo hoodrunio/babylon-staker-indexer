@@ -50,6 +50,11 @@ export class IBCPacketService {
                 case 'write_acknowledgement':
                     await this.handleWriteAcknowledgement(attributes, txHash, height, timestamp, network);
                     break;
+                case 'fungible_token_packet':
+                    // fungible_token_packet events are handled by the transfer service
+                    // no need to process them here, but we should not log them as unhandled
+                    logger.debug(`[IBCPacketService] Delegating fungible_token_packet to transfer service`);
+                    break;
                 default:
                     logger.debug(`[IBCPacketService] Unhandled packet event type: ${event.type}`);
             }
