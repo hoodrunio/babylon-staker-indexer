@@ -87,7 +87,7 @@ export class IBCPacketService {
                 status: 'SENT',
                 send_tx_hash: txHash,
                 send_height: height,
-                send_timestamp: timestamp,
+                send_time: timestamp,
                 network: network.toString(),
                 last_updated: timestamp
             };
@@ -183,7 +183,7 @@ export class IBCPacketService {
                 status: 'ACKNOWLEDGED',
                 ack_tx_hash: txHash,
                 ack_height: height,
-                ack_timestamp: timestamp,
+                ack_time: timestamp,
                 network: network.toString(),
                 last_updated: timestamp
             };
@@ -231,7 +231,7 @@ export class IBCPacketService {
                 status: 'TIMEOUT',
                 timeout_tx_hash: txHash,
                 timeout_height: height,
-                timeout_timestamp: timestamp,
+                timeout_time: timestamp,
                 network: network.toString(),
                 last_updated: timestamp
             };
@@ -279,7 +279,7 @@ export class IBCPacketService {
                 status: 'ACK_WRITTEN',
                 write_ack_tx_hash: txHash,
                 write_ack_height: height,
-                write_ack_timestamp: timestamp,
+                write_ack_time: timestamp,
                 network: network.toString(),
                 last_updated: timestamp
             };
