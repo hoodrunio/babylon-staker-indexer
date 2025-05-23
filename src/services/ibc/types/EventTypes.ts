@@ -64,7 +64,7 @@ export interface PacketEvent extends IBCEvent {
  * Transfer event types
  */
 export interface TransferEvent extends IBCEvent {
-    type: 'ibc_transfer' | 'fungible_token_packet';
+    type: 'ibc_transfer' | 'fungible_token_packet' | 'send_packet' | 'recv_packet';
 }
 
 /**
