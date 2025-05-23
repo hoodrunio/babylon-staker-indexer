@@ -169,13 +169,12 @@ export class IBCRelayerService {
             
             // Log success or failure for monitoring
             if (success) {
-                logger.info(`[IBCRelayerService] Successful relay by ${signer} for ${sourcePort}/${sourceChannel}/${sequence}`);
+                logger.debug(`[IBCRelayerService] Successful relay by ${signer} for ${sourcePort}/${sourceChannel}/${sequence}`);
             } else {
                 logger.warn(`[IBCRelayerService] Failed relay by ${signer} for ${sourcePort}/${sourceChannel}/${sequence}`);
             }
             
             await this.relayerRepository.trackRelayerActivity(relayerData, network);
-            logger.info(`[IBCRelayerService] Recorded relayer activity: ${signer} ${action} at height ${height}`);
         } catch (error) {
             logger.error(`[IBCRelayerService] Error processing relayer event: ${error instanceof Error ? error.message : String(error)}`);
         }

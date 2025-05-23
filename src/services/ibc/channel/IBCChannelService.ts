@@ -91,36 +91,23 @@ export class IBCChannelService {
             const counterpartyChainId = connection?.counterparty_chain_id || 'unknown';
             
             // Create new channel
-            await this.channelRepository.createChannel({
+            const newChannel = {
                 channel_id: channelId,
                 port_id: portId,
                 connection_id: connectionId,
                 counterparty_channel_id: '',  // Will be updated in open_try
                 counterparty_port_id: counterpartyPortId,
-                counterparty_chain_id: counterpartyChainId,
+                counterparty_chain_id: '', // Will be resolved later
                 state: 'INIT',
                 ordering: ordering || 'UNORDERED',
                 version: version || '',
+                network: network,
                 created_at: timestamp,
                 updated_at: timestamp,
-                
-                // Initialize analytics fields
-                packet_count: 0,
-                success_count: 0,
-                failure_count: 0,
-                timeout_count: 0,
-                avg_completion_time_ms: 0,
-                total_tokens_transferred: {
-                    incoming: new Map(),
-                    outgoing: new Map()
-                },
-                active_relayers: [],
-                
-                // Creation metadata
-                creation_height: height,
-                creation_tx_hash: txHash,
-                network
-            }, network);
+                ...this.getDefaultAnalyticsFields()
+            };
+            
+            await this.channelRepository.createChannel(newChannel, network);
             
             logger.info(`[IBCChannelService] Created new channel ${channelId} on port ${portId} for network ${network}`);
         } catch (error) {
@@ -172,7 +159,7 @@ export class IBCChannelService {
                 const counterpartyChainId = connection?.counterparty_chain_id || 'unknown';
                 
                 // Create new channel record if it doesn't exist
-                await this.channelRepository.createChannel({
+                const newChannel = {
                     channel_id: channelId,
                     port_id: portId,
                     connection_id: connectionId,
@@ -182,26 +169,13 @@ export class IBCChannelService {
                     state: 'TRYOPEN',
                     ordering: attributes.ordering || 'UNORDERED',
                     version: attributes.version || '',
+                    network: network,
                     created_at: timestamp,
                     updated_at: timestamp,
-                    
-                    // Initialize analytics fields
-                    packet_count: 0,
-                    success_count: 0,
-                    failure_count: 0,
-                    timeout_count: 0,
-                    avg_completion_time_ms: 0,
-                    total_tokens_transferred: {
-                        incoming: new Map(),
-                        outgoing: new Map()
-                    },
-                    active_relayers: [],
-                    
-                    // Creation metadata
-                    creation_height: height,
-                    creation_tx_hash: txHash,
-                    network
-                }, network);
+                    ...this.getDefaultAnalyticsFields()
+                };
+                
+                await this.channelRepository.createChannel(newChannel, network);
             }
             
             logger.info(`[IBCChannelService] Updated channel ${channelId} to TRYOPEN state for network ${network}`);
@@ -523,5 +497,22 @@ export class IBCChannelService {
         } catch (error) {
             logger.error(`[IBCChannelService] Error processing packet statistics: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+
+    private getDefaultAnalyticsFields(): Record<string, any> {
+        return {
+            packet_count: 0,
+            success_count: 0,
+            failure_count: 0,
+            timeout_count: 0,
+            avg_completion_time_ms: 0,
+            total_tokens_transferred: {
+                incoming: new Map(),
+                outgoing: new Map()
+            },
+            active_relayers: [],
+            creation_height: 0,
+            creation_tx_hash: '',
+        };
     }
 }

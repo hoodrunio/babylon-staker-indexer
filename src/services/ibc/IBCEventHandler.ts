@@ -61,191 +61,162 @@ export class IBCEventHandler {
         try {
             const { height, hash, events, signer = '', timestamp: txTimestamp } = txData;
             
-            // Skip if no events
-            if (!events || !events.length) {
-                return;
-            }
+            if (!events?.length) return;
             
-            logger.debug(`[IBCEventHandler] Processing tx ${hash} at height ${height} with ${events.length} events`);
-            if (signer) {
-                logger.debug(`[IBCEventHandler] Transaction signer: ${signer}`);
-            }
+            logger.debug(`[IBCEventHandler] Processing tx ${hash} with ${events.length} events`);
             
-            // Filter IBC-related events
-            let ibcEvents = this.filterIBCEvents(events);
+            const ibcEvents = this.filterIBCEvents(events);
+            if (ibcEvents.length === 0) return;
             
-            if (ibcEvents.length === 0) {
-                return;
-            }
-            
-            // Sort events to ensure proper processing order
-            // Primary events (with routing info) should be processed before supplementary events
-            ibcEvents = this.sortEventsByProcessingPriority(ibcEvents);
-            
-            // Process timestamp (from transaction or current time if not available)
             const timestamp = txTimestamp ? new Date(txTimestamp) : new Date();
-            
-            // Process events by category
             const eventProcessingPromises: Promise<void>[] = [];
             
             for (const event of ibcEvents) {
-                try {
-                    // Delegate to specialized service based on event type
-                    if (this.isChannelEvent(event)) {
-                        eventProcessingPromises.push(
-                            this.channelService.processChannelEvent(event, hash, height, timestamp, network)
-                        );
-                    } 
-                    else if (this.isConnectionEvent(event)) {
-                        eventProcessingPromises.push(
-                            this.connectionService.processConnectionEvent(event, hash, height, timestamp, network)
-                        );
-                    }
-                    else if (this.isClientEvent(event)) {
-                        eventProcessingPromises.push(
-                            this.clientService.processClientEvent(event, hash, height, timestamp, network)
-                        );
-                    }
-                    else if (this.isPacketEvent(event)) {
-                        // Special handling for fungible_token_packet events
-                        // These should only go to the relayer service and relayer service
-                        if (event.type === 'fungible_token_packet') {
-                            // Process with relayer service
-                            eventProcessingPromises.push(
-                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
-                            );
-                            
-                            // Check if this transaction contains acknowledgment events
-                            // If so, skip transfer processing for fungible_token_packet as the transfer
-                            // should be updated via acknowledge_packet event instead
-                            const hasAcknowledgmentEvent = events.some(e => this.isAcknowledgmentEvent(e));
-                            
-                            if (!hasAcknowledgmentEvent) {
-                                // Only process with transfer service if this is NOT an acknowledgment transaction
-                                eventProcessingPromises.push(
-                                    this.transferService.processTransferEvent(event, hash, height, timestamp, network)
-                                );
-                            } else {
-                                logger.debug(`[IBCEventHandler] Skipping fungible_token_packet transfer processing in acknowledgment transaction ${hash}`);
-                            }
-                        } 
-                        // 2. Acknowledgments of existing transfers
-                        else if (this.isAcknowledgmentEvent(event)) {
-                            // Process with the standard packet service
-                            eventProcessingPromises.push(
-                                this.packetService.processPacketEvent(event, hash, height, timestamp, network)
-                            );
-                            
-                            // Track relayers
-                            eventProcessingPromises.push(
-                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
-                            );
-                            
-                            // Update channel statistics with token information from fungible_token_packet
-                            // Find the fungible_token_packet event in the same transaction for token details
-                            // Note: There are typically TWO fungible_token_packet events in acknowledgment transactions:
-                            // 1. One with token details (amount, denom, sender, receiver, etc.)
-                            // 2. One with just success status
-                            // We need to find the one with token details
-                            const fungibleTokenEvents = events.filter(e => e.type === 'fungible_token_packet');
-                            let tokenAmount = '';
-                            let tokenDenom = '';
-                            
-                            // Look for the event that contains amount and denom attributes
-                            for (const ftEvent of fungibleTokenEvents) {
-                                if (ftEvent.attributes) {
-                                    let hasAmount = false;
-                                    let hasDenom = false;
-                                    
-                                    for (const attr of ftEvent.attributes) {
-                                        if (attr.key === 'amount' && attr.value) {
-                                            tokenAmount = attr.value;
-                                            hasAmount = true;
-                                        } else if (attr.key === 'denom' && attr.value) {
-                                            tokenDenom = attr.value;
-                                            hasDenom = true;
-                                        }
-                                    }
-                                    
-                                    // If we found both amount and denom in this event, we're done
-                                    if (hasAmount && hasDenom) {
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            eventProcessingPromises.push(
-                                this.channelService.processPacketStatistics(
-                                    event, hash, height, timestamp, network, signer, tokenAmount, tokenDenom
-                                )
-                            );
-                            
-                            // For ack events, we need to update any associated transfer
-                            eventProcessingPromises.push(
-                                this.transferService.processAcknowledgmentEvent(event, hash, height, timestamp, network)
-                            );
-                        }
-                        // 3. Timeouts of existing transfers
-                        else if (this.isTimeoutEvent(event)) {
-                            // Process with the standard packet service
-                            eventProcessingPromises.push(
-                                this.packetService.processPacketEvent(event, hash, height, timestamp, network)
-                            );
-                            
-                            // Track relayers
-                            eventProcessingPromises.push(
-                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
-                            );
-                            
-                            // Update channel statistics
-                            eventProcessingPromises.push(
-                                this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer)
-                            );
-                            
-                            // For timeout events, we need to update any associated transfer as failed
-                            eventProcessingPromises.push(
-                                this.transferService.processTimeoutEvent(event, hash, height, timestamp, network)
-                            );
-                        }
-                        // Other packet events (send_packet, recv_packet, etc.)
-                        else {
-                            // For all other packet events, use the standard packet service
-                            eventProcessingPromises.push(
-                                this.packetService.processPacketEvent(event, hash, height, timestamp, network)
-                            );
-                            
-                            // Track relayers
-                            eventProcessingPromises.push(
-                                this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
-                            );
-                            
-                            // Update channel statistics
-                            eventProcessingPromises.push(
-                                this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer)
-                            );
-                            
-                            // If this is a transfer event, process it with the transfer service
-                            if (this.isTransferEvent(event)) {
-                                eventProcessingPromises.push(
-                                    this.transferService.processTransferEvent(event, hash, height, timestamp, network)
-                                );
-                            }
-                        }
-                    }
-                } catch (eventError) {
-                    // Log error but continue processing other events
-                    logger.error(`[IBCEventHandler] Error processing event ${event.type}: ${eventError instanceof Error ? eventError.message : String(eventError)}`);
-                }
+                const promises = await this.processEvent(event, events, hash, height, timestamp, network, signer);
+                eventProcessingPromises.push(...promises);
             }
             
-            // Wait for all event processing to complete
             if (eventProcessingPromises.length > 0) {
                 await Promise.all(eventProcessingPromises);
-                logger.debug(`[IBCEventHandler] Successfully processed ${eventProcessingPromises.length} IBC events from tx ${hash}`);
+                logger.debug(`[IBCEventHandler] Processed ${eventProcessingPromises.length} IBC events from tx ${hash}`);
             }
         } catch (error) {
-            logger.error(`[IBCEventHandler] Error processing transaction events: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[IBCEventHandler] Error processing transaction: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+    
+    private async processEvent(
+        event: any, 
+        allEvents: any[], 
+        hash: string, 
+        height: number, 
+        timestamp: Date, 
+        network: Network, 
+        signer: string
+    ): Promise<Promise<void>[]> {
+        const promises: Promise<void>[] = [];
+
+        try {
+            if (this.isChannelEvent(event)) {
+                promises.push(this.channelService.processChannelEvent(event, hash, height, timestamp, network));
+            } 
+            else if (this.isConnectionEvent(event)) {
+                promises.push(this.connectionService.processConnectionEvent(event, hash, height, timestamp, network));
+            }
+            else if (this.isClientEvent(event)) {
+                promises.push(this.clientService.processClientEvent(event, hash, height, timestamp, network));
+            }
+            else if (this.isPacketEvent(event)) {
+                if (event.type === 'fungible_token_packet') {
+                    await this.processFungibleTokenPacket(event, allEvents, hash, height, timestamp, network, signer, promises);
+                } else if (this.isAcknowledgmentEvent(event)) {
+                    await this.processAcknowledgmentEvent(event, allEvents, hash, height, timestamp, network, signer, promises);
+                } else if (this.isTimeoutEvent(event)) {
+                    await this.processTimeoutEvent(event, hash, height, timestamp, network, signer, promises);
+                } else {
+                    await this.processOtherPacketEvent(event, hash, height, timestamp, network, signer, promises);
+                }
+            }
+        } catch (error) {
+            logger.error(`[IBCEventHandler] Error processing event ${event.type}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+
+        return promises;
+    }
+
+    private async processFungibleTokenPacket(
+        event: any, 
+        allEvents: any[], 
+        hash: string, 
+        height: number, 
+        timestamp: Date, 
+        network: Network, 
+        signer: string, 
+        promises: Promise<void>[]
+    ): Promise<void> {
+        promises.push(this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer));
+        
+        const hasAcknowledgmentEvent = allEvents.some(e => this.isAcknowledgmentEvent(e));
+        if (!hasAcknowledgmentEvent) {
+            promises.push(this.transferService.processTransferEvent(event, hash, height, timestamp, network));
+        }
+    }
+
+    private async processAcknowledgmentEvent(
+        event: any, 
+        allEvents: any[], 
+        hash: string, 
+        height: number, 
+        timestamp: Date, 
+        network: Network, 
+        signer: string, 
+        promises: Promise<void>[]
+    ): Promise<void> {
+        promises.push(this.packetService.processPacketEvent(event, hash, height, timestamp, network));
+        promises.push(this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer));
+        promises.push(this.transferService.processAcknowledgmentEvent(event, hash, height, timestamp, network));
+        
+        const { tokenAmount, tokenDenom } = this.extractTokenInfoFromTransaction(allEvents);
+        promises.push(this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer, tokenAmount, tokenDenom));
+    }
+
+    private async processTimeoutEvent(
+        event: any, 
+        hash: string, 
+        height: number, 
+        timestamp: Date, 
+        network: Network, 
+        signer: string, 
+        promises: Promise<void>[]
+    ): Promise<void> {
+        promises.push(this.packetService.processPacketEvent(event, hash, height, timestamp, network));
+        promises.push(this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer));
+        promises.push(this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer));
+        promises.push(this.transferService.processTimeoutEvent(event, hash, height, timestamp, network));
+    }
+
+    private async processOtherPacketEvent(
+        event: any, 
+        hash: string, 
+        height: number, 
+        timestamp: Date, 
+        network: Network, 
+        signer: string, 
+        promises: Promise<void>[]
+    ): Promise<void> {
+        promises.push(this.packetService.processPacketEvent(event, hash, height, timestamp, network));
+        promises.push(this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer));
+        promises.push(this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer));
+        
+        if (this.isTransferEvent(event)) {
+            promises.push(this.transferService.processTransferEvent(event, hash, height, timestamp, network));
+        }
+    }
+
+    /**
+     * Extract token information from fungible_token_packet events in the transaction
+     * Note: Acknowledgment transactions contain two fungible_token_packet events
+     */
+    private extractTokenInfoFromTransaction(events: any[]): { tokenAmount: string; tokenDenom: string } {
+        const fungibleTokenEvents = events.filter(e => e.type === 'fungible_token_packet');
+        
+        for (const ftEvent of fungibleTokenEvents) {
+            if (ftEvent.attributes) {
+                let amount = '';
+                let denom = '';
+                
+                for (const attr of ftEvent.attributes) {
+                    if (attr.key === 'amount' && attr.value) amount = attr.value;
+                    if (attr.key === 'denom' && attr.value) denom = attr.value;
+                }
+                
+                if (amount && denom) {
+                    return { tokenAmount: amount, tokenDenom: denom };
+                }
+            }
+        }
+        
+        return { tokenAmount: '', tokenDenom: '' };
     }
     
     /**
@@ -295,28 +266,19 @@ export class IBCEventHandler {
      * Check if packet event represents an IBC transfer
      */
     private isTransferEvent(event: any): boolean {
-        // Check event type first
         const isTransferType = event.type.includes('transfer_packet') || 
                            event.type.includes('fungible_token_packet') || 
                            event.type === 'send_packet' ||
                            event.type === 'recv_packet';
         
-        if (isTransferType) {
-            // For send_packet and recv_packet, only consider it a transfer if it's from/to the transfer port
-            if (event.type === 'send_packet' || event.type === 'recv_packet') {
-                // Need to check attributes to verify it's a transfer
-                const hasTransferPort = event.attributes?.some?.((attr: { key: string; value: string }) => 
-                    (attr.key === 'packet_src_port' && attr.value === 'transfer') || 
-                    (attr.key === 'packet_dst_port' && attr.value === 'transfer')
-                );
-                
-                return hasTransferPort;
-            }
-            
-            return true;
+        if (isTransferType && (event.type === 'send_packet' || event.type === 'recv_packet')) {
+            return event.attributes?.some?.((attr: { key: string; value: string }) => 
+                (attr.key === 'packet_src_port' && attr.value === 'transfer') || 
+                (attr.key === 'packet_dst_port' && attr.value === 'transfer')
+            );
         }
         
-        return false;
+        return isTransferType;
     }
     
     /**
@@ -331,50 +293,5 @@ export class IBCEventHandler {
      */
     private isTimeoutEvent(event: any): boolean {
         return event.type.includes('timeout_packet');
-    }
-    
-    /**
-     * Sort events to ensure proper processing order
-     * Events with routing information should be processed before supplementary events
-     * @param events Array of events to sort
-     * @returns Sorted events array
-     */
-    private sortEventsByProcessingPriority(events: any[]): any[] {
-        // Define event type priorities (lower number = higher priority)
-        const eventPriority: Record<string, number> = {
-            // Core routing events first
-            'create_client': 10,
-            'update_client': 11,
-            'create_connection': 20,
-            'open_connection': 21,
-            'connection_open': 22,
-            'create_channel': 30,
-            'open_channel': 31,
-            'channel_open': 32,
-            
-            // Packet events with routing information
-            'send_packet': 40,
-            'recv_packet': 41,
-            'acknowledge_packet': 42,
-            'timeout_packet': 43,
-            'write_acknowledgement': 44,
-            
-            // Supplementary events last
-            'fungible_token_packet': 90,
-            'transfer_packet': 91,
-        };
-        
-        // Sort based on priority
-        return [...events].sort((a, b) => {
-            const typeA = a.type;
-            const typeB = b.type;
-            
-            // Get priorities, default to 100 if not found
-            const priorityA = eventPriority[typeA] || 100;
-            const priorityB = eventPriority[typeB] || 100;
-            
-            // Sort by priority
-            return priorityA - priorityB;
-        });
     }
 }
