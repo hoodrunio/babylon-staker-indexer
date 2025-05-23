@@ -67,19 +67,19 @@ export class IBCChannelService {
      * Creates a new channel record in the database
      */
     private async handleChannelOpenInit(
-        attributes: Map<string, string>,
+        attributes: Record<string, string>,
         txHash: string,
         height: number,
         timestamp: Date,
         network: Network
     ): Promise<void> {
         try {
-            const portId = attributes.get('port_id');
-            const channelId = attributes.get('channel_id');
-            const counterpartyPortId = attributes.get('counterparty_port_id');
-            const connectionId = attributes.get('connection_id');
-            const version = attributes.get('version');
-            const ordering = attributes.get('ordering');
+            const portId = attributes.port_id;
+            const channelId = attributes.channel_id;
+            const counterpartyPortId = attributes.counterparty_port_id;
+            const connectionId = attributes.connection_id;
+            const version = attributes.version;
+            const ordering = attributes.ordering;
             
             if (!portId || !channelId || !counterpartyPortId || !connectionId) {
                 logger.warn('[IBCChannelService] Missing required attributes for channel_open_init event');
@@ -130,18 +130,18 @@ export class IBCChannelService {
      * Updates counterparty information for a channel
      */
     private async handleChannelOpenTry(
-        attributes: Map<string, string>,
+        attributes: Record<string, string>,
         txHash: string,
         height: number,
         timestamp: Date,
         network: Network
     ): Promise<void> {
         try {
-            const portId = attributes.get('port_id');
-            const channelId = attributes.get('channel_id');
-            const counterpartyPortId = attributes.get('counterparty_port_id');
-            const counterpartyChannelId = attributes.get('counterparty_channel_id');
-            const connectionId = attributes.get('connection_id');
+            const portId = attributes.port_id;
+            const channelId = attributes.channel_id;
+            const counterpartyPortId = attributes.counterparty_port_id;
+            const counterpartyChannelId = attributes.counterparty_channel_id;
+            const connectionId = attributes.connection_id;
             
             if (!portId || !channelId || !counterpartyPortId || !counterpartyChannelId || !connectionId) {
                 logger.warn('[IBCChannelService] Missing required attributes for channel_open_try event');
@@ -177,8 +177,8 @@ export class IBCChannelService {
                     counterparty_port_id: counterpartyPortId,
                     counterparty_chain_id: counterpartyChainId,
                     state: 'TRYOPEN',
-                    ordering: attributes.get('ordering') || 'UNORDERED',
-                    version: attributes.get('version') || '',
+                    ordering: attributes.ordering || 'UNORDERED',
+                    version: attributes.version || '',
                     created_at: timestamp,
                     updated_at: timestamp,
                     
@@ -209,16 +209,16 @@ export class IBCChannelService {
      * Updates the channel state to OPEN and sets the counterparty channel ID
      */
     private async handleChannelOpenAck(
-        attributes: Map<string, string>,
+        attributes: Record<string, string>,
         txHash: string,
         height: number,
         timestamp: Date,
         network: Network
     ): Promise<void> {
         try {
-            const portId = attributes.get('port_id');
-            const channelId = attributes.get('channel_id');
-            const counterpartyChannelId = attributes.get('counterparty_channel_id');
+            const portId = attributes.port_id;
+            const channelId = attributes.channel_id;
+            const counterpartyChannelId = attributes.counterparty_channel_id;
             
             if (!portId || !channelId || !counterpartyChannelId) {
                 logger.warn('[IBCChannelService] Missing required attributes for channel_open_ack event');
@@ -248,15 +248,15 @@ export class IBCChannelService {
      * Updates the channel state to OPEN
      */
     private async handleChannelOpenConfirm(
-        attributes: Map<string, string>,
+        attributes: Record<string, string>,
         txHash: string, 
         height: number,
         timestamp: Date,
         network: Network
     ): Promise<void> {
         try {
-            const portId = attributes.get('port_id');
-            const channelId = attributes.get('channel_id');
+            const portId = attributes.port_id;
+            const channelId = attributes.channel_id;
             
             if (!portId || !channelId) {
                 logger.warn('[IBCChannelService] Missing required attributes for channel_open_confirm event');
@@ -285,15 +285,15 @@ export class IBCChannelService {
      * Updates the channel state to indicate closure was initiated
      */
     private async handleChannelCloseInit(
-        attributes: Map<string, string>,
+        attributes: Record<string, string>,
         txHash: string,
         height: number,
         timestamp: Date,
         network: Network
     ): Promise<void> {
         try {
-            const portId = attributes.get('port_id');
-            const channelId = attributes.get('channel_id');
+            const portId = attributes.port_id;
+            const channelId = attributes.channel_id;
             
             if (!portId || !channelId) {
                 logger.warn('[IBCChannelService] Missing required attributes for channel_close_init event');
@@ -322,15 +322,15 @@ export class IBCChannelService {
      * Updates the channel state to CLOSED
      */
     private async handleChannelCloseConfirm(
-        attributes: Map<string, string>,
+        attributes: Record<string, string>,
         txHash: string,
         height: number,
         timestamp: Date,
         network: Network
     ): Promise<void> {
         try {
-            const portId = attributes.get('port_id');
-            const channelId = attributes.get('channel_id');
+            const portId = attributes.port_id;
+            const channelId = attributes.channel_id;
             
             if (!portId || !channelId) {
                 logger.warn('[IBCChannelService] Missing required attributes for channel_close_confirm event');
@@ -383,50 +383,127 @@ export class IBCChannelService {
     
     /**
      * Helper method to extract attributes from event
-     * Converts array of key/value attributes to a map for easier access
+     * Converts array of key/value attributes to a record for easier access
      */
-    private extractEventAttributes(event: any): Map<string, string> {
-        const attributesMap = new Map<string, string>();
+    private extractEventAttributes(event: any): Record<string, string> {
+        const attributes: Record<string, string> = {};
         
-        if (event.attributes && Array.isArray(event.attributes)) {
-            for (const attr of event.attributes) {
-                if (attr.key && attr.value) {
-                    // Keys and values might be base64 encoded
-                    try {
-                        const key = this.decodeBase64(attr.key);
-                        const value = this.decodeBase64(attr.value);
-                        attributesMap.set(key, value);
-                    } catch (err) {
-                        // If decoding fails, use the original values
-                        attributesMap.set(attr.key, attr.value);
-                    }
+        if (!event.attributes || !Array.isArray(event.attributes)) {
+            return attributes;
+        }
+        
+        for (const attr of event.attributes) {
+            if (attr.key && attr.value) {
+                attributes[attr.key] = attr.value;
+            }
+        }
+        
+        return attributes;
+    }
+
+    /**
+     * Process packet events to update channel statistics
+     * @param event Packet event data
+     * @param txHash Transaction hash
+     * @param height Block height
+     * @param timestamp Block timestamp
+     * @param network Network where the event occurred
+     * @param relayerAddress Optional relayer address
+     */
+    public async processPacketStatistics(
+        event: any,
+        txHash: string,
+        height: number,
+        timestamp: Date,
+        network: Network,
+        relayerAddress?: string
+    ): Promise<void> {
+        try {
+            const attributes = this.extractEventAttributes(event);
+            
+            // For different event types, we need to update different channels:
+            // - send_packet: update source channel (packet leaving our network)  
+            // - recv_packet: update destination channel (packet arriving to our network)
+            // - acknowledge_packet: update source channel (acknowledging our sent packet)
+            // - timeout_packet: update source channel (our packet timed out)
+            
+            let channelToUpdate = '';
+            let portToUpdate = '';
+            
+            if (event.type === 'recv_packet') {
+                // For received packets, update the destination channel (our network's channel)
+                channelToUpdate = attributes.packet_dst_channel;
+                portToUpdate = attributes.packet_dst_port;
+            } else {
+                // For sent packets, acknowledgments, and timeouts, update the source channel
+                channelToUpdate = attributes.packet_src_channel;
+                portToUpdate = attributes.packet_src_port;
+            }
+            
+            if (!portToUpdate || !channelToUpdate) {
+                return;
+            }
+
+            // Extract packet data for token information if available
+            let tokenAmount = '';
+            let tokenDenom = '';
+            
+            const packetData = attributes.packet_data;
+            if (packetData) {
+                try {
+                    const data = JSON.parse(packetData);
+                    tokenAmount = data.amount || '';
+                    tokenDenom = data.denom || '';
+                } catch (error) {
+                    // Ignore parsing errors
                 }
             }
-        }
-        
-        return attributesMap;
-    }
-    
-    /**
-     * Decode base64 string
-     */
-    private decodeBase64(str: string): string {
-        try {
-            // Check if the string is base64 encoded
-            if (this.isBase64(str)) {
-                return Buffer.from(str, 'base64').toString('utf8');
+
+            let success = false;
+            let timeout = false;
+            let completionTimeMs = 0;
+
+            // Determine packet outcome based on event type
+            switch (event.type) {
+                case 'send_packet':
+                    // Send events don't update completion statistics yet
+                    return;
+                    
+                case 'recv_packet':
+                    success = true;
+                    break;
+                    
+                case 'acknowledge_packet':
+                    success = true;
+                    // For acknowledgments, we can calculate completion time if we have send time
+                    break;
+                    
+                case 'timeout_packet':
+                    timeout = true;
+                    break;
+                    
+                default:
+                    return;
             }
-            return str;
-        } catch {
-            return str;
+
+            // Update channel statistics
+            await this.channelRepository.updatePacketStats(
+                channelToUpdate,
+                portToUpdate,
+                {
+                    success,
+                    timeout,
+                    completionTimeMs,
+                    tokenAmount,
+                    tokenDenom,
+                    relayerAddress
+                },
+                network
+            );
+
+            logger.debug(`[IBCChannelService] Updated statistics for channel ${channelToUpdate}/${portToUpdate} (${event.type})`);
+        } catch (error) {
+            logger.error(`[IBCChannelService] Error processing packet statistics: ${error instanceof Error ? error.message : String(error)}`);
         }
-    }
-    
-    /**
-     * Check if string is base64 encoded
-     */
-    private isBase64(str: string): boolean {
-        const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-        return base64Regex.test(str);
     }
 }

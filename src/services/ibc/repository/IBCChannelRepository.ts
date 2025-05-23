@@ -316,4 +316,89 @@ export class IBCChannelRepository {
             throw error;
         }
     }
+
+    /**
+     * Update packet statistics for a channel
+     * @param channelId Channel ID
+     * @param portId Port ID
+     * @param packetData Packet data containing success/failure info
+     * @param network Network
+     */
+    public async updatePacketStats(
+        channelId: string, 
+        portId: string, 
+        packetData: {
+            success: boolean;
+            timeout: boolean;
+            completionTimeMs?: number;
+            tokenAmount?: string;
+            tokenDenom?: string;
+            relayerAddress?: string;
+        },
+        network: Network
+    ): Promise<void> {
+        try {
+            const updateOps: any = {
+                $inc: {
+                    packet_count: 1
+                },
+                $set: {
+                    updated_at: new Date()
+                }
+            };
+
+            // Update success/failure counters
+            if (packetData.timeout) {
+                updateOps.$inc.timeout_count = 1;
+            } else if (packetData.success) {
+                updateOps.$inc.success_count = 1;
+            } else {
+                updateOps.$inc.failure_count = 1;
+            }
+
+            // Update completion time average
+            if (packetData.completionTimeMs && packetData.completionTimeMs > 0) {
+                const channel = await IBCChannelModel.findOne({
+                    channel_id: channelId,
+                    port_id: portId,
+                    network: network.toString()
+                });
+
+                if (channel) {
+                    const currentAvg = channel.avg_completion_time_ms || 0;
+                    const currentCount = channel.packet_count || 0;
+                    const newAvg = ((currentAvg * currentCount) + packetData.completionTimeMs) / (currentCount + 1);
+                    updateOps.$set.avg_completion_time_ms = newAvg;
+                }
+            }
+
+            // Update token transfer totals
+            if (packetData.tokenAmount && packetData.tokenDenom) {
+                const tokenKey = `total_tokens_transferred.${packetData.tokenDenom}`;
+                updateOps.$inc = updateOps.$inc || {};
+                updateOps.$inc[tokenKey] = parseInt(packetData.tokenAmount);
+            }
+
+            // Update active relayers list
+            if (packetData.relayerAddress) {
+                updateOps.$addToSet = {
+                    active_relayers: packetData.relayerAddress
+                };
+            }
+
+            await IBCChannelModel.updateOne(
+                {
+                    channel_id: channelId,
+                    port_id: portId,
+                    network: network.toString()
+                },
+                updateOps,
+                { upsert: false }
+            );
+
+            logger.debug(`[IBCChannelRepository] Updated packet stats for channel ${channelId}`);
+        } catch (error) {
+            logger.error(`[IBCChannelRepository] Error updating packet stats: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
 }

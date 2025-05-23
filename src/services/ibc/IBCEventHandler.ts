@@ -136,9 +136,14 @@ export class IBCEventHandler {
                                 this.packetService.processPacketEvent(event, hash, height, timestamp, network)
                             );
                             
-                            // Also track relayers
+                            // Track relayers
                             eventProcessingPromises.push(
                                 this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
+                            );
+                            
+                            // Update channel statistics
+                            eventProcessingPromises.push(
+                                this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer)
                             );
                             
                             // For ack events, we need to update any associated transfer
@@ -153,9 +158,14 @@ export class IBCEventHandler {
                                 this.packetService.processPacketEvent(event, hash, height, timestamp, network)
                             );
                             
-                            // Also track relayers
+                            // Track relayers
                             eventProcessingPromises.push(
                                 this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
+                            );
+                            
+                            // Update channel statistics
+                            eventProcessingPromises.push(
+                                this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer)
                             );
                             
                             // For timeout events, we need to update any associated transfer as failed
@@ -170,9 +180,14 @@ export class IBCEventHandler {
                                 this.packetService.processPacketEvent(event, hash, height, timestamp, network)
                             );
                             
-                            // Also process this event to identify and track relayers
+                            // Track relayers
                             eventProcessingPromises.push(
                                 this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
+                            );
+                            
+                            // Update channel statistics
+                            eventProcessingPromises.push(
+                                this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer)
                             );
                             
                             // If this is a transfer event, process it with the transfer service

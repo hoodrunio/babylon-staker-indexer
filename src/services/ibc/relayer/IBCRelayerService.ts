@@ -1,6 +1,13 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { IBCRelayerRepository } from '../repository/IBCRelayerRepository';
+import { IBCChainResolverService } from '../transfer/services/IBCChainResolverService';
+import { 
+    IBCChannelRepositoryAdapter, 
+    IBCConnectionRepositoryAdapter,
+    IBCClientRepositoryAdapter 
+} from '../transfer/repository/adapters/RepositoryAdapters';
+import { BabylonClient } from '../../../clients/BabylonClient';
 
 /**
  * Service responsible for tracking and managing IBC relayers
@@ -8,9 +15,24 @@ import { IBCRelayerRepository } from '../repository/IBCRelayerRepository';
  */
 export class IBCRelayerService {
     private relayerRepository: IBCRelayerRepository;
+    private chainResolverService: IBCChainResolverService;
 
     constructor() {
         this.relayerRepository = new IBCRelayerRepository();
+        
+        // Create repository adapters for chain resolution
+        const channelRepository = new IBCChannelRepositoryAdapter();
+        const connectionRepository = new IBCConnectionRepositoryAdapter();
+        const clientRepository = new IBCClientRepositoryAdapter();
+        const babylonClient = BabylonClient.getInstance();
+        
+        // Create chain resolver service
+        this.chainResolverService = new IBCChainResolverService(
+            channelRepository, 
+            connectionRepository, 
+            clientRepository, 
+            babylonClient
+        );
     }
 
     /**
@@ -32,9 +54,6 @@ export class IBCRelayerService {
     ): Promise<void> {
         try {
             logger.debug(`[IBCRelayerService] Processing event for relayer tracking: ${event.type} in tx ${txHash}`);
-            
-            // For IBC transactions, the signer information comes directly from the message content
-            // and is passed to us via the txSigner parameter
             
             // Extract event attributes once (we'll use these for both signer and packet info)
             const attributes = this.extractEventAttributes(event);
@@ -64,6 +83,8 @@ export class IBCRelayerService {
             // Extract packet information from event
             const sourcePort = attributes.packet_src_port;
             const sourceChannel = attributes.packet_src_channel;
+            const destPort = attributes.packet_dst_port;
+            const destChannel = attributes.packet_dst_channel;
             const sequence = attributes.packet_sequence;
             
             if (!sourcePort || !sourceChannel || !sequence) {
@@ -102,7 +123,30 @@ export class IBCRelayerService {
                     return;
             }
             
-            // Create relayer activity record
+            // Resolve chain information using the same service as transfer
+            let sourceChainId = '';
+            let destChainId = '';
+            
+            try {
+                const chainInfo = await this.chainResolverService.getTransferChainInfo(
+                    event.type,
+                    sourceChannel,
+                    sourcePort,
+                    destChannel,
+                    destPort,
+                    network
+                );
+                
+                if (chainInfo) {
+                    sourceChainId = chainInfo.source?.chain_id || '';
+                    destChainId = chainInfo.destination?.chain_id || '';
+                    logger.debug(`[IBCRelayerService] Resolved chains: ${sourceChainId} -> ${destChainId}`);
+                }
+            } catch (error) {
+                logger.debug(`[IBCRelayerService] Could not resolve chain info: ${error instanceof Error ? error.message : String(error)}`);
+            }
+            
+            // Create relayer activity record with complete information
             const relayerData = {
                 address: signer,
                 tx_hash: txHash,
@@ -111,9 +155,16 @@ export class IBCRelayerService {
                 action,
                 source_port: sourcePort,
                 source_channel: sourceChannel,
+                destination_port: destPort,
+                destination_channel: destChannel,
                 sequence,
-                success,  // Track whether the relay was successful
-                network: network.toString()
+                success,
+                network: network.toString(),
+                // Additional fields for statistics
+                channel_id: sourceChannel,
+                port_id: sourcePort,
+                source_chain_id: sourceChainId,
+                destination_chain_id: destChainId
             };
             
             // Log success or failure for monitoring
