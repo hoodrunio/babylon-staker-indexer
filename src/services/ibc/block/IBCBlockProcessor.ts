@@ -10,12 +10,19 @@ import { EventContext } from '../interfaces/IBCEventProcessor';
  */
 export class IBCBlockProcessor {
     private babylonClient: BabylonClient;
-    private eventDispatcher: IBCEventDispatcher;
+    private eventDispatcher: IBCEventDispatcher | null = null;
 
-    constructor(babylonClient: BabylonClient) {
+    constructor(babylonClient: BabylonClient, eventDispatcher?: IBCEventDispatcher) {
         this.babylonClient = babylonClient;
-        this.eventDispatcher = new IBCEventDispatcher();
+        this.eventDispatcher = eventDispatcher || null;
         logger.info('[IBCBlockProcessor] Initialized');
+    }
+
+    /**
+     * Set the event dispatcher (used for dependency injection)
+     */
+    public setEventDispatcher(eventDispatcher: IBCEventDispatcher): void {
+        this.eventDispatcher = eventDispatcher;
     }
 
     /**
@@ -66,7 +73,7 @@ export class IBCBlockProcessor {
                     const hasIBCEvents = this.hasIBCEvents(events);
 
                     // Process IBC events if found
-                    if (hasIBCEvents) {
+                    if (hasIBCEvents && this.eventDispatcher) {
                         const context: EventContext = {
                             height,
                             txHash,
@@ -80,6 +87,8 @@ export class IBCBlockProcessor {
                             events: events
                         };
                         await this.eventDispatcher.dispatchEvents(txData, context, network);
+                    } else if (hasIBCEvents && !this.eventDispatcher) {
+                        logger.warn(`[IBCBlockProcessor] IBC events found but no event dispatcher available for block ${height}`);
                     }
                 } catch (txError) {
                     logger.error(`[IBCBlockProcessor] Error processing transaction in block ${height}: ${txError instanceof Error ? txError.message : String(txError)}`);

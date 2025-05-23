@@ -1,18 +1,19 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
-import { IBCEventHandler } from '../IBCEventHandler';
+import { IBCEventHandler, TransactionData } from '../events/IBCEventHandler';
 import { EventContext } from '../interfaces/IBCEventProcessor';
 
 /**
  * Dispatches IBC events to appropriate handlers
  * This acts as an intermediary between block processing and event handling
+ * Uses dependency injection for better testability
  */
 export class IBCEventDispatcher {
     private eventHandler: IBCEventHandler;
 
-    constructor() {
-        this.eventHandler = IBCEventHandler.getInstance();
-        logger.info('[IBCEventDispatcher] Initialized');
+    constructor(eventHandler: IBCEventHandler) {
+        this.eventHandler = eventHandler;
+        logger.info('[IBCEventDispatcher] Initialized with dependency injection');
     }
 
     /**
@@ -28,10 +29,12 @@ export class IBCEventDispatcher {
     ): Promise<void> {
         try {
             // Map the transaction data to the format expected by the IBCEventHandler
-            const ibcTxData = {
+            const ibcTxData: TransactionData = {
                 height: context.height,
                 hash: txData.hash || '',
-                events: txData.events || []
+                events: txData.events || [],
+                signer: txData.signer || '',
+                timestamp: context.timestamp ? context.timestamp.toISOString() : new Date().toISOString()
             };
 
             // Forward to the event handler
