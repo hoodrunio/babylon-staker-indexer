@@ -334,6 +334,7 @@ export class IBCChannelRepository {
             tokenAmount?: string;
             tokenDenom?: string;
             relayerAddress?: string;
+            direction?: 'incoming' | 'outgoing'; // New field for transfer direction
         },
         network: Network
     ): Promise<void> {
@@ -372,11 +373,15 @@ export class IBCChannelRepository {
                 }
             }
 
-            // Update token transfer totals
-            if (packetData.tokenAmount && packetData.tokenDenom) {
-                const tokenKey = `total_tokens_transferred.${packetData.tokenDenom}`;
-                updateOps.$inc = updateOps.$inc || {};
-                updateOps.$inc[tokenKey] = parseInt(packetData.tokenAmount);
+            // Update token transfer totals with direction
+            if (packetData.tokenAmount && packetData.tokenDenom && packetData.direction) {
+                const amount = parseInt(packetData.tokenAmount);
+                if (!isNaN(amount) && amount > 0) {
+                    const directionKey = packetData.direction === 'incoming' ? 'incoming' : 'outgoing';
+                    const tokenKey = `total_tokens_transferred.${directionKey}.${packetData.tokenDenom}`;
+                    updateOps.$inc = updateOps.$inc || {};
+                    updateOps.$inc[tokenKey] = amount;
+                }
             }
 
             // Update active relayers list
@@ -396,7 +401,7 @@ export class IBCChannelRepository {
                 { upsert: false }
             );
 
-            logger.debug(`[IBCChannelRepository] Updated packet stats for channel ${channelId}`);
+            logger.debug(`[IBCChannelRepository] Updated packet stats for channel ${channelId} (${packetData.direction || 'unknown direction'})`);
         } catch (error) {
             logger.error(`[IBCChannelRepository] Error updating packet stats: ${error instanceof Error ? error.message : String(error)}`);
         }

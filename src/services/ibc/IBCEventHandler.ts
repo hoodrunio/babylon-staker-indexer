@@ -108,7 +108,7 @@ export class IBCEventHandler {
                     }
                     else if (this.isPacketEvent(event)) {
                         // Special handling for fungible_token_packet events
-                        // These should only go to the transfer service and relayer service
+                        // These should only go to the relayer service and relayer service
                         if (event.type === 'fungible_token_packet') {
                             // Process with relayer service
                             eventProcessingPromises.push(
@@ -141,9 +141,43 @@ export class IBCEventHandler {
                                 this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
                             );
                             
-                            // Update channel statistics
+                            // Update channel statistics with token information from fungible_token_packet
+                            // Find the fungible_token_packet event in the same transaction for token details
+                            // Note: There are typically TWO fungible_token_packet events in acknowledgment transactions:
+                            // 1. One with token details (amount, denom, sender, receiver, etc.)
+                            // 2. One with just success status
+                            // We need to find the one with token details
+                            const fungibleTokenEvents = events.filter(e => e.type === 'fungible_token_packet');
+                            let tokenAmount = '';
+                            let tokenDenom = '';
+                            
+                            // Look for the event that contains amount and denom attributes
+                            for (const ftEvent of fungibleTokenEvents) {
+                                if (ftEvent.attributes) {
+                                    let hasAmount = false;
+                                    let hasDenom = false;
+                                    
+                                    for (const attr of ftEvent.attributes) {
+                                        if (attr.key === 'amount' && attr.value) {
+                                            tokenAmount = attr.value;
+                                            hasAmount = true;
+                                        } else if (attr.key === 'denom' && attr.value) {
+                                            tokenDenom = attr.value;
+                                            hasDenom = true;
+                                        }
+                                    }
+                                    
+                                    // If we found both amount and denom in this event, we're done
+                                    if (hasAmount && hasDenom) {
+                                        break;
+                                    }
+                                }
+                            }
+                            
                             eventProcessingPromises.push(
-                                this.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer)
+                                this.channelService.processPacketStatistics(
+                                    event, hash, height, timestamp, network, signer, tokenAmount, tokenDenom
+                                )
                             );
                             
                             // For ack events, we need to update any associated transfer

@@ -19,7 +19,10 @@ export interface IBCChannel extends Document {
   failure_count: number;
   timeout_count: number;
   avg_completion_time_ms: number;
-  total_tokens_transferred: Map<string, number>; // denomination -> amount
+  total_tokens_transferred: {
+    incoming: Map<string, number>; // denomination -> amount for incoming transfers
+    outgoing: Map<string, number>; // denomination -> amount for outgoing transfers
+  };
   active_relayers: string[];
   
   // Network metadata
@@ -54,10 +57,17 @@ const IBCChannelSchema = new Schema<IBCChannel>({
   failure_count: { type: Number, default: 0 },
   timeout_count: { type: Number, default: 0 },
   avg_completion_time_ms: { type: Number, default: 0 },
-  total_tokens_transferred: { 
-    type: Map, 
-    of: Number,
-    default: new Map() 
+  total_tokens_transferred: {
+    incoming: { 
+      type: Map, 
+      of: Number,
+      default: new Map() 
+    },
+    outgoing: { 
+      type: Map, 
+      of: Number,
+      default: new Map() 
+    }
   },
   active_relayers: [{ type: String }],
   

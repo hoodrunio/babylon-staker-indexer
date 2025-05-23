@@ -110,7 +110,10 @@ export class IBCChannelService {
                 failure_count: 0,
                 timeout_count: 0,
                 avg_completion_time_ms: 0,
-                total_tokens_transferred: new Map(),
+                total_tokens_transferred: {
+                    incoming: new Map(),
+                    outgoing: new Map()
+                },
                 active_relayers: [],
                 
                 // Creation metadata
@@ -188,7 +191,10 @@ export class IBCChannelService {
                     failure_count: 0,
                     timeout_count: 0,
                     avg_completion_time_ms: 0,
-                    total_tokens_transferred: new Map(),
+                    total_tokens_transferred: {
+                        incoming: new Map(),
+                        outgoing: new Map()
+                    },
                     active_relayers: [],
                     
                     // Creation metadata
@@ -409,6 +415,8 @@ export class IBCChannelService {
      * @param timestamp Block timestamp
      * @param network Network where the event occurred
      * @param relayerAddress Optional relayer address
+     * @param externalTokenAmount Optional token amount from external source (e.g., fungible_token_packet)
+     * @param externalTokenDenom Optional token denom from external source (e.g., fungible_token_packet)
      */
     public async processPacketStatistics(
         event: any,
@@ -416,7 +424,9 @@ export class IBCChannelService {
         height: number,
         timestamp: Date,
         network: Network,
-        relayerAddress?: string
+        relayerAddress?: string,
+        externalTokenAmount?: string,
+        externalTokenDenom?: string
     ): Promise<void> {
         try {
             const attributes = this.extractEventAttributes(event);
@@ -445,25 +455,29 @@ export class IBCChannelService {
             }
 
             // Extract packet data for token information if available
-            let tokenAmount = '';
-            let tokenDenom = '';
+            let tokenAmount = externalTokenAmount || '';
+            let tokenDenom = externalTokenDenom || '';
             
-            const packetData = attributes.packet_data;
-            if (packetData) {
-                try {
-                    const data = JSON.parse(packetData);
-                    tokenAmount = data.amount || '';
-                    tokenDenom = data.denom || '';
-                } catch (error) {
-                    // Ignore parsing errors
+            // If external token info not provided, try to get from packet_data
+            if (!tokenAmount || !tokenDenom) {
+                const packetData = attributes.packet_data;
+                if (packetData) {
+                    try {
+                        const data = JSON.parse(packetData);
+                        tokenAmount = tokenAmount || data.amount || '';
+                        tokenDenom = tokenDenom || data.denom || '';
+                    } catch (error) {
+                        // Ignore parsing errors
+                    }
                 }
             }
 
             let success = false;
             let timeout = false;
             let completionTimeMs = 0;
+            let direction: 'incoming' | 'outgoing' | undefined;
 
-            // Determine packet outcome based on event type
+            // Determine packet outcome and direction based on event type
             switch (event.type) {
                 case 'send_packet':
                     // Send events don't update completion statistics yet
@@ -471,15 +485,18 @@ export class IBCChannelService {
                     
                 case 'recv_packet':
                     success = true;
+                    direction = 'incoming'; // Receiving packets means incoming transfers
                     break;
                     
                 case 'acknowledge_packet':
                     success = true;
+                    direction = 'outgoing'; // Acknowledging means we sent a packet (outgoing)
                     // For acknowledgments, we can calculate completion time if we have send time
                     break;
                     
                 case 'timeout_packet':
                     timeout = true;
+                    direction = 'outgoing'; // Timeout means our outgoing packet failed
                     break;
                     
                 default:
@@ -496,12 +513,13 @@ export class IBCChannelService {
                     completionTimeMs,
                     tokenAmount,
                     tokenDenom,
-                    relayerAddress
+                    relayerAddress,
+                    direction
                 },
                 network
             );
 
-            logger.debug(`[IBCChannelService] Updated statistics for channel ${channelToUpdate}/${portToUpdate} (${event.type})`);
+            logger.debug(`[IBCChannelService] Updated statistics for channel ${channelToUpdate}/${portToUpdate} (${event.type}, ${direction}, ${tokenAmount} ${tokenDenom})`);
         } catch (error) {
             logger.error(`[IBCChannelService] Error processing packet statistics: ${error instanceof Error ? error.message : String(error)}`);
         }
