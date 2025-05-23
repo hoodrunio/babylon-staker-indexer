@@ -1,16 +1,18 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { IBCPacketRepository } from '../repository/IBCPacketRepository';
+import { IBCEventUtils } from '../common/IBCEventUtils';
 
 /**
  * Service responsible for processing and managing IBC packet data
  * Following Single Responsibility Principle - focuses only on packet operations
  */
 export class IBCPacketService {
+    private readonly serviceName = 'IBCPacketService';
     private packetRepository: IBCPacketRepository;
 
-    constructor() {
-        this.packetRepository = new IBCPacketRepository();
+    constructor(packetRepository?: IBCPacketRepository) {
+        this.packetRepository = packetRepository || new IBCPacketRepository();
     }
 
     /**
@@ -29,10 +31,10 @@ export class IBCPacketService {
         network: Network
     ): Promise<void> {
         try {
-            logger.debug(`[IBCPacketService] Processing packet event: ${event.type} in tx ${txHash}`);
+            IBCEventUtils.logEventStart(this.serviceName, event.type, txHash);
             
             // Extract attributes from event
-            const attributes = this.extractEventAttributes(event);
+            const attributes = IBCEventUtils.extractEventAttributes(event);
             
             switch (event.type) {
                 case 'send_packet':
@@ -47,19 +49,12 @@ export class IBCPacketService {
                 case 'timeout_packet':
                     await this.handleTimeoutPacket(attributes, txHash, height, timestamp, network);
                     break;
-                case 'write_acknowledgement':
-                    await this.handleWriteAcknowledgement(attributes, txHash, height, timestamp, network);
-                    break;
-                case 'fungible_token_packet':
-                    // fungible_token_packet events are handled by the transfer service
-                    // no need to process them here, but we should not log them as unhandled
-                    logger.debug(`[IBCPacketService] Delegating fungible_token_packet to transfer service`);
-                    break;
                 default:
-                    logger.debug(`[IBCPacketService] Unhandled packet event type: ${event.type}`);
+                    // Do not log unhandled events as warnings - they may be processed by other services
+                    break;
             }
         } catch (error) {
-            logger.error(`[IBCPacketService] Error processing packet event: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, event.type, error);
         }
     }
 
@@ -93,9 +88,9 @@ export class IBCPacketService {
             };
             
             await this.packetRepository.savePacket(fullPacketData, network);
-            logger.info(`[IBCPacketService] Packet sent: ${packetData.source_port}/${packetData.source_channel}/${packetData.sequence} at height ${height}`);
+            IBCEventUtils.logEventSuccess(this.serviceName, 'send_packet', `Packet sent: ${packetData.source_port}/${packetData.source_channel}/${packetData.sequence}`, height);
         } catch (error) {
-            logger.error(`[IBCPacketService] Error handling send_packet: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'send_packet', error);
         }
     }
 
@@ -244,54 +239,6 @@ export class IBCPacketService {
     }
 
     /**
-     * Handle write acknowledgement events
-     */
-    private async handleWriteAcknowledgement(
-        attributes: Record<string, string>,
-        txHash: string,
-        height: number,
-        timestamp: Date,
-        network: Network
-    ): Promise<void> {
-        try {
-            const packetData = this.extractPacketDataFromAttributes(attributes);
-            
-            if (!packetData.sequence || !packetData.source_port || !packetData.source_channel) {
-                logger.warn(`[IBCPacketService] Missing required attributes for write_acknowledgement`);
-                return;
-            }
-            
-            // Get existing packet data if available
-            const existingPacketDoc = await this.packetRepository.getPacket(
-                packetData.source_port, 
-                packetData.source_channel, 
-                packetData.sequence, 
-                network
-            );
-            
-            // Convert MongoDB document to plain object
-            const existingPacket = existingPacketDoc?.toObject ? existingPacketDoc.toObject() : existingPacketDoc;
-            
-            // Add write ack-specific data
-            const fullPacketData = {
-                ...(existingPacket || {}),
-                ...packetData,
-                status: 'ACK_WRITTEN',
-                write_ack_tx_hash: txHash,
-                write_ack_height: height,
-                write_ack_time: timestamp,
-                network: network.toString(),
-                last_updated: timestamp
-            };
-            
-            await this.packetRepository.savePacket(fullPacketData, network);
-            logger.info(`[IBCPacketService] Packet acknowledgement written: ${packetData.source_port}/${packetData.source_channel}/${packetData.sequence} at height ${height}`);
-        } catch (error) {
-            logger.error(`[IBCPacketService] Error handling write_acknowledgement: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /**
      * Extract packet data from event attributes
      */
     private extractPacketDataFromAttributes(attributes: Record<string, string>): any {
@@ -330,24 +277,5 @@ export class IBCPacketService {
         }
         
         return packetData;
-    }
-
-    /**
-     * Extract attributes from an event into a key-value map
-     */
-    private extractEventAttributes(event: any): Record<string, string> {
-        const attributes: Record<string, string> = {};
-        
-        if (!event.attributes || !Array.isArray(event.attributes)) {
-            return attributes;
-        }
-        
-        for (const attr of event.attributes) {
-            if (attr.key && attr.value) {
-                attributes[attr.key] = attr.value;
-            }
-        }
-        
-        return attributes;
     }
 }

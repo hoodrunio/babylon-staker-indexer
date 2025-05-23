@@ -1,16 +1,18 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { IBCConnectionRepository } from '../repository/IBCConnectionRepository';
+import { IBCEventUtils } from '../common/IBCEventUtils';
 
 /**
  * Service responsible for processing and managing IBC connection data
  * Following Single Responsibility Principle - focuses only on connection operations
  */
 export class IBCConnectionService {
+    private readonly serviceName = 'IBCConnectionService';
     private connectionRepository: IBCConnectionRepository;
 
-    constructor() {
-        this.connectionRepository = new IBCConnectionRepository();
+    constructor(connectionRepository?: IBCConnectionRepository) {
+        this.connectionRepository = connectionRepository || new IBCConnectionRepository();
     }
 
     /**
@@ -29,10 +31,10 @@ export class IBCConnectionService {
         network: Network
     ): Promise<void> {
         try {
-            logger.debug(`[IBCConnectionService] Processing connection event: ${event.type} in tx ${txHash}`);
+            IBCEventUtils.logEventStart(this.serviceName, event.type, txHash);
             
             // Extract attributes from event
-            const attributes = this.extractEventAttributes(event);
+            const attributes = IBCEventUtils.extractEventAttributes(event);
             
             switch (event.type) {
                 case 'connection_open_init':
@@ -48,15 +50,16 @@ export class IBCConnectionService {
                     await this.handleConnectionOpenConfirm(attributes, txHash, height, timestamp, network);
                     break;
                 default:
-                    logger.debug(`[IBCConnectionService] Unhandled connection event type: ${event.type}`);
+                    // Do not log unhandled events as warnings - they may be processed by other services
+                    break;
             }
         } catch (error) {
-            logger.error(`[IBCConnectionService] Error processing connection event: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, event.type, error);
         }
     }
 
     /**
-     * Handle connection open init events
+     * Handle connection_open_init events
      */
     private async handleConnectionOpenInit(
         attributes: Record<string, string>,
@@ -71,31 +74,31 @@ export class IBCConnectionService {
             const counterpartyClientId = attributes.counterparty_client_id;
             
             if (!connectionId || !clientId || !counterpartyClientId) {
-                logger.warn(`[IBCConnectionService] Missing required attributes for connection_open_init`);
+                logger.warn(`[${this.serviceName}] Missing required attributes for connection_open_init`);
                 return;
             }
             
             const connectionData = {
                 connection_id: connectionId,
                 client_id: clientId,
+                counterparty_connection_id: '',  // Will be set in try/ack
                 counterparty_client_id: counterpartyClientId,
-                counterparty_connection_id: '', // Will be populated in later events
                 state: 'INIT',
                 tx_hash: txHash,
-                height,
-                timestamp,
+                created_at: timestamp,
+                updated_at: timestamp,
                 network: network.toString()
             };
             
             await this.connectionRepository.saveConnection(connectionData, network);
-            logger.info(`[IBCConnectionService] Connection initialized: ${connectionId} at height ${height}`);
+            IBCEventUtils.logEventSuccess(this.serviceName, 'connection_open_init', `Connection initialized: ${connectionId}`, height);
         } catch (error) {
-            logger.error(`[IBCConnectionService] Error handling connection_open_init: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'connection_open_init', error);
         }
     }
 
     /**
-     * Handle connection open try events
+     * Handle connection_open_try events
      */
     private async handleConnectionOpenTry(
         attributes: Record<string, string>,
@@ -111,31 +114,31 @@ export class IBCConnectionService {
             const counterpartyClientId = attributes.counterparty_client_id;
             
             if (!connectionId || !clientId || !counterpartyConnectionId || !counterpartyClientId) {
-                logger.warn(`[IBCConnectionService] Missing required attributes for connection_open_try`);
+                logger.warn(`[${this.serviceName}] Missing required attributes for connection_open_try`);
                 return;
             }
             
             const connectionData = {
                 connection_id: connectionId,
                 client_id: clientId,
-                counterparty_client_id: counterpartyClientId,
                 counterparty_connection_id: counterpartyConnectionId,
+                counterparty_client_id: counterpartyClientId,
                 state: 'TRYOPEN',
                 tx_hash: txHash,
-                height,
-                timestamp,
+                created_at: timestamp,
+                updated_at: timestamp,
                 network: network.toString()
             };
             
             await this.connectionRepository.saveConnection(connectionData, network);
-            logger.info(`[IBCConnectionService] Connection try open: ${connectionId} at height ${height}`);
+            IBCEventUtils.logEventSuccess(this.serviceName, 'connection_open_try', `Connection try open: ${connectionId}`, height);
         } catch (error) {
-            logger.error(`[IBCConnectionService] Error handling connection_open_try: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'connection_open_try', error);
         }
     }
 
     /**
-     * Handle connection open ack events
+     * Handle connection_open_ack events
      */
     private async handleConnectionOpenAck(
         attributes: Record<string, string>,
@@ -149,7 +152,7 @@ export class IBCConnectionService {
             const counterpartyConnectionId = attributes.counterparty_connection_id;
             
             if (!connectionId || !counterpartyConnectionId) {
-                logger.warn(`[IBCConnectionService] Missing required attributes for connection_open_ack`);
+                logger.warn(`[${this.serviceName}] Missing required attributes for connection_open_ack`);
                 return;
             }
             
@@ -162,20 +165,19 @@ export class IBCConnectionService {
                 counterparty_connection_id: counterpartyConnectionId,
                 state: 'OPEN',
                 tx_hash: txHash,
-                height,
-                timestamp,
+                updated_at: timestamp,
                 network: network.toString()
             };
             
             await this.connectionRepository.saveConnection(connectionData, network);
-            logger.info(`[IBCConnectionService] Connection acknowledged: ${connectionId} at height ${height}`);
+            IBCEventUtils.logEventSuccess(this.serviceName, 'connection_open_ack', `Connection acknowledged: ${connectionId}`, height);
         } catch (error) {
-            logger.error(`[IBCConnectionService] Error handling connection_open_ack: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'connection_open_ack', error);
         }
     }
 
     /**
-     * Handle connection open confirm events
+     * Handle connection_open_confirm events
      */
     private async handleConnectionOpenConfirm(
         attributes: Record<string, string>,
@@ -188,7 +190,7 @@ export class IBCConnectionService {
             const connectionId = attributes.connection_id;
             
             if (!connectionId) {
-                logger.warn(`[IBCConnectionService] Missing required attributes for connection_open_confirm`);
+                logger.warn(`[${this.serviceName}] Missing required attributes for connection_open_confirm`);
                 return;
             }
             
@@ -200,34 +202,28 @@ export class IBCConnectionService {
                 connection_id: connectionId,
                 state: 'OPEN',
                 tx_hash: txHash,
-                height,
-                timestamp,
+                updated_at: timestamp,
                 network: network.toString()
             };
             
             await this.connectionRepository.saveConnection(connectionData, network);
-            logger.info(`[IBCConnectionService] Connection confirmed: ${connectionId} at height ${height}`);
+            IBCEventUtils.logEventSuccess(this.serviceName, 'connection_open_confirm', `Connection confirmed: ${connectionId}`, height);
         } catch (error) {
-            logger.error(`[IBCConnectionService] Error handling connection_open_confirm: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'connection_open_confirm', error);
         }
     }
 
     /**
-     * Extract attributes from an event into a key-value map
+     * Get a connection by ID
      */
-    private extractEventAttributes(event: any): Record<string, string> {
-        const attributes: Record<string, string> = {};
-        
-        if (!event.attributes || !Array.isArray(event.attributes)) {
-            return attributes;
-        }
-        
-        for (const attr of event.attributes) {
-            if (attr.key && attr.value) {
-                attributes[attr.key] = attr.value;
-            }
-        }
-        
-        return attributes;
+    public async getConnection(connectionId: string, network: Network): Promise<any> {
+        return this.connectionRepository.getConnection(connectionId, network);
+    }
+
+    /**
+     * Get all connections for a specific counterparty chain
+     */
+    public async getConnectionsByCounterparty(counterpartyChainId: string, network: Network): Promise<any[]> {
+        return this.connectionRepository.getConnectionsByCounterpartyChain(counterpartyChainId, network);
     }
 }

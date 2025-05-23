@@ -1,5 +1,6 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
+import { IBCEventUtils } from '../common/IBCEventUtils';
 
 // Service interfaces
 import { IBCChannelService } from '../channel/IBCChannelService';
@@ -243,7 +244,7 @@ export class IBCEventHandler {
      * Extract token information from a specific fungible_token_packet event
      */
     private extractTokenInfoFromEvent(event: any): { tokenAmount: string; tokenDenom: string } {
-        const attributes = this.extractEventAttributes(event);
+        const attributes = IBCEventUtils.extractEventAttributes(event);
         return {
             tokenAmount: attributes.amount || '0',
             tokenDenom: attributes.denom || 'unknown'
@@ -257,7 +258,7 @@ export class IBCEventHandler {
         const fungibleEvents = events.filter(e => e.type === 'fungible_token_packet');
         
         if (fungibleEvents.length > 0) {
-            const attributes = this.extractEventAttributes(fungibleEvents[0]);
+            const attributes = IBCEventUtils.extractEventAttributes(fungibleEvents[0]);
             return {
                 tokenAmount: attributes.amount || '0',
                 tokenDenom: attributes.denom || 'unknown'
@@ -265,23 +266,6 @@ export class IBCEventHandler {
         }
         
         return { tokenAmount: '0', tokenDenom: 'unknown' };
-    }
-
-    /**
-     * Extract event attributes
-     */
-    private extractEventAttributes(event: any): Record<string, string> {
-        const attributes: Record<string, string> = {};
-        
-        if (event.attributes && Array.isArray(event.attributes)) {
-            for (const attr of event.attributes) {
-                if (attr.key && attr.value) {
-                    attributes[attr.key] = attr.value;
-                }
-            }
-        }
-        
-        return attributes;
     }
 
     /**

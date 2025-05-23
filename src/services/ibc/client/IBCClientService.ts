@@ -1,16 +1,17 @@
 import { Network } from '../../../types/finality';
-import { logger } from '../../../utils/logger';
 import { IBCClientRepository } from '../repository/IBCClientRepository';
+import { IBCEventUtils } from '../common/IBCEventUtils';
 
 /**
  * Service responsible for processing and managing IBC client data
  * Following Single Responsibility Principle - focuses only on client operations
  */
 export class IBCClientService {
+    private readonly serviceName = 'IBCClientService';
     private clientRepository: IBCClientRepository;
 
-    constructor() {
-        this.clientRepository = new IBCClientRepository();
+    constructor(clientRepository?: IBCClientRepository) {
+        this.clientRepository = clientRepository || new IBCClientRepository();
     }
 
     /**
@@ -29,10 +30,10 @@ export class IBCClientService {
         network: Network
     ): Promise<void> {
         try {
-            logger.debug(`[IBCClientService] Processing client event: ${event.type} in tx ${txHash}`);
+            IBCEventUtils.logEventStart(this.serviceName, event.type, txHash);
             
             // Extract attributes from event
-            const attributes = this.extractEventAttributes(event);
+            const attributes = IBCEventUtils.extractEventAttributes(event);
             
             switch (event.type) {
                 case 'create_client':
@@ -48,10 +49,11 @@ export class IBCClientService {
                     await this.handleUpgradeClient(attributes, txHash, height, timestamp, network);
                     break;
                 default:
-                    logger.debug(`[IBCClientService] Unhandled client event type: ${event.type}`);
+                    // Do not log unhandled events as warnings - they may be processed by other services
+                    break;
             }
         } catch (error) {
-            logger.error(`[IBCClientService] Error processing client event: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, event.type, error);
         }
     }
 
@@ -66,17 +68,14 @@ export class IBCClientService {
         network: Network
     ): Promise<void> {
         try {
-            const clientId = attributes.client_id;
-            const clientType = attributes.client_type;
-            
-            if (!clientId || !clientType) {
-                logger.warn(`[IBCClientService] Missing required attributes for create_client`);
+            const requiredKeys = ['client_id', 'client_type'];
+            if (!IBCEventUtils.validateRequiredAttributes(attributes, requiredKeys, 'create_client')) {
                 return;
             }
             
             const clientData = {
-                client_id: clientId,
-                client_type: clientType,
+                client_id: attributes.client_id,
+                client_type: attributes.client_type,
                 state: 'ACTIVE',
                 latest_height: height,
                 tx_hash: txHash,
@@ -86,9 +85,14 @@ export class IBCClientService {
             };
             
             await this.clientRepository.saveClient(clientData, network);
-            logger.info(`[IBCClientService] Client created: ${clientId} of type ${clientType} at height ${height}`);
+            IBCEventUtils.logEventSuccess(
+                this.serviceName, 
+                'create_client',
+                `Client created: ${attributes.client_id} of type ${attributes.client_type}`,
+                height
+            );
         } catch (error) {
-            logger.error(`[IBCClientService] Error handling create_client: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'create_client', error);
         }
     }
 
@@ -103,33 +107,34 @@ export class IBCClientService {
         network: Network
     ): Promise<void> {
         try {
-            const clientId = attributes.client_id;
-            const clientType = attributes.client_type;
-            const consensusHeight = attributes.consensus_height;
-            
-            if (!clientId) {
-                logger.warn(`[IBCClientService] Missing required attributes for update_client`);
+            const requiredKeys = ['client_id'];
+            if (!IBCEventUtils.validateRequiredAttributes(attributes, requiredKeys, 'update_client')) {
                 return;
             }
             
             // Get existing client data
-            const existingClient = await this.clientRepository.getClient(clientId, network);
+            const existingClient = await this.clientRepository.getClient(attributes.client_id, network);
             
             const clientData = {
                 ...(existingClient || {}),
-                client_id: clientId,
-                client_type: clientType || existingClient?.client_type,
+                client_id: attributes.client_id,
+                client_type: attributes.client_type || existingClient?.client_type,
                 latest_height: height,
-                consensus_height: consensusHeight,
+                consensus_height: attributes.consensus_height,
                 tx_hash: txHash,
                 updated_at: timestamp,
                 network: network.toString()
             };
             
             await this.clientRepository.saveClient(clientData, network);
-            logger.info(`[IBCClientService] Client updated: ${clientId} at height ${height}`);
+            IBCEventUtils.logEventSuccess(
+                this.serviceName,
+                'update_client', 
+                `Client updated: ${attributes.client_id}`,
+                height
+            );
         } catch (error) {
-            logger.error(`[IBCClientService] Error handling update_client: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'update_client', error);
         }
     }
 
@@ -144,19 +149,17 @@ export class IBCClientService {
         network: Network
     ): Promise<void> {
         try {
-            const clientId = attributes.client_id;
-            
-            if (!clientId) {
-                logger.warn(`[IBCClientService] Missing required attributes for client_misbehaviour`);
+            const requiredKeys = ['client_id'];
+            if (!IBCEventUtils.validateRequiredAttributes(attributes, requiredKeys, 'client_misbehaviour')) {
                 return;
             }
             
             // Get existing client data
-            const existingClient = await this.clientRepository.getClient(clientId, network);
+            const existingClient = await this.clientRepository.getClient(attributes.client_id, network);
             
             const clientData = {
                 ...(existingClient || {}),
-                client_id: clientId,
+                client_id: attributes.client_id,
                 state: 'FROZEN',
                 latest_height: height,
                 tx_hash: txHash,
@@ -165,9 +168,14 @@ export class IBCClientService {
             };
             
             await this.clientRepository.saveClient(clientData, network);
-            logger.info(`[IBCClientService] Client misbehaviour detected: ${clientId} at height ${height}`);
+            IBCEventUtils.logEventSuccess(
+                this.serviceName,
+                'client_misbehaviour',
+                `Client misbehaviour detected: ${attributes.client_id}`,
+                height
+            );
         } catch (error) {
-            logger.error(`[IBCClientService] Error handling client_misbehaviour: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'client_misbehaviour', error);
         }
     }
 
@@ -182,19 +190,17 @@ export class IBCClientService {
         network: Network
     ): Promise<void> {
         try {
-            const clientId = attributes.client_id;
-            
-            if (!clientId) {
-                logger.warn(`[IBCClientService] Missing required attributes for upgrade_client`);
+            const requiredKeys = ['client_id'];
+            if (!IBCEventUtils.validateRequiredAttributes(attributes, requiredKeys, 'upgrade_client')) {
                 return;
             }
             
             // Get existing client data
-            const existingClient = await this.clientRepository.getClient(clientId, network);
+            const existingClient = await this.clientRepository.getClient(attributes.client_id, network);
             
             const clientData = {
                 ...(existingClient || {}),
-                client_id: clientId,
+                client_id: attributes.client_id,
                 latest_height: height,
                 tx_hash: txHash,
                 upgraded_at: timestamp,
@@ -203,28 +209,29 @@ export class IBCClientService {
             };
             
             await this.clientRepository.saveClient(clientData, network);
-            logger.info(`[IBCClientService] Client upgraded: ${clientId} at height ${height}`);
+            IBCEventUtils.logEventSuccess(
+                this.serviceName,
+                'upgrade_client',
+                `Client upgraded: ${attributes.client_id}`,
+                height
+            );
         } catch (error) {
-            logger.error(`[IBCClientService] Error handling upgrade_client: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'upgrade_client', error);
         }
     }
 
     /**
-     * Extract attributes from an event into a key-value map
+     * Get a client by ID
      */
-    private extractEventAttributes(event: any): Record<string, string> {
-        const attributes: Record<string, string> = {};
-        
-        if (!event.attributes || !Array.isArray(event.attributes)) {
-            return attributes;
-        }
-        
-        for (const attr of event.attributes) {
-            if (attr.key && attr.value) {
-                attributes[attr.key] = attr.value;
-            }
-        }
-        
-        return attributes;
+    public async getClient(clientId: string, network: Network): Promise<any> {
+        return this.clientRepository.getClient(clientId, network);
+    }
+
+    /**
+     * Get all clients for a specific counterparty chain
+     */
+    public async getClientsByChainId(chainId: string, network: Network): Promise<any[]> {
+        return this.clientRepository.getClientsByChainId(chainId, network);
     }
 }
+

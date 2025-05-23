@@ -1,16 +1,18 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { IBCChannelRepository } from '../repository/IBCChannelRepository';
+import { IBCEventUtils } from '../common/IBCEventUtils';
 
 /**
  * Service responsible for processing and managing IBC channel data
  * Following Single Responsibility Principle - focuses only on channel operations
  */
 export class IBCChannelService {
+    private readonly serviceName = 'IBCChannelService';
     private channelRepository: IBCChannelRepository;
 
-    constructor() {
-        this.channelRepository = new IBCChannelRepository();
+    constructor(channelRepository?: IBCChannelRepository) {
+        this.channelRepository = channelRepository || new IBCChannelRepository();
     }
 
     /**
@@ -29,10 +31,10 @@ export class IBCChannelService {
         network: Network
     ): Promise<void> {
         try {
-            logger.debug(`[IBCChannelService] Processing channel event: ${event.type} in tx ${txHash}`);
+            IBCEventUtils.logEventStart(this.serviceName, event.type, txHash);
             
             // Extract attributes from event
-            const attributes = this.extractEventAttributes(event);
+            const attributes = IBCEventUtils.extractEventAttributes(event);
             
             switch (event.type) {
                 case 'channel_open_init':
@@ -54,11 +56,11 @@ export class IBCChannelService {
                     await this.handleChannelCloseConfirm(attributes, txHash, height, timestamp, network);
                     break;
                 default:
-                    logger.debug(`[IBCChannelService] Unhandled channel event type: ${event.type}`);
+                    // Do not log unhandled events as warnings - they may be processed by other services
                     break;
             }
         } catch (error) {
-            logger.error(`[IBCChannelService] Error processing channel event: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, event.type, error);
         }
     }
 
@@ -362,26 +364,6 @@ export class IBCChannelService {
     }
     
     /**
-     * Helper method to extract attributes from event
-     * Converts array of key/value attributes to a record for easier access
-     */
-    private extractEventAttributes(event: any): Record<string, string> {
-        const attributes: Record<string, string> = {};
-        
-        if (!event.attributes || !Array.isArray(event.attributes)) {
-            return attributes;
-        }
-        
-        for (const attr of event.attributes) {
-            if (attr.key && attr.value) {
-                attributes[attr.key] = attr.value;
-            }
-        }
-        
-        return attributes;
-    }
-
-    /**
      * Process packet events to update channel statistics
      * @param event Packet event data
      * @param txHash Transaction hash
@@ -403,7 +385,7 @@ export class IBCChannelService {
         externalTokenDenom?: string
     ): Promise<void> {
         try {
-            const attributes = this.extractEventAttributes(event);
+            const attributes = IBCEventUtils.extractEventAttributes(event);
             
             // For different event types, we need to update different channels:
             // - send_packet: update source channel (packet leaving our network)  
@@ -495,7 +477,7 @@ export class IBCChannelService {
 
             logger.debug(`[IBCChannelService] Updated statistics for channel ${channelToUpdate}/${portToUpdate} (${event.type}, ${direction}, ${tokenAmount} ${tokenDenom})`);
         } catch (error) {
-            logger.error(`[IBCChannelService] Error processing packet statistics: ${error instanceof Error ? error.message : String(error)}`);
+            IBCEventUtils.logEventError(this.serviceName, 'processPacketStatistics', error);
         }
     }
 

@@ -2,6 +2,7 @@ import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { IBCRelayerRepository } from '../repository/IBCRelayerRepository';
 import { IBCChainResolverService } from '../transfer/services/IBCChainResolverService';
+import { IBCEventUtils } from '../common/IBCEventUtils';
 import { 
     IBCChannelRepositoryAdapter, 
     IBCConnectionRepositoryAdapter,
@@ -14,25 +15,32 @@ import { BabylonClient } from '../../../clients/BabylonClient';
  * Following Single Responsibility Principle - focuses only on relayer operations
  */
 export class IBCRelayerService {
+    private readonly serviceName = 'IBCRelayerService';
     private relayerRepository: IBCRelayerRepository;
     private chainResolverService: IBCChainResolverService;
 
-    constructor() {
-        this.relayerRepository = new IBCRelayerRepository();
+    constructor(
+        relayerRepository?: IBCRelayerRepository,
+        chainResolverService?: IBCChainResolverService
+    ) {
+        this.relayerRepository = relayerRepository || new IBCRelayerRepository();
         
-        // Create repository adapters for chain resolution
-        const channelRepository = new IBCChannelRepositoryAdapter();
-        const connectionRepository = new IBCConnectionRepositoryAdapter();
-        const clientRepository = new IBCClientRepositoryAdapter();
-        const babylonClient = BabylonClient.getInstance();
-        
-        // Create chain resolver service
-        this.chainResolverService = new IBCChainResolverService(
-            channelRepository, 
-            connectionRepository, 
-            clientRepository, 
-            babylonClient
-        );
+        if (chainResolverService) {
+            this.chainResolverService = chainResolverService;
+        } else {
+            // Create chain resolver service with default dependencies
+            const channelRepository = new IBCChannelRepositoryAdapter();
+            const connectionRepository = new IBCConnectionRepositoryAdapter();
+            const clientRepository = new IBCClientRepositoryAdapter();
+            const babylonClient = BabylonClient.getInstance();
+            
+            this.chainResolverService = new IBCChainResolverService(
+                channelRepository, 
+                connectionRepository, 
+                clientRepository, 
+                babylonClient
+            );
+        }
     }
 
     /**
@@ -53,10 +61,12 @@ export class IBCRelayerService {
         txSigner?: string
     ): Promise<void> {
         try {
+            IBCEventUtils.logEventStart(this.serviceName, event.type, txHash);
+            
             logger.debug(`[IBCRelayerService] Processing event for relayer tracking: ${event.type} in tx ${txHash}`);
             
-            // Extract event attributes once (we'll use these for both signer and packet info)
-            const attributes = this.extractEventAttributes(event);
+            // Extract attributes from event
+            const attributes = IBCEventUtils.extractEventAttributes(event);
             
             // Use the transaction signer if available (extracted from the IBC message content)
             let signer = '';
@@ -192,24 +202,5 @@ export class IBCRelayerService {
             logger.error(`[IBCRelayerService] Error getting relayer stats: ${error instanceof Error ? error.message : String(error)}`);
             return null;
         }
-    }
-
-    /**
-     * Extract attributes from an event into a key-value map
-     */
-    private extractEventAttributes(event: any): Record<string, string> {
-        const attributes: Record<string, string> = {};
-        
-        if (!event.attributes || !Array.isArray(event.attributes)) {
-            return attributes;
-        }
-        
-        for (const attr of event.attributes) {
-            if (attr.key && attr.value) {
-                attributes[attr.key] = attr.value;
-            }
-        }
-        
-        return attributes;
     }
 }
