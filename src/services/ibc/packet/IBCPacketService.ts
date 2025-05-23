@@ -133,9 +133,9 @@ export class IBCPacketService {
                 ...(existingPacket || {}),
                 ...packetData,
                 status: 'RECEIVED',
-                recv_tx_hash: txHash,
+                receive_tx_hash: txHash,
                 recv_height: height,
-                recv_timestamp: timestamp,
+                receive_time: timestamp,
                 network: network.toString(),
                 last_updated: timestamp
             };
