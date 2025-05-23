@@ -8,6 +8,7 @@ export interface IIBCTransferRepository {
     saveTransfer(transfer: any, packetId: mongoose.Types.ObjectId, network: Network): Promise<any>;
     getTransferByPacketId(packetId: mongoose.Types.ObjectId, network: Network): Promise<any>;
     getTransferByTxHash(txHash: string, network: Network): Promise<any>;
+    getTransfersBySender(sender: string, network: Network): Promise<any[]>;
 }
 
 /**

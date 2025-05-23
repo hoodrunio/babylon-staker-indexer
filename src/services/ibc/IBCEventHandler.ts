@@ -115,10 +115,19 @@ export class IBCEventHandler {
                                 this.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer)
                             );
                             
-                            // Process with transfer service
-                            eventProcessingPromises.push(
-                                this.transferService.processTransferEvent(event, hash, height, timestamp, network)
-                            );
+                            // Check if this transaction contains acknowledgment events
+                            // If so, skip transfer processing for fungible_token_packet as the transfer
+                            // should be updated via acknowledge_packet event instead
+                            const hasAcknowledgmentEvent = events.some(e => this.isAcknowledgmentEvent(e));
+                            
+                            if (!hasAcknowledgmentEvent) {
+                                // Only process with transfer service if this is NOT an acknowledgment transaction
+                                eventProcessingPromises.push(
+                                    this.transferService.processTransferEvent(event, hash, height, timestamp, network)
+                                );
+                            } else {
+                                logger.debug(`[IBCEventHandler] Skipping fungible_token_packet transfer processing in acknowledgment transaction ${hash}`);
+                            }
                         } 
                         // 2. Acknowledgments of existing transfers
                         else if (this.isAcknowledgmentEvent(event)) {

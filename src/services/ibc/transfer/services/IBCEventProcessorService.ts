@@ -20,10 +20,10 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
     ) {}
 
     /**
-     * Process a transfer-related event
-     * @param event Event data
+     * Process transfer events from IBC transactions
+     * @param event IBC event containing transfer data
      * @param txHash Transaction hash
-     * @param height Block height
+     * @param height Block height 
      * @param timestamp Block timestamp
      * @param network Network where the event occurred
      */
@@ -35,14 +35,13 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
         network: Network
     ): Promise<void> {
         try {
-            logger.debug(`[IBCEventProcessorService] Processing transfer event: ${event.type} in tx ${txHash}`);
-            
             // Extract attributes from event
             const attributes = this.packetService.extractEventAttributes(event);
             
             // Special handling for fungible_token_packet events
             if (event.type === 'fungible_token_packet') {
-                // Process as supplementary data for an existing transfer
+                // fungible_token_packet events only provide supplementary data
+                // They should not create new transfers, only enrich existing ones
                 await this.processTokenSupplementaryData(attributes, txHash, height, timestamp, network);
                 return;
             }
@@ -66,23 +65,7 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             
             // Handle the cases where packet data might be missing
             if (!packetData) {
-                // Some events like fungible_token_packet may have the data in separate attributes
-                if (event.type === 'fungible_token_packet') {
-                    // Extract data from individual attributes
-                    const denom = attributes.denom;
-                    const amount = attributes.amount;
-                    const sender = attributes.sender;
-                    const receiver = attributes.receiver;
-                    
-                    if (denom && amount && sender && receiver) {
-                        // Construct packet data manually
-                        packetData = JSON.stringify({ denom, amount, sender, receiver });
-                        logger.debug(`[IBCEventProcessorService] Reconstructed packet data from attributes`);
-                    } else {
-                        logger.warn(`[IBCEventProcessorService] Missing required data attributes for fungible_token_packet event`);
-                        return;
-                    }
-                } else if (event.type === 'write_acknowledgement' || event.type === 'acknowledge_packet') {
+                if (event.type === 'write_acknowledgement' || event.type === 'acknowledge_packet') {
                     // For acknowledgments, we can continue without packet data
                     logger.debug(`[IBCEventProcessorService] Acknowledgment event without packet data`);
                 } else {
@@ -154,9 +137,7 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             // Handle different transfer event types
             switch (event.type) {
                 case 'send_packet':
-                case 'recv_packet':
-                case 'fungible_token_packet':
-                case 'transfer_packet': {
+                case 'recv_packet': {
                     
                     // Format token information for display
                     const tokenSymbol = this.tokenService.extractTokenSymbol(transferData.denom || '');
@@ -267,6 +248,7 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             
             // Extract attributes from event
             const attributes = this.packetService.extractEventAttributes(event);
+            logger.debug(`[IBCEventProcessorService] Acknowledgment attributes: ${JSON.stringify(attributes)}`);
             
             // Extract packet information with transaction context awareness
             const packetInfo = this.packetService.handlePacketEvent(event.type, attributes, txHash);
@@ -280,14 +262,19 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             
             // Check if the acknowledgment contains an error
             const isSuccessful = this.transferStatusService.isSuccessfulAcknowledgement(attributes);
+            logger.debug(`[IBCEventProcessorService] Acknowledgment isSuccessful: ${isSuccessful}`);
             
             // Find the associated transfer
-            const transfer = await this.transferRepository.getTransferByPacketId(packetId, network);
+            const transferDoc = await this.transferRepository.getTransferByPacketId(packetId, network);
             
-            if (!transfer) {
+            if (!transferDoc) {
                 logger.debug(`[IBCEventProcessorService] No transfer found for packet ${packetInfo.sourcePort}/${packetInfo.sourceChannel}/${packetInfo.sequence}`);
                 return;
             }
+            
+            // Convert MongoDB document to plain object
+            const transfer = transferDoc.toObject ? transferDoc.toObject() : transferDoc;
+            logger.debug(`[IBCEventProcessorService] Found existing transfer: ${JSON.stringify(transfer)}`);
             
             // Update the transfer with acknowledgment information
             const updatedTransfer = this.transferStatusService.updateTransferForAcknowledgement(
@@ -298,6 +285,8 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                 isSuccessful,
                 attributes.packet_ack_error || attributes.error
             );
+            
+            logger.debug(`[IBCEventProcessorService] Updated transfer data: ${JSON.stringify(updatedTransfer)}`);
             
             await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
             
@@ -339,12 +328,15 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             const packetId = new mongoose.Types.ObjectId(packetInfo.packetId);
             
             // Find the associated transfer
-            const transfer = await this.transferRepository.getTransferByPacketId(packetId, network);
+            const transferDoc = await this.transferRepository.getTransferByPacketId(packetId, network);
             
-            if (!transfer) {
+            if (!transferDoc) {
                 logger.debug(`[IBCEventProcessorService] No transfer found for packet ${packetInfo.sourcePort}/${packetInfo.sourceChannel}/${packetInfo.sequence}`);
                 return;
             }
+            
+            // Convert MongoDB document to plain object
+            const transfer = transferDoc.toObject ? transferDoc.toObject() : transferDoc;
             
             // Update the transfer with timeout information
             const updatedTransfer = this.transferStatusService.updateTransferForTimeout(
@@ -379,12 +371,18 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
         network: Network
     ): Promise<void> {
         try {
-            // Get the most recently processed transfer for this transaction
-            // We first check for any transfers created or updated in this same transaction
-            const transfer = await this.transferRepository.getTransferByTxHash(txHash, network);
+            logger.debug(`[IBCEventProcessorService] Processing fungible_token_packet supplementary data in tx ${txHash}`);
             
-            if (transfer) {
-                // Found an existing transfer in this transaction - update it with token details
+            // First, try to find a transfer associated with the current transaction
+            // This handles cases where fungible_token_packet comes in the same transaction as send_packet or recv_packet
+            let transferDoc = await this.transferRepository.getTransferByTxHash(txHash, network);
+            
+            if (transferDoc) {
+                // Found transfer in the same transaction - this is likely a send/recv transaction
+                // Convert MongoDB document to plain object
+                const transfer = transferDoc.toObject ? transferDoc.toObject() : transferDoc;
+                
+                // Update with token details from fungible_token_packet
                 const packetId = transfer.packet_id;
                 
                 // Extract token information from the fungible_token_packet event
@@ -393,6 +391,7 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                 const sender = attributes.sender || transfer.sender;
                 const receiver = attributes.receiver || transfer.receiver;
                 const success = attributes.success === 'true' || attributes.success === '\u0001';
+                const acknowledgement = attributes.acknowledgement;
                 
                 // Update the transfer with the supplementary data
                 const updatedTransfer = {
@@ -401,8 +400,11 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                     amount,
                     sender,
                     receiver,
-                    // Only update status if this is a successful token packet
-                    status: success ? IBCTransferStatus.RECEIVED : transfer.status,
+                    // Update status based on the success flag and acknowledgement
+                    success: success,
+                    status: success ? IBCTransferStatus.COMPLETED : transfer.status,
+                    // Add acknowledgement info if available
+                    ...(acknowledgement && { acknowledgement }),
                     // Add any other relevant fields from the token packet
                     memo: attributes.memo || transfer.memo,
                     last_updated: timestamp
@@ -411,17 +413,19 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                 // Save the updated transfer
                 await this.transferRepository.saveTransfer(updatedTransfer, packetId, network);
                 
-                logger.info(`[IBCEventProcessorService] Updated transfer with token details: ${amount} ${denom} from ${sender} to ${receiver}`);
+                logger.info(`[IBCEventProcessorService] Updated transfer with fungible_token_packet data: ${amount} ${denom} from ${sender} to ${receiver}, success: ${success}`);
                 return;
             }
             
-            // If we get here, we couldn't find a transfer to enrich
-            // This can happen when events arrive out of order
-            // We don't treat this as an error, just log it for debugging
-            logger.debug(`[IBCEventProcessorService] No recent transfer found to update with fungible_token_packet data in tx ${txHash}`);
+            // If no transfer found in current transaction, this might be an acknowledgment transaction
+            // In acknowledgment transactions, fungible_token_packet events contain acknowledgment metadata
+            // not transfer creation data. The actual transfer should already exist and be updated via acknowledge_packet event
+            logger.debug(`[IBCEventProcessorService] No transfer found for current tx ${txHash}. This appears to be an acknowledgment transaction.`);
+            logger.debug(`[IBCEventProcessorService] Acknowledgment transactions should update transfers via acknowledge_packet events, not fungible_token_packet events.`);
+            logger.debug(`[IBCEventProcessorService] Skipping fungible_token_packet processing for acknowledgment transaction.`);
             
         } catch (error) {
-            logger.error(`[IBCEventProcessorService] Error processing token supplementary data: ${error instanceof Error ? error.message : String(error)}`);
+            logger.error(`[IBCEventProcessorService] Error processing fungible_token_packet supplementary data: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 }

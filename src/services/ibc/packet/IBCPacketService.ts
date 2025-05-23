@@ -118,12 +118,15 @@ export class IBCPacketService {
             }
             
             // Get existing packet data if available
-            const existingPacket = await this.packetRepository.getPacket(
+            const existingPacketDoc = await this.packetRepository.getPacket(
                 packetData.source_port, 
                 packetData.source_channel, 
                 packetData.sequence, 
                 network
             );
+            
+            // Convert MongoDB document to plain object
+            const existingPacket = existingPacketDoc?.toObject ? existingPacketDoc.toObject() : existingPacketDoc;
             
             // Add receive-specific data
             const fullPacketData = {
@@ -163,12 +166,15 @@ export class IBCPacketService {
             }
             
             // Get existing packet data if available
-            const existingPacket = await this.packetRepository.getPacket(
+            const existingPacketDoc = await this.packetRepository.getPacket(
                 packetData.source_port, 
                 packetData.source_channel, 
                 packetData.sequence, 
                 network
             );
+            
+            // Convert MongoDB document to plain object
+            const existingPacket = existingPacketDoc?.toObject ? existingPacketDoc.toObject() : existingPacketDoc;
             
             // Add ack-specific data
             const fullPacketData = {
@@ -208,12 +214,15 @@ export class IBCPacketService {
             }
             
             // Get existing packet data if available
-            const existingPacket = await this.packetRepository.getPacket(
+            const existingPacketDoc = await this.packetRepository.getPacket(
                 packetData.source_port, 
                 packetData.source_channel, 
                 packetData.sequence, 
                 network
             );
+            
+            // Convert MongoDB document to plain object
+            const existingPacket = existingPacketDoc?.toObject ? existingPacketDoc.toObject() : existingPacketDoc;
             
             // Add timeout-specific data
             const fullPacketData = {
@@ -253,12 +262,15 @@ export class IBCPacketService {
             }
             
             // Get existing packet data if available
-            const existingPacket = await this.packetRepository.getPacket(
+            const existingPacketDoc = await this.packetRepository.getPacket(
                 packetData.source_port, 
                 packetData.source_channel, 
                 packetData.sequence, 
                 network
             );
+            
+            // Convert MongoDB document to plain object
+            const existingPacket = existingPacketDoc?.toObject ? existingPacketDoc.toObject() : existingPacketDoc;
             
             // Add write ack-specific data
             const fullPacketData = {

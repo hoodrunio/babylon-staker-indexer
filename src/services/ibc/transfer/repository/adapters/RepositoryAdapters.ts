@@ -33,6 +33,10 @@ export class IBCTransferRepositoryAdapter implements IIBCTransferRepository {
     async getTransferByTxHash(txHash: string, network: Network): Promise<any> {
         return this.repository.getTransferByTxHash(txHash, network);
     }
+
+    async getTransfersBySender(sender: string, network: Network): Promise<any[]> {
+        return this.repository.getTransfersBySender(sender, network);
+    }
 }
 
 /**
