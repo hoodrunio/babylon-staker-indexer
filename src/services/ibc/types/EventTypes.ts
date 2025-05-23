@@ -56,8 +56,7 @@ export interface ClientEvent extends IBCEvent {
  * Packet event types
  */
 export interface PacketEvent extends IBCEvent {
-    type: 'send_packet' | 'recv_packet' | 'write_acknowledgement' | 
-          'acknowledge_packet' | 'timeout_packet' | 'fungible_token_packet';
+    type: 'send_packet' | 'recv_packet' | 'acknowledge_packet' | 'timeout_packet' | 'fungible_token_packet';
 }
 
 /**

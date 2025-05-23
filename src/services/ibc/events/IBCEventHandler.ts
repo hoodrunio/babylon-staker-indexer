@@ -315,7 +315,7 @@ export class IBCEventHandler {
     }
     
     private isAcknowledgmentEvent(event: any): boolean {
-        return event.type === 'acknowledge_packet' || event.type === 'write_acknowledgement';
+        return event.type === 'acknowledge_packet';
     }
 
     private isTimeoutEvent(event: any): boolean {

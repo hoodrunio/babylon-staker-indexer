@@ -65,7 +65,7 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             
             // Handle the cases where packet data might be missing
             if (!packetData) {
-                if (event.type === 'write_acknowledgement' || event.type === 'acknowledge_packet') {
+                if (event.type === 'acknowledge_packet') {
                     // For acknowledgments, we can continue without packet data
                     logger.debug(`[IBCEventProcessorService] Acknowledgment event without packet data`);
                 } else {
