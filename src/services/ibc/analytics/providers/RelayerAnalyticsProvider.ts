@@ -7,6 +7,7 @@ import {
     RelayerTransactionCountResult
 } from '../../interfaces/IBCAnalyticsService';
 import { IBCRelayerRepository } from '../../repository/IBCRelayerRepository';
+import { PriceOracleService } from '../config/PriceOracleService';
 import { getChainName } from '../../constants/chainMapping';
 import IBCRelayerModel from '../../../../database/models/ibc/IBCRelayer';
 import IBCPacketModel from '../../../../database/models/ibc/IBCPacket';
@@ -17,9 +18,13 @@ import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
  * Implements DIP by depending on repository abstractions
  */
 export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
+    private readonly priceOracle: PriceOracleService;
+
     constructor(
         private readonly relayerRepository: IBCRelayerRepository
-    ) {}
+    ) {
+        this.priceOracle = PriceOracleService.getInstance();
+    }
 
     /**
      * Get relayers grouped by the chains they serve
@@ -79,6 +84,19 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
                 relayer_address: { $exists: true, $ne: null }
             });
 
+            // Collect all denominations for batch price fetching
+            const allDenoms = new Set<string>();
+            const transfers = await IBCTransferModel.find({
+                packet_id: { $in: packets.map(p => p._id) },
+                network: network.toString(),
+                success: true
+            });
+
+            transfers.forEach(transfer => allDenoms.add(transfer.denom));
+
+            // Batch fetch all prices
+            const prices = await this.priceOracle.getMultipleTokenPrices(Array.from(allDenoms));
+
             // Group by relayer address
             const relayerVolumeMap = new Map<string, {
                 chains: Set<string>;
@@ -114,14 +132,13 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
                 }
 
                 // Get transfer value for this packet
-                const transfer = await IBCTransferModel.findOne({
-                    packet_id: packet._id,
-                    network: network.toString()
-                });
+                const transfer = transfers.find(t => 
+                    t.packet_id?.toString() === (packet._id as any).toString()
+                );
 
                 if (transfer && transfer.success) {
                     const amount = parseFloat(transfer.amount);
-                    const volumeUSD = this.convertToUSD(transfer.denom, amount);
+                    const volumeUSD = this.convertToUSD(transfer.denom, amount, prices);
                     
                     // Add to source chain volume
                     const sourceVolume = relayerData.volume_by_chain.get(sourceChain) || 0;
@@ -236,18 +253,20 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
     }
 
     /**
-     * Helper method to convert denomination amounts to USD
+     * Convert token amount to USD using pre-fetched prices
      */
-    private convertToUSD(denom: string, amount: number): number {
-        // Simplified price conversion - in real implementation would use price oracle
-        const denomPrices: Record<string, number> = {
-            'ubbn': 0.000001,
-            'uatom': 0.000001,
-            'uosmo': 0.000001,
-            'ustars': 0.000001,
-            'ujuno': 0.000001
-        };
+    private convertToUSD(denom: string, amount: number, prices: Record<string, number>): number {
+        try {
+            const tokenInfo = this.priceOracle.getTokenInfo(denom);
+            if (!tokenInfo || !prices[denom]) {
+                return 0;
+            }
 
-        return amount * (denomPrices[denom] || 0);
+            const mainUnitAmount = amount / Math.pow(10, tokenInfo.decimals);
+            return mainUnitAmount * prices[denom];
+        } catch (error) {
+            logger.warn(`[RelayerAnalyticsProvider] Error converting ${denom} to USD:`, error);
+            return 0;
+        }
     }
 } 

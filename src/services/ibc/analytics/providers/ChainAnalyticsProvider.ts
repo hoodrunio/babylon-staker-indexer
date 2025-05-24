@@ -10,6 +10,8 @@ import { IBCChannelRepository } from '../../repository/IBCChannelRepository';
 import { IBCConnectionRepository } from '../../repository/IBCConnectionRepository';
 import { IBCTransferRepository } from '../../repository/IBCTransferRepository';
 import { getChainName } from '../../constants/chainMapping';
+import { PriceOracleService } from '../config/PriceOracleService';
+import { ChainConfigService } from '../config/ChainConfigService';
 import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
 
 /**
@@ -17,11 +19,17 @@ import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
  * Implements DIP by depending on repository abstractions
  */
 export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
+    private readonly priceOracle: PriceOracleService;
+    private readonly chainConfig: ChainConfigService;
+
     constructor(
         private readonly channelRepository: IBCChannelRepository,
         private readonly connectionRepository: IBCConnectionRepository,
         private readonly transferRepository: IBCTransferRepository
-    ) {}
+    ) {
+        this.priceOracle = PriceOracleService.getInstance();
+        this.chainConfig = ChainConfigService.getInstance();
+    }
 
     /**
      * Get information about all connected chains
@@ -99,6 +107,13 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 outgoing: Record<string, number>;
             }>();
 
+            // Get all unique denominations for batch price fetching
+            const uniqueDenoms = new Set<string>();
+            transfers.forEach(transfer => uniqueDenoms.add(transfer.denom));
+
+            // Batch fetch all prices
+            const prices = await this.priceOracle.getMultipleTokenPrices(Array.from(uniqueDenoms));
+
             transfers.forEach(transfer => {
                 const sourceChain = transfer.source_chain_id;
                 const destChain = transfer.destination_chain_id;
@@ -126,7 +141,8 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
             const chainVolumes: ChainVolumeResult[] = [];
             
             for (const [chainId, volumes] of chainVolumesMap.entries()) {
-                if (chainId === 'babylonchain') continue; // Skip our own chain for external chains list
+                // Skip home chain based on network configuration
+                if (this.chainConfig.isHomeChain(chainId, network)) continue;
 
                 const volumes_by_denom: Record<string, string> = {};
                 let incoming_volume_usd = 0;
@@ -135,12 +151,12 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 // Combine incoming and outgoing volumes
                 Object.entries(volumes.incoming).forEach(([denom, amount]) => {
                     volumes_by_denom[denom] = (parseFloat(volumes_by_denom[denom] || '0') + amount).toString();
-                    incoming_volume_usd += this.convertToUSD(denom, amount);
+                    incoming_volume_usd += this.convertToUSD(denom, amount, prices);
                 });
 
                 Object.entries(volumes.outgoing).forEach(([denom, amount]) => {
                     volumes_by_denom[denom] = (parseFloat(volumes_by_denom[denom] || '0') + amount).toString();
-                    outgoing_volume_usd += this.convertToUSD(denom, amount);
+                    outgoing_volume_usd += this.convertToUSD(denom, amount, prices);
                 });
 
                 chainVolumes.push({
@@ -184,7 +200,8 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 const chains = [transfer.source_chain_id, transfer.destination_chain_id];
                 
                 chains.forEach(chainId => {
-                    if (chainId === 'babylonchain') return; // Skip our own chain
+                    // Skip home chain based on network configuration
+                    if (this.chainConfig.isHomeChain(chainId, network)) return;
 
                     if (!chainStatsMap.has(chainId)) {
                         chainStatsMap.set(chainId, { total: 0, successful: 0, failed: 0 });
@@ -201,23 +218,14 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 });
             });
 
-            // Convert to result format
-            const results: ChainTransactionCountResult[] = [];
-            
-            for (const [chainId, stats] of chainStatsMap.entries()) {
-                const success_rate = stats.total > 0 ? (stats.successful / stats.total) * 100 : 0;
-                
-                results.push({
-                    chain_id: chainId,
-                    chain_name: getChainName(chainId),
-                    total_transactions: stats.total,
-                    successful_transactions: stats.successful,
-                    failed_transactions: stats.failed,
-                    success_rate: Math.round(success_rate * 100) / 100
-                });
-            }
-
-            return results.sort((a, b) => b.total_transactions - a.total_transactions);
+            return Array.from(chainStatsMap.entries()).map(([chainId, stats]) => ({
+                chain_id: chainId,
+                chain_name: getChainName(chainId),
+                total_transactions: stats.total,
+                successful_transactions: stats.successful,
+                failed_transactions: stats.failed,
+                success_rate: stats.total > 0 ? (stats.successful / stats.total) : 0
+            })).sort((a, b) => b.total_transactions - a.total_transactions);
         } catch (error) {
             logger.error('[ChainAnalyticsProvider] Error getting chain transaction counts:', error);
             throw error;
@@ -225,18 +233,20 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
     }
 
     /**
-     * Helper method to convert denomination amounts to USD
+     * Convert token amount to USD using pre-fetched prices
      */
-    private convertToUSD(denom: string, amount: number): number {
-        // Simplified price conversion - in real implementation would use price oracle
-        const denomPrices: Record<string, number> = {
-            'ubbn': 0.000001,
-            'uatom': 0.000001,
-            'uosmo': 0.000001,
-            'ustars': 0.000001,
-            'ujuno': 0.000001
-        };
+    private convertToUSD(denom: string, amount: number, prices: Record<string, number>): number {
+        try {
+            const tokenInfo = this.priceOracle.getTokenInfo(denom);
+            if (!tokenInfo || !prices[denom]) {
+                return 0;
+            }
 
-        return amount * (denomPrices[denom] || 0);
+            const mainUnitAmount = amount / Math.pow(10, tokenInfo.decimals);
+            return mainUnitAmount * prices[denom];
+        } catch (error) {
+            logger.warn(`[ChainAnalyticsProvider] Error converting ${denom} to USD:`, error);
+            return 0;
+        }
     }
 } 

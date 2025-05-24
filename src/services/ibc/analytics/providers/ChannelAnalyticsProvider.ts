@@ -8,6 +8,7 @@ import {
 import { IBCChannelRepository } from '../../repository/IBCChannelRepository';
 import { IBCTransferRepository } from '../../repository/IBCTransferRepository';
 import { IBCPacketRepository } from '../../repository/IBCPacketRepository';
+import { PriceOracleService } from '../config/PriceOracleService';
 import { IBCTransfer } from '../../../../database/models/ibc/IBCTransfer';
 import IBCPacketModel from '../../../../database/models/ibc/IBCPacket';
 
@@ -16,11 +17,15 @@ import IBCPacketModel from '../../../../database/models/ibc/IBCPacket';
  * Implements DIP by depending on repository abstractions
  */
 export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
+    private readonly priceOracle: PriceOracleService;
+
     constructor(
         private readonly channelRepository: IBCChannelRepository,
         private readonly transferRepository: IBCTransferRepository,
         private readonly packetRepository: IBCPacketRepository
-    ) {}
+    ) {
+        this.priceOracle = PriceOracleService.getInstance();
+    }
 
     /**
      * Get channel statistics including counts and state distribution
@@ -62,6 +67,32 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
             const channels = await this.channelRepository.getAllChannels(network);
             const channelVolumes: ChannelVolumeResult[] = [];
 
+            // Collect all denominations for batch price fetching
+            const allDenoms = new Set<string>();
+
+            for (const channel of channels) {
+                // Get packets for this channel to find associated transfers
+                const packets = await IBCPacketModel.find({
+                    source_channel: channel.channel_id,
+                    source_port: channel.port_id,
+                    network: network.toString()
+                });
+
+                // Get transfers for these packets
+                const packetIds = packets.map(p => p._id);
+                const transfers = await this.getTransfersByPacketIds(packetIds, network);
+
+                // Collect denominations
+                transfers.forEach((transfer: IBCTransfer) => {
+                    if (transfer.success) {
+                        allDenoms.add(transfer.denom);
+                    }
+                });
+            }
+
+            // Batch fetch all prices
+            const prices = await this.priceOracle.getMultipleTokenPrices(Array.from(allDenoms));
+
             for (const channel of channels) {
                 // Get packets for this channel to find associated transfers
                 const packets = await IBCPacketModel.find({
@@ -76,7 +107,6 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
 
                 // Calculate volumes by denomination
                 const volumes_by_denom: Record<string, string> = {};
-                let total_volume_usd = '0';
 
                 transfers.forEach((transfer: IBCTransfer) => {
                     if (transfer.success) {
@@ -93,8 +123,8 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
                     }
                 });
 
-                // Calculate total USD value (simplified - would need price oracle in real implementation)
-                total_volume_usd = this.calculateTotalVolumeUSD(volumes_by_denom);
+                // Calculate total USD value using price oracle
+                const total_volume_usd = await this.calculateTotalVolumeUSD(volumes_by_denom, prices);
 
                 // Calculate success rate
                 const successful_transfers = transfers.filter((t: IBCTransfer) => t.success).length;
@@ -157,26 +187,27 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
     }
 
     /**
-     * Private helper method to calculate total USD volume
-     * In a real implementation, this would integrate with a price oracle
+     * Calculate total USD volume using price oracle
      */
-    private calculateTotalVolumeUSD(volumes_by_denom: Record<string, string>): string {
-        // Simplified calculation - in reality would need price feeds
-        const denomPrices: Record<string, number> = {
-            'ubbn': 0.09, // 1 ubbn = 0.000001 BBN
-            'uatom': 0.000001, // 1 uatom = 0.000001 ATOM
-            'uosmo': 0.000001, // 1 uosmo = 0.000001 OSMO
-            // Add more denominations as needed
-        };
+    private async calculateTotalVolumeUSD(
+        volumes_by_denom: Record<string, string>, 
+        prices: Record<string, number>
+    ): Promise<string> {
+        try {
+            let totalUSD = 0;
+            
+            for (const [denom, amount] of Object.entries(volumes_by_denom)) {
+                const tokenInfo = this.priceOracle.getTokenInfo(denom);
+                if (tokenInfo && prices[denom]) {
+                    const mainUnitAmount = parseFloat(amount) / Math.pow(10, tokenInfo.decimals);
+                    totalUSD += mainUnitAmount * prices[denom];
+                }
+            }
 
-        let totalUSD = 0;
-        
-        Object.entries(volumes_by_denom).forEach(([denom, amount]) => {
-            const price = denomPrices[denom] || 0;
-            const tokenAmount = parseFloat(amount) * price;
-            totalUSD += tokenAmount;
-        });
-
-        return totalUSD.toString();
+            return totalUSD.toString();
+        } catch (error) {
+            logger.warn('[ChannelAnalyticsProvider] Error calculating USD volume:', error);
+            return '0';
+        }
     }
 } 
