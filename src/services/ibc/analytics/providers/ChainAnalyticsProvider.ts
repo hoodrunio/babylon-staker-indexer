@@ -10,16 +10,16 @@ import { IBCChannelRepository } from '../../repository/IBCChannelRepository';
 import { IBCConnectionRepository } from '../../repository/IBCConnectionRepository';
 import { IBCTransferRepository } from '../../repository/IBCTransferRepository';
 import { getChainName } from '../../constants/chainMapping';
-import { PriceOracleService } from '../config/PriceOracleService';
+import { getTokenService } from '../domain/TokenServiceFactory';
+import { ITokenService } from '../domain/TokenService';
 import { ChainConfigService } from '../config/ChainConfigService';
 import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
 
 /**
  * Chain Analytics Provider - follows SRP by handling only chain-related analytics
- * Implements DIP by depending on repository abstractions
  */
 export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
-    private readonly priceOracle: PriceOracleService;
+    private readonly tokenService: ITokenService;
     private readonly chainConfig: ChainConfigService;
 
     constructor(
@@ -27,7 +27,7 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
         private readonly connectionRepository: IBCConnectionRepository,
         private readonly transferRepository: IBCTransferRepository
     ) {
-        this.priceOracle = PriceOracleService.getInstance();
+        this.tokenService = getTokenService();
         this.chainConfig = ChainConfigService.getInstance();
     }
 
@@ -90,6 +90,7 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
 
     /**
      * Get volume statistics for each connected chain
+     * Now uses SOLID-compliant TokenService for volume calculations
      */
     async getChainVolumes(network: Network): Promise<ChainVolumeResult[]> {
         try {
@@ -106,13 +107,6 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 incoming: Record<string, number>;
                 outgoing: Record<string, number>;
             }>();
-
-            // Get all unique denominations for batch price fetching
-            const uniqueDenoms = new Set<string>();
-            transfers.forEach(transfer => uniqueDenoms.add(transfer.denom));
-
-            // Batch fetch all prices
-            const prices = await this.priceOracle.getMultipleTokenPrices(Array.from(uniqueDenoms));
 
             transfers.forEach(transfer => {
                 const sourceChain = transfer.source_chain_id;
@@ -137,7 +131,7 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 destData.incoming[denom] = (destData.incoming[denom] || 0) + amount;
             });
 
-            // Convert to result format
+            // Convert to result format using TokenService
             const chainVolumes: ChainVolumeResult[] = [];
             
             for (const [chainId, volumes] of chainVolumesMap.entries()) {
@@ -145,27 +139,35 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 if (this.chainConfig.isHomeChain(chainId, network)) continue;
 
                 const volumes_by_denom: Record<string, string> = {};
-                let incoming_volume_usd = 0;
-                let outgoing_volume_usd = 0;
+
+                // Prepare denomination amounts for batch conversion
+                const incomingAmounts: Array<{ denom: string; amount: number }> = [];
+                const outgoingAmounts: Array<{ denom: string; amount: number }> = [];
 
                 // Combine incoming and outgoing volumes
                 Object.entries(volumes.incoming).forEach(([denom, amount]) => {
                     volumes_by_denom[denom] = (parseFloat(volumes_by_denom[denom] || '0') + amount).toString();
-                    incoming_volume_usd += this.convertToUSD(denom, amount, prices);
+                    incomingAmounts.push({ denom, amount });
                 });
 
                 Object.entries(volumes.outgoing).forEach(([denom, amount]) => {
                     volumes_by_denom[denom] = (parseFloat(volumes_by_denom[denom] || '0') + amount).toString();
-                    outgoing_volume_usd += this.convertToUSD(denom, amount, prices);
+                    outgoingAmounts.push({ denom, amount });
                 });
+
+                // Use TokenService for USD conversion - much cleaner!
+                const [incomingResult, outgoingResult] = await Promise.all([
+                    this.tokenService.convertBatchToUsd(incomingAmounts),
+                    this.tokenService.convertBatchToUsd(outgoingAmounts)
+                ]);
 
                 chainVolumes.push({
                     chain_id: chainId,
                     chain_name: getChainName(chainId),
-                    total_volume_usd: (incoming_volume_usd + outgoing_volume_usd).toString(),
+                    total_volume_usd: (incomingResult.total + outgoingResult.total).toString(),
                     volumes_by_denom,
-                    incoming_volume: incoming_volume_usd.toString(),
-                    outgoing_volume: outgoing_volume_usd.toString()
+                    incoming_volume: incomingResult.total.toString(),
+                    outgoing_volume: outgoingResult.total.toString()
                 });
             }
 
@@ -232,21 +234,4 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
         }
     }
 
-    /**
-     * Convert token amount to USD using pre-fetched prices
-     */
-    private convertToUSD(denom: string, amount: number, prices: Record<string, number>): number {
-        try {
-            const tokenInfo = this.priceOracle.getTokenInfo(denom);
-            if (!tokenInfo || !prices[denom]) {
-                return 0;
-            }
-
-            const mainUnitAmount = amount / Math.pow(10, tokenInfo.decimals);
-            return mainUnitAmount * prices[denom];
-        } catch (error) {
-            logger.warn(`[ChainAnalyticsProvider] Error converting ${denom} to USD:`, error);
-            return 0;
-        }
-    }
 } 

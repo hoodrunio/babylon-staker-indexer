@@ -7,17 +7,22 @@ import {
     ChainTransactionCountResult
 } from '../../interfaces/IBCAnalyticsService';
 import { IBCTransferRepository } from '../../repository/IBCTransferRepository';
+import { ChainConfigService } from '../config/ChainConfigService';
 import { getChainName } from '../../constants/chainMapping';
 import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
 
 /**
  * Transaction Analytics Provider - follows SRP by handling only transaction-related analytics
- * Implements DIP by depending on repository abstractions
+ * Already uses only chain configuration - no price/denom handling needed
  */
 export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvider {
+    private readonly chainConfig: ChainConfigService;
+
     constructor(
         private readonly transferRepository: IBCTransferRepository
-    ) {}
+    ) {
+        this.chainConfig = ChainConfigService.getInstance();
+    }
 
     /**
      * Get overall transaction count statistics
@@ -151,7 +156,8 @@ export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvid
             // Process source chain data
             result.sourceData.forEach((chainData: any) => {
                 const chainId = chainData._id;
-                if (chainId === 'babylonchain') return; // Skip our own chain
+                // Skip home chain based on network configuration
+                if (this.chainConfig.isHomeChain(chainId, network)) return;
 
                 const stats = chainStatsMap.get(chainId) || {
                     chain_id: chainId,
@@ -171,7 +177,8 @@ export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvid
             // Process destination chain data
             result.destData.forEach((chainData: any) => {
                 const chainId = chainData._id;
-                if (chainId === 'babylonchain') return; // Skip our own chain
+                // Skip home chain based on network configuration
+                if (this.chainConfig.isHomeChain(chainId, network)) return;
 
                 const stats = chainStatsMap.get(chainId) || {
                     chain_id: chainId,

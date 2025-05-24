@@ -238,4 +238,4 @@ export class IBCAnalyticsController {
             });
         }
     }
-} 
+}

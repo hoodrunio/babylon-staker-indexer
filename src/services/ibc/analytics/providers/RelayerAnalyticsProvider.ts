@@ -7,7 +7,9 @@ import {
     RelayerTransactionCountResult
 } from '../../interfaces/IBCAnalyticsService';
 import { IBCRelayerRepository } from '../../repository/IBCRelayerRepository';
-import { PriceOracleService } from '../config/PriceOracleService';
+import { getTokenService } from '../domain/TokenServiceFactory';
+import { ITokenService } from '../domain/TokenService';
+import { ChainConfigService } from '../config/ChainConfigService';
 import { getChainName } from '../../constants/chainMapping';
 import IBCRelayerModel from '../../../../database/models/ibc/IBCRelayer';
 import IBCPacketModel from '../../../../database/models/ibc/IBCPacket';
@@ -15,15 +17,17 @@ import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
 
 /**
  * Relayer Analytics Provider - follows SRP by handling only relayer-related analytics
- * Implements DIP by depending on repository abstractions
+ * Now uses SOLID-compliant TokenService for price and denomination handling
  */
 export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
-    private readonly priceOracle: PriceOracleService;
+    private readonly tokenService: ITokenService;
+    private readonly chainConfig: ChainConfigService;
 
     constructor(
         private readonly relayerRepository: IBCRelayerRepository
     ) {
-        this.priceOracle = PriceOracleService.getInstance();
+        this.tokenService = getTokenService();
+        this.chainConfig = ChainConfigService.getInstance();
     }
 
     /**
@@ -42,7 +46,8 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
 
             relayers.forEach(relayer => {
                 relayer.chains_served.forEach(chainId => {
-                    if (chainId === 'babylonchain') return; // Skip our own chain
+                    // Skip home chain based on network configuration
+                    if (this.chainConfig.isHomeChain(chainId, network)) return;
                     
                     if (!chainRelayersMap.has(chainId)) {
                         chainRelayersMap.set(chainId, new Set());
@@ -84,18 +89,12 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
                 relayer_address: { $exists: true, $ne: null }
             });
 
-            // Collect all denominations for batch price fetching
-            const allDenoms = new Set<string>();
+            // Get associated transfers
             const transfers = await IBCTransferModel.find({
                 packet_id: { $in: packets.map(p => p._id) },
                 network: network.toString(),
                 success: true
             });
-
-            transfers.forEach(transfer => allDenoms.add(transfer.denom));
-
-            // Batch fetch all prices
-            const prices = await this.priceOracle.getMultipleTokenPrices(Array.from(allDenoms));
 
             // Group by relayer address
             const relayerVolumeMap = new Map<string, {
@@ -138,7 +137,7 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
 
                 if (transfer && transfer.success) {
                     const amount = parseFloat(transfer.amount);
-                    const volumeUSD = this.convertToUSD(transfer.denom, amount, prices);
+                    const volumeUSD = await this.tokenService.convertToUsd(transfer.denom, amount);
                     
                     // Add to source chain volume
                     const sourceVolume = relayerData.volume_by_chain.get(sourceChain) || 0;
@@ -249,24 +248,6 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
         } catch (error) {
             logger.error('[RelayerAnalyticsProvider] Error getting relayer transaction counts:', error);
             throw error;
-        }
-    }
-
-    /**
-     * Convert token amount to USD using pre-fetched prices
-     */
-    private convertToUSD(denom: string, amount: number, prices: Record<string, number>): number {
-        try {
-            const tokenInfo = this.priceOracle.getTokenInfo(denom);
-            if (!tokenInfo || !prices[denom]) {
-                return 0;
-            }
-
-            const mainUnitAmount = amount / Math.pow(10, tokenInfo.decimals);
-            return mainUnitAmount * prices[denom];
-        } catch (error) {
-            logger.warn(`[RelayerAnalyticsProvider] Error converting ${denom} to USD:`, error);
-            return 0;
         }
     }
 } 

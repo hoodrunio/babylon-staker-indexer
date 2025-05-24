@@ -1,6 +1,7 @@
 import { logger } from '../../../../utils/logger';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import dotenv from 'dotenv';
+import { DenomParserService } from './DenomParserService';
 
 dotenv.config();
 
@@ -13,6 +14,7 @@ export interface TokenInfo {
     priceUsd: number;
     lastUpdated: Date;
     coingeckoId?: string;
+    description?: string;
     isStable?: boolean; // Flag for stablecoins
 }
 
@@ -51,6 +53,7 @@ interface PriceOracleConfig {
 /**
  * Production-Ready Price Oracle Service
  * Uses CoinGecko API with proper caching and rate limiting
+ * Now includes denom parsing for complex IBC tokens
  */
 export class PriceOracleService {
     private static instance: PriceOracleService | null = null;
@@ -59,6 +62,7 @@ export class PriceOracleService {
     private readonly requestQueue: string[] = [];
     private isProcessingQueue = false;
     private lastRequestTime = 0;
+    private readonly denomParser: DenomParserService;
     
     // Configuration
     private readonly config: PriceOracleConfig = {
@@ -81,7 +85,21 @@ export class PriceOracleService {
             lastUpdated: new Date(0),
             coingeckoId: 'babylon'
         },
-        
+        // IBC & Wrapped Tokens
+        'wbtc': {
+            symbol: 'WBTC',
+            decimals: 8,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            coingeckoId: 'bitcoin'
+        },
+        'btc': {
+            symbol: 'BTC',
+            decimals: 8,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            coingeckoId: 'bitcoin'
+        },
         // Major Cosmos ecosystem tokens
         'uatom': {
             symbol: 'ATOM',
@@ -103,6 +121,13 @@ export class PriceOracleService {
             priceUsd: 0,
             lastUpdated: new Date(0),
             coingeckoId: 'axelar'
+        },
+        'uxprt': {
+            symbol: 'XPRT',
+            decimals: 6,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            coingeckoId: 'persistence'
         },
         'ustars': {
             symbol: 'STARS',
@@ -146,6 +171,34 @@ export class PriceOracleService {
             lastUpdated: new Date(0),
             coingeckoId: 'chihuahua-token'
         },
+        'ucore': {
+            symbol: 'CORE',
+            decimals: 6,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            coingeckoId: 'coredaoorg'
+        },
+        'uclbtc': {
+            symbol: 'clBTC',
+            decimals: 6,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Collateralized BTC'
+        },
+        'umilkbbn': {
+            symbol: 'milkBBN',
+            decimals: 6,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Milkyway Staked BBN'
+        },
+        'umilktia': {
+            symbol: 'milkTIA',
+            decimals: 6,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            coingeckoId: 'milkyway-staked-tia'
+        },
         
         // Stablecoins - no API calls needed
         'uusdc': {
@@ -177,10 +230,84 @@ export class PriceOracleService {
             priceUsd: 1.00,
             lastUpdated: new Date(),
             isStable: true
+        },
+        
+        // Unknown WASM tokens (placeholders)
+        'unknown-wasm-7a56': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-657e': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-f671': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-9356': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-004e': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-f469': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-d9d9': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-bdf2': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-6a9a': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
+        },
+        'unknown-wasm-09de': {
+            symbol: 'UNKNOWN',
+            decimals: 18,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            description: 'Unknown WASM token - needs identification'
         }
     };
 
     private constructor() {
+        this.denomParser = DenomParserService.getInstance();
+        
         // Determine correct headers based on API key
         const apiHeaders = this.getApiHeaders();
         
@@ -219,21 +346,31 @@ export class PriceOracleService {
     }
 
     /**
-     * Convert token amount to USD value
+     * Convert token amount to USD value with denom parsing
      */
     public async convertToUsd(denom: string, amount: number): Promise<number> {
-        const tokenInfo = this.getTokenInfo(denom);
+        // Parse the base denom first
+        const baseDenom = this.denomParser.parseBaseDenom(denom);
+        const tokenInfo = this.getTokenInfo(baseDenom);
         
         if (!tokenInfo) {
-            logger.warn(`[PriceOracleService] Unknown denomination: ${denom}, returning 0 USD value`);
+            // Check if it's a custom mapped token
+            const denomMapping = this.denomParser.getDenomMapping(denom);
+            if (denomMapping) {
+                // Try to register it dynamically
+                this.registerTokenFromMapping(denomMapping);
+                return this.convertToUsd(denom, amount); // Retry
+            }
+            
+            logger.warn(`[PriceOracleService] Unknown denomination: ${denom} (base: ${baseDenom}), returning 0 USD value`);
             return 0;
         }
 
         // Get fresh price if needed
-        const price = await this.getTokenPrice(denom);
+        const price = await this.getTokenPrice(baseDenom);
         
         if (price === 0) {
-            logger.warn(`[PriceOracleService] No price available for ${denom}`);
+            logger.warn(`[PriceOracleService] No price available for ${baseDenom} (original: ${denom})`);
             return 0;
         }
 
@@ -245,22 +382,25 @@ export class PriceOracleService {
     }
 
     /**
-     * Get token price with caching (optimized for stablecoins)
+     * Get token price with caching and denom parsing
      */
     public async getTokenPrice(denom: string): Promise<number> {
-        const tokenInfo = this.tokenRegistry[denom];
+        // Parse the base denom first
+        const baseDenom = this.denomParser.parseBaseDenom(denom);
+        const tokenInfo = this.tokenRegistry[baseDenom];
+        
         if (!tokenInfo) {
+            // Check if it's a custom mapped token
+            const denomMapping = this.denomParser.getDenomMapping(denom);
+            if (denomMapping) {
+                this.registerTokenFromMapping(denomMapping);
+                return this.getTokenPrice(baseDenom); // Retry with base denom
+            }
             return 0;
         }
 
-        // For stablecoins, return fixed price immediately
-        if (tokenInfo.isStable) {
-            this.cacheStablePrice(denom, tokenInfo.priceUsd);
-            return tokenInfo.priceUsd;
-        }
-
-        // Check cache first for non-stable tokens
-        const cacheKey = tokenInfo.coingeckoId || denom;
+        // Check cache first
+        const cacheKey = tokenInfo.coingeckoId || baseDenom;
         const cachedPrice = this.getCachedPrice(cacheKey);
         
         if (cachedPrice !== null) {
@@ -282,29 +422,35 @@ export class PriceOracleService {
     }
 
     /**
-     * Get multiple token prices efficiently (excludes stables from API calls)
+     * Get multiple token prices efficiently with denom parsing
      */
     public async getMultipleTokenPrices(denoms: string[]): Promise<Record<string, number>> {
         const result: Record<string, number> = {};
         const toFetch: string[] = [];
 
-        // Process each token
+        // Parse all denoms first
+        const parsedDenoms = this.denomParser.parseMultipleDenoms(denoms);
+
+        // Check cache for all tokens
         for (const denom of denoms) {
-            const tokenInfo = this.tokenRegistry[denom];
+            const baseDenom = parsedDenoms[denom];
+            const tokenInfo = this.tokenRegistry[baseDenom];
+            
             if (!tokenInfo) {
+                // Check for custom mapping
+                const denomMapping = this.denomParser.getDenomMapping(denom);
+                if (denomMapping) {
+                    this.registerTokenFromMapping(denomMapping);
+                    const newTokenInfo = this.tokenRegistry[denomMapping.baseDenom];
+                    if (newTokenInfo?.coingeckoId) {
+                        toFetch.push(newTokenInfo.coingeckoId);
+                    }
+                }
                 result[denom] = 0;
                 continue;
             }
 
-            // Handle stablecoins immediately
-            if (tokenInfo.isStable) {
-                result[denom] = tokenInfo.priceUsd;
-                this.cacheStablePrice(denom, tokenInfo.priceUsd);
-                continue;
-            }
-
-            // Check cache for non-stable tokens
-            const cacheKey = tokenInfo.coingeckoId || denom;
+            const cacheKey = tokenInfo.coingeckoId || baseDenom;
             const cachedPrice = this.getCachedPrice(cacheKey);
             
             if (cachedPrice !== null) {
@@ -315,15 +461,16 @@ export class PriceOracleService {
             }
         }
 
-        // Batch fetch missing non-stable prices
+        // Batch fetch missing prices
         if (toFetch.length > 0) {
             try {
                 await this.fetchPricesFromAPI(toFetch);
                 
                 // Update results with fresh prices
                 for (const denom of denoms) {
-                    const tokenInfo = this.tokenRegistry[denom];
-                    if (tokenInfo?.coingeckoId && !tokenInfo.isStable) {
+                    const baseDenom = parsedDenoms[denom];
+                    const tokenInfo = this.tokenRegistry[baseDenom];
+                    if (tokenInfo?.coingeckoId) {
                         const freshPrice = this.getCachedPrice(tokenInfo.coingeckoId);
                         if (freshPrice !== null) {
                             result[denom] = freshPrice;
@@ -339,10 +486,26 @@ export class PriceOracleService {
     }
 
     /**
-     * Get token information
+     * Get token information with denom parsing
      */
     public getTokenInfo(denom: string): TokenInfo | null {
-        return this.tokenRegistry[denom] || null;
+        const baseDenom = this.denomParser.parseBaseDenom(denom);
+        return this.tokenRegistry[baseDenom] || null;
+    }
+
+    /**
+     * Register token from denom mapping
+     */
+    private registerTokenFromMapping(mapping: any): void {
+        this.tokenRegistry[mapping.baseDenom] = {
+            symbol: mapping.symbol,
+            decimals: mapping.decimals,
+            priceUsd: 0,
+            lastUpdated: new Date(0),
+            coingeckoId: mapping.coingeckoId
+        };
+        
+        logger.info(`[PriceOracleService] Auto-registered token from mapping: ${mapping.baseDenom} (${mapping.symbol})`);
     }
 
     /**
