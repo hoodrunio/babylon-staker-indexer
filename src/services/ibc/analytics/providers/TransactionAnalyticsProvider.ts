@@ -1,0 +1,208 @@
+import { Network } from '../../../../types/finality';
+import { logger } from '../../../../utils/logger';
+import {
+    ITransactionAnalyticsProvider,
+    TransactionCountResult,
+    TransactionResult,
+    ChainTransactionCountResult
+} from '../../interfaces/IBCAnalyticsService';
+import { IBCTransferRepository } from '../../repository/IBCTransferRepository';
+import { getChainName } from '../../constants/chainMapping';
+import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
+
+/**
+ * Transaction Analytics Provider - follows SRP by handling only transaction-related analytics
+ * Implements DIP by depending on repository abstractions
+ */
+export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvider {
+    constructor(
+        private readonly transferRepository: IBCTransferRepository
+    ) {}
+
+    /**
+     * Get overall transaction count statistics
+     */
+    async getTotalTransactionCount(network: Network): Promise<TransactionCountResult> {
+        try {
+            logger.info(`[TransactionAnalyticsProvider] Getting total transaction count for network: ${network}`);
+
+            const totalTransfers = await IBCTransferModel.countDocuments({
+                network: network.toString()
+            });
+
+            const successfulTransfers = await IBCTransferModel.countDocuments({
+                network: network.toString(),
+                success: true
+            });
+
+            const failedTransfers = totalTransfers - successfulTransfers;
+            const success_rate = totalTransfers > 0 ? (successfulTransfers / totalTransfers) * 100 : 0;
+
+            return {
+                total_transactions: totalTransfers,
+                successful_transactions: successfulTransfers,
+                failed_transactions: failedTransfers,
+                success_rate: Math.round(success_rate * 100) / 100
+            };
+        } catch (error) {
+            logger.error('[TransactionAnalyticsProvider] Error getting total transaction count:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get latest transactions with details
+     */
+    async getLatestTransactions(limit: number, network: Network): Promise<TransactionResult[]> {
+        try {
+            logger.info(`[TransactionAnalyticsProvider] Getting latest ${limit} transactions for network: ${network}`);
+
+            const transfers = await IBCTransferModel.find({
+                network: network.toString()
+            })
+            .sort({ send_time: -1 })
+            .limit(limit)
+            .lean();
+
+            return transfers.map(transfer => ({
+                tx_hash: transfer.tx_hash,
+                source_chain_id: transfer.source_chain_id,
+                destination_chain_id: transfer.destination_chain_id,
+                amount: transfer.amount,
+                denom: transfer.denom,
+                sender: transfer.sender,
+                receiver: transfer.receiver,
+                timestamp: transfer.send_time,
+                success: transfer.success,
+                completion_time_ms: transfer.complete_time && transfer.send_time ? 
+                    transfer.complete_time.getTime() - transfer.send_time.getTime() : undefined
+            }));
+        } catch (error) {
+            logger.error('[TransactionAnalyticsProvider] Error getting latest transactions:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get transaction counts broken down by chain
+     */
+    async getTransactionCountsByChain(network: Network): Promise<ChainTransactionCountResult[]> {
+        try {
+            logger.info(`[TransactionAnalyticsProvider] Getting transaction counts by chain for network: ${network}`);
+
+            // Aggregate transactions by chain using MongoDB aggregation pipeline
+            const pipeline = [
+                {
+                    $match: {
+                        network: network.toString()
+                    }
+                },
+                {
+                    // Create documents for both source and destination chains
+                    $facet: {
+                        sourceChains: [
+                            {
+                                $group: {
+                                    _id: '$source_chain_id',
+                                    total_transactions: { $sum: 1 },
+                                    successful_transactions: {
+                                        $sum: { $cond: ['$success', 1, 0] }
+                                    }
+                                }
+                            }
+                        ],
+                        destChains: [
+                            {
+                                $group: {
+                                    _id: '$destination_chain_id',
+                                    total_transactions: { $sum: 1 },
+                                    successful_transactions: {
+                                        $sum: { $cond: ['$success', 1, 0] }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    // Combine source and destination chain data
+                    $project: {
+                        chains: {
+                            $setUnion: [
+                                { $map: { input: '$sourceChains', as: 'chain', in: '$$chain._id' } },
+                                { $map: { input: '$destChains', as: 'chain', in: '$$chain._id' } }
+                            ]
+                        },
+                        sourceData: '$sourceChains',
+                        destData: '$destChains'
+                    }
+                }
+            ];
+
+            const aggregationResult = await IBCTransferModel.aggregate(pipeline);
+            
+            if (!aggregationResult.length) {
+                return [];
+            }
+
+            const result = aggregationResult[0];
+            const chainStatsMap = new Map<string, ChainTransactionCountResult>();
+
+            // Process source chain data
+            result.sourceData.forEach((chainData: any) => {
+                const chainId = chainData._id;
+                if (chainId === 'babylonchain') return; // Skip our own chain
+
+                const stats = chainStatsMap.get(chainId) || {
+                    chain_id: chainId,
+                    chain_name: getChainName(chainId),
+                    total_transactions: 0,
+                    successful_transactions: 0,
+                    failed_transactions: 0,
+                    success_rate: 0
+                };
+
+                stats.total_transactions += chainData.total_transactions;
+                stats.successful_transactions += chainData.successful_transactions;
+                
+                chainStatsMap.set(chainId, stats);
+            });
+
+            // Process destination chain data
+            result.destData.forEach((chainData: any) => {
+                const chainId = chainData._id;
+                if (chainId === 'babylonchain') return; // Skip our own chain
+
+                const stats = chainStatsMap.get(chainId) || {
+                    chain_id: chainId,
+                    chain_name: getChainName(chainId),
+                    total_transactions: 0,
+                    successful_transactions: 0,
+                    failed_transactions: 0,
+                    success_rate: 0
+                };
+
+                stats.total_transactions += chainData.total_transactions;
+                stats.successful_transactions += chainData.successful_transactions;
+                
+                chainStatsMap.set(chainId, stats);
+            });
+
+            // Calculate derived fields
+            const chainResults: ChainTransactionCountResult[] = [];
+            
+            for (const stats of chainStatsMap.values()) {
+                stats.failed_transactions = stats.total_transactions - stats.successful_transactions;
+                stats.success_rate = stats.total_transactions > 0 ? 
+                    Math.round((stats.successful_transactions / stats.total_transactions) * 10000) / 100 : 0;
+                
+                chainResults.push(stats);
+            }
+
+            return chainResults.sort((a, b) => b.total_transactions - a.total_transactions);
+        } catch (error) {
+            logger.error('[TransactionAnalyticsProvider] Error getting transaction counts by chain:', error);
+            throw error;
+        }
+    }
+} 
