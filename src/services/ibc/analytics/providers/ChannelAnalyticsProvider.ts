@@ -11,7 +11,7 @@ import { IBCPacketRepository } from '../../repository/IBCPacketRepository';
 import { getTokenService } from '../domain/TokenServiceFactory';
 import { ITokenService } from '../domain/TokenService';
 import { IBCTransfer } from '../../../../database/models/ibc/IBCTransfer';
-import IBCPacketModel from '../../../../database/models/ibc/IBCPacket';
+import { IIBCChainResolverService } from '../../transfer/interfaces/IBCServices';
 
 /**
  * Channel Analytics Provider - follows SRP by handling only channel-related analytics
@@ -22,7 +22,8 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
     constructor(
         private readonly channelRepository: IBCChannelRepository,
         private readonly transferRepository: IBCTransferRepository,
-        private readonly packetRepository: IBCPacketRepository
+        private readonly packetRepository: IBCPacketRepository,
+        private readonly chainResolver: IIBCChainResolverService
     ) {
         this.tokenService = getTokenService();
     }
@@ -43,8 +44,8 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
                 return acc;
             }, {} as Record<string, number>);
 
-            // Count active channels (OPEN state)
-            const active_channels = channels_by_state['OPEN'] || 0;
+            // Count active channels (STATE_OPEN state)
+            const active_channels = channels_by_state['STATE_OPEN'] || 0;
 
             return {
                 total_channels: allChannels.length,
@@ -69,34 +70,27 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
             const channelVolumes: ChannelVolumeResult[] = [];
 
             for (const channel of channels) {
-                // Get packets for this channel to find associated transfers
-                const packets = await IBCPacketModel.find({
-                    source_channel: channel.channel_id,
-                    source_port: channel.port_id,
-                    network: network.toString()
-                });
-
-                // Get transfers for these packets
-                const packetIds = packets.map(p => p._id);
-                const transfers = await this.getTransfersByPacketIds(packetIds, network);
-
-                // Calculate volumes by denomination
+                // Use channel's total_tokens_transferred data directly from DB
                 const volumes_by_denom: Record<string, string> = {};
-
-                transfers.forEach((transfer: IBCTransfer) => {
-                    if (transfer.success) {
-                        const denom = transfer.denom;
-                        const amount = transfer.amount;
-                        
-                        if (volumes_by_denom[denom]) {
-                            volumes_by_denom[denom] = (
-                                parseFloat(volumes_by_denom[denom]) + parseFloat(amount)
-                            ).toString();
-                        } else {
-                            volumes_by_denom[denom] = amount;
-                        }
+                
+                // Combine incoming and outgoing volumes from channel data
+                if (channel.total_tokens_transferred) {
+                    // Process incoming volumes
+                    if (channel.total_tokens_transferred.incoming) {
+                        Object.entries(channel.total_tokens_transferred.incoming).forEach(([denom, amount]) => {
+                            const currentAmount = parseFloat(volumes_by_denom[denom] || '0');
+                            volumes_by_denom[denom] = (currentAmount + (amount as number)).toString();
+                        });
                     }
-                });
+                    
+                    // Process outgoing volumes  
+                    if (channel.total_tokens_transferred.outgoing) {
+                        Object.entries(channel.total_tokens_transferred.outgoing).forEach(([denom, amount]) => {
+                            const currentAmount = parseFloat(volumes_by_denom[denom] || '0');
+                            volumes_by_denom[denom] = (currentAmount + (amount as number)).toString();
+                        });
+                    }
+                }
 
                 // Use TokenService for USD conversion - much cleaner!
                 const denomAmounts = Object.entries(volumes_by_denom).map(([denom, amount]) => ({
@@ -106,16 +100,37 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
 
                 const { total } = await this.tokenService.convertBatchToUsd(denomAmounts);
 
-                // Calculate success rate
-                const successful_transfers = transfers.filter((t: IBCTransfer) => t.success).length;
-                const success_rate = transfers.length > 0 ? 
-                    (successful_transfers / transfers.length) * 100 : 0;
+                // Calculate success rate from channel data
+                const success_rate = channel.packet_count > 0 ? 
+                    ((channel.success_count || 0) / channel.packet_count) * 100 : 0;
+
+                // Use ChainResolver to get proper chain information
+                let counterpartyChainName = 'Unknown';
+                let counterpartyChainId = '';
+                
+                try {
+                    const chainInfo = await this.chainResolver.getChainInfoFromChannel(
+                        channel.channel_id, 
+                        channel.port_id, 
+                        network
+                    );
+                    
+                    if (chainInfo) {
+                        counterpartyChainName = chainInfo.chain_name;
+                        counterpartyChainId = chainInfo.chain_id;
+                    }
+                } catch (error) {
+                    logger.debug(`[ChannelAnalyticsProvider] Could not resolve chain for channel ${channel.channel_id}: ${error}`);
+                    // Fallback to existing data
+                    counterpartyChainName = channel.counterparty_chain_name || 'Unknown';
+                    counterpartyChainId = channel.counterparty_chain_id || '';
+                }
 
                 channelVolumes.push({
                     channel_id: channel.channel_id,
                     port_id: channel.port_id,
-                    counterparty_chain_id: channel.counterparty_chain_id,
-                    counterparty_chain_name: channel.counterparty_chain_name || 'Unknown',
+                    counterparty_chain_id: counterpartyChainId,
+                    counterparty_chain_name: counterpartyChainName,
                     total_volume_usd: total.toString(),
                     volumes_by_denom,
                     packet_count: channel.packet_count || 0,
@@ -147,23 +162,4 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
             throw error;
         }
     }
-
-    /**
-     * Helper method to get transfers by packet IDs
-     */
-    private async getTransfersByPacketIds(packetIds: any[], network: Network): Promise<IBCTransfer[]> {
-        try {
-            // Use the existing model directly for complex queries
-            const IBCTransferModel = (await import('../../../../database/models/ibc/IBCTransfer')).default;
-            
-            return await IBCTransferModel.find({
-                packet_id: { $in: packetIds },
-                network: network.toString()
-            });
-        } catch (error) {
-            logger.error('[ChannelAnalyticsProvider] Error getting transfers by packet IDs:', error);
-            return [];
-        }
-    }
-
 } 

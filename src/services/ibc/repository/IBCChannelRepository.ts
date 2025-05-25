@@ -135,7 +135,7 @@ export class IBCChannelRepository {
     public async getOpenChannels(network: Network): Promise<any[]> {
         try {
             return await IBCChannelModel.find({
-                state: 'OPEN',
+                state: 'STATE_OPEN', // Fixed: Use actual DB state value
                 network: network.toString()
             });
         } catch (error) {

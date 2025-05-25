@@ -69,15 +69,34 @@ export class IBCServiceManager {
             const { IBCTransferService } = await import('../transfer/IBCTransferService');
             const { IBCRelayerService } = await import('../relayer/IBCRelayerService');
             
+            // Import repository classes for chain resolver
+            const { IBCChannelRepository } = await import('../repository/IBCChannelRepository');
+            const { IBCConnectionRepository } = await import('../repository/IBCConnectionRepository');
+            const { IBCClientRepository } = await import('../repository/IBCClientRepository');
+            const { IBCChainResolverService } = await import('../transfer/services/IBCChainResolverService');
+            
             // Initialize infrastructure services first
             this.stateRepository = new IBCStateRepository();
             this.reconciliationService = new IBCReconciliationService();
+            
+            // Initialize repositories for chain resolver
+            const channelRepository = new IBCChannelRepository();
+            const connectionRepository = new IBCConnectionRepository();
+            const clientRepository = new IBCClientRepository();
+            
+            // Initialize chain resolver service
+            const chainResolver = new IBCChainResolverService(
+                channelRepository,
+                connectionRepository,
+                clientRepository,
+                this.babylonClient
+            );
             
             // Initialize domain services
             this.channelService = new IBCChannelService();
             this.connectionService = new IBCConnectionService();
             this.clientService = new IBCClientService();
-            this.packetService = new IBCPacketService();
+            this.packetService = new IBCPacketService(undefined, chainResolver);
             this.transferService = new IBCTransferService();
             this.relayerService = new IBCRelayerService();
             

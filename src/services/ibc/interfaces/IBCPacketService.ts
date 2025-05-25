@@ -12,8 +12,9 @@ export interface IBCPacketService {
      * @param height Block height
      * @param timestamp Block timestamp
      * @param network Network
+     * @param relayerAddress Optional relayer address from transaction signer
      */
-    processPacketEvent(event: any, txHash: string, height: number, timestamp: Date, network: Network): Promise<void>;
+    processPacketEvent(event: any, txHash: string, height: number, timestamp: Date, network: Network, relayerAddress?: string): Promise<void>;
 
     /**
      * Get packet by sequence

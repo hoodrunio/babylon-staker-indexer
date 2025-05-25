@@ -11,6 +11,11 @@ import { IBCConnectionRepository } from '../repository/IBCConnectionRepository';
 import { IBCTransferRepository } from '../repository/IBCTransferRepository';
 import { IBCPacketRepository } from '../repository/IBCPacketRepository';
 import { IBCRelayerRepository } from '../repository/IBCRelayerRepository';
+import { IBCClientRepository } from '../repository/IBCClientRepository';
+
+// Service imports
+import { IBCChainResolverService } from '../transfer/services/IBCChainResolverService';
+import { BabylonClient } from '../../../clients/BabylonClient';
 
 /**
  * Factory for creating IBC Analytics Service instances
@@ -32,12 +37,23 @@ export class IBCAnalyticsFactory {
         const transferRepository = new IBCTransferRepository();
         const packetRepository = new IBCPacketRepository();
         const relayerRepository = new IBCRelayerRepository();
+        const clientRepository = new IBCClientRepository();
+
+        // Create service instances
+        const babylonClient = BabylonClient.getInstance();
+        const chainResolverService = new IBCChainResolverService(
+            channelRepository,
+            connectionRepository,
+            clientRepository,
+            babylonClient
+        );
 
         // Create provider instances with injected dependencies
         const channelProvider = new ChannelAnalyticsProvider(
             channelRepository,
             transferRepository,
-            packetRepository
+            packetRepository,
+            chainResolverService
         );
 
         const chainProvider = new ChainAnalyticsProvider(

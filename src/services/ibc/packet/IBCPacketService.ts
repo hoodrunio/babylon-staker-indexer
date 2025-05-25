@@ -2,6 +2,8 @@ import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { IBCPacketRepository } from '../repository/IBCPacketRepository';
 import { IBCEventUtils } from '../common/IBCEventUtils';
+import { IIBCChainResolverService } from '../transfer/interfaces/IBCServices';
+import { getChainName } from '../constants/chainMapping';
 
 /**
  * Service responsible for processing and managing IBC packet data
@@ -10,9 +12,18 @@ import { IBCEventUtils } from '../common/IBCEventUtils';
 export class IBCPacketService {
     private readonly serviceName = 'IBCPacketService';
     private packetRepository: IBCPacketRepository;
+    private chainResolver: IIBCChainResolverService;
 
-    constructor(packetRepository?: IBCPacketRepository) {
-        this.packetRepository = packetRepository || new IBCPacketRepository();
+    constructor(
+        packetRepository: IBCPacketRepository = new IBCPacketRepository(), 
+        chainResolver: IIBCChainResolverService
+    ) {
+        this.packetRepository = packetRepository;
+        this.chainResolver = chainResolver;
+        
+        if (!this.chainResolver) {
+            throw new Error('[IBCPacketService] Chain resolver is required');
+        }
     }
 
     /**
@@ -22,13 +33,15 @@ export class IBCPacketService {
      * @param height Block height
      * @param timestamp Block timestamp
      * @param network Network where the event occurred
+     * @param relayerAddress Optional relayer address from transaction signer
      */
     public async processPacketEvent(
         event: any, 
         txHash: string,
         height: number, 
         timestamp: Date,
-        network: Network
+        network: Network,
+        relayerAddress?: string
     ): Promise<void> {
         try {
             IBCEventUtils.logEventStart(this.serviceName, event.type, txHash);
@@ -41,13 +54,13 @@ export class IBCPacketService {
                     await this.handleSendPacket(attributes, txHash, height, timestamp, network);
                     break;
                 case 'recv_packet':
-                    await this.handleRecvPacket(attributes, txHash, height, timestamp, network);
+                    await this.handleRecvPacket(attributes, txHash, height, timestamp, network, relayerAddress);
                     break;
                 case 'acknowledge_packet':
-                    await this.handleAcknowledgePacket(attributes, txHash, height, timestamp, network);
+                    await this.handleAcknowledgePacket(attributes, txHash, height, timestamp, network, relayerAddress);
                     break;
                 case 'timeout_packet':
-                    await this.handleTimeoutPacket(attributes, txHash, height, timestamp, network);
+                    await this.handleTimeoutPacket(attributes, txHash, height, timestamp, network, relayerAddress);
                     break;
                 default:
                     // Do not log unhandled events as warnings - they may be processed by other services
@@ -66,10 +79,10 @@ export class IBCPacketService {
         txHash: string,
         height: number,
         timestamp: Date,
-        network: Network
+        network: Network,
     ): Promise<void> {
         try {
-            const packetData = this.extractPacketDataFromAttributes(attributes);
+            const packetData = await this.extractPacketDataFromAttributes(attributes, network, 'send_packet');
             
             if (!packetData.sequence || !packetData.source_port || !packetData.source_channel) {
                 logger.warn(`[IBCPacketService] Missing required attributes for send_packet`);
@@ -102,10 +115,11 @@ export class IBCPacketService {
         txHash: string,
         height: number,
         timestamp: Date,
-        network: Network
+        network: Network,
+        relayerAddress?: string
     ): Promise<void> {
         try {
-            const packetData = this.extractPacketDataFromAttributes(attributes);
+            const packetData = await this.extractPacketDataFromAttributes(attributes, network, 'recv_packet');
             
             if (!packetData.sequence || !packetData.source_port || !packetData.source_channel) {
                 logger.warn(`[IBCPacketService] Missing required attributes for recv_packet`);
@@ -131,6 +145,7 @@ export class IBCPacketService {
                 receive_tx_hash: txHash,
                 recv_height: height,
                 receive_time: timestamp,
+                relayer_address: relayerAddress,
                 network: network.toString(),
                 last_updated: timestamp
             };
@@ -150,10 +165,11 @@ export class IBCPacketService {
         txHash: string,
         height: number,
         timestamp: Date,
-        network: Network
+        network: Network,
+        relayerAddress?: string
     ): Promise<void> {
         try {
-            const packetData = this.extractPacketDataFromAttributes(attributes);
+            const packetData = await this.extractPacketDataFromAttributes(attributes, network, 'acknowledge_packet');
             
             if (!packetData.sequence || !packetData.source_port || !packetData.source_channel) {
                 logger.warn(`[IBCPacketService] Missing required attributes for acknowledge_packet`);
@@ -179,6 +195,7 @@ export class IBCPacketService {
                 ack_tx_hash: txHash,
                 ack_height: height,
                 ack_time: timestamp,
+                relayer_address: relayerAddress,
                 network: network.toString(),
                 last_updated: timestamp
             };
@@ -198,10 +215,11 @@ export class IBCPacketService {
         txHash: string,
         height: number,
         timestamp: Date,
-        network: Network
+        network: Network,
+        relayerAddress?: string
     ): Promise<void> {
         try {
-            const packetData = this.extractPacketDataFromAttributes(attributes);
+            const packetData = await this.extractPacketDataFromAttributes(attributes, network, 'timeout_packet');
             
             if (!packetData.sequence || !packetData.source_port || !packetData.source_channel) {
                 logger.warn(`[IBCPacketService] Missing required attributes for timeout_packet`);
@@ -227,6 +245,7 @@ export class IBCPacketService {
                 timeout_tx_hash: txHash,
                 timeout_height: height,
                 timeout_time: timestamp,
+                relayer_address: relayerAddress,
                 network: network.toString(),
                 last_updated: timestamp
             };
@@ -241,7 +260,7 @@ export class IBCPacketService {
     /**
      * Extract packet data from event attributes
      */
-    private extractPacketDataFromAttributes(attributes: Record<string, string>): any {
+    private async extractPacketDataFromAttributes(attributes: Record<string, string>, network: Network, eventType?: string): Promise<any> {
         const packetData: any = {};
         
         // Extract packet identification fields
@@ -251,21 +270,105 @@ export class IBCPacketService {
         packetData.destination_port = attributes.packet_dst_port;
         packetData.destination_channel = attributes.packet_dst_channel;
         
+        const isMainnet = network === 'mainnet';
+        const localChainId = isMainnet ? 'bbn-1' : 'bbn-test-5';
+        const localChainName = getChainName(localChainId);
+        
+        // Determine packet direction based on event type
+        const isOutbound = this.determinePacketDirection(eventType, packetData.source_channel, packetData.destination_channel);
+        
+        // Resolve chain information using chain resolver
+        const channelToResolve = isOutbound ? packetData.source_channel : packetData.destination_channel;
+        const portToResolve = isOutbound ? packetData.source_port : packetData.destination_port;
+        
+        if (channelToResolve && portToResolve) {
+            try {
+                const chainInfo = await this.chainResolver.getChainInfoFromChannel(
+                    channelToResolve,
+                    portToResolve,
+                    network
+                );
+                
+                if (chainInfo) {
+                    if (isOutbound) {
+                        // Outbound: source=local, destination=remote
+                        packetData.source_chain_id = localChainId;
+                        packetData.source_chain_name = localChainName;
+                        packetData.destination_chain_id = chainInfo.chain_id;
+                        packetData.destination_chain_name = chainInfo.chain_name;
+                    } else {
+                        // Inbound: source=remote, destination=local
+                        packetData.source_chain_id = chainInfo.chain_id;
+                        packetData.source_chain_name = chainInfo.chain_name;
+                        packetData.destination_chain_id = localChainId;
+                        packetData.destination_chain_name = localChainName;
+                    }
+                } else {
+                    logger.warn(`[IBCPacketService] Could not resolve chain info for channel ${channelToResolve} - using fallback`);
+                    // Set local chain info and leave remote chain info undefined
+                    if (isOutbound) {
+                        packetData.source_chain_id = localChainId;
+                        packetData.source_chain_name = localChainName;
+                        // destination chain info will remain undefined
+                    } else {
+                        packetData.destination_chain_id = localChainId;
+                        packetData.destination_chain_name = localChainName;
+                        // source chain info will remain undefined
+                    }
+                }
+            } catch (error) {
+                logger.error(`[IBCPacketService] Error resolving chain info: ${error}`);
+                // Set local chain info and leave remote chain info undefined
+                if (isOutbound) {
+                    packetData.source_chain_id = localChainId;
+                    packetData.source_chain_name = localChainName;
+                    // destination chain info will remain undefined
+                } else {
+                    packetData.destination_chain_id = localChainId;
+                    packetData.destination_chain_name = localChainName;
+                    // source chain info will remain undefined
+                }
+            }
+        } else {
+            logger.warn(`[IBCPacketService] Missing channel/port info for chain resolution`);
+            // Set local chain info based on direction
+            if (isOutbound) {
+                packetData.source_chain_id = localChainId;
+                packetData.source_chain_name = localChainName;
+            } else {
+                packetData.destination_chain_id = localChainId;
+                packetData.destination_chain_name = localChainName;
+            }
+        }
+        
         // Extract other packet data fields if available
         if (attributes.packet_data) {
             try {
+                packetData.data_hex = attributes.packet_data;
                 packetData.data = JSON.parse(attributes.packet_data);
             } catch (e) {
+                packetData.data_hex = attributes.packet_data;
                 packetData.data = attributes.packet_data;
             }
         }
         
         if (attributes.packet_timeout_height) {
-            packetData.timeout_height = attributes.packet_timeout_height;
+            try {
+                const [revisionNumber, revisionHeight] = attributes.packet_timeout_height.split('-');
+                packetData.timeout_height = {
+                    revision_number: parseInt(revisionNumber) || 0,
+                    revision_height: parseInt(revisionHeight) || 0
+                };
+            } catch (e) {
+                packetData.timeout_height = {
+                    revision_number: 0,
+                    revision_height: 0
+                };
+            }
         }
         
         if (attributes.packet_timeout_timestamp) {
-            packetData.timeout_timestamp = attributes.packet_timeout_timestamp;
+            packetData.timeout_timestamp = parseInt(attributes.packet_timeout_timestamp) || 0;
         }
         
         if (attributes.packet_ack) {
@@ -277,5 +380,74 @@ export class IBCPacketService {
         }
         
         return packetData;
+    }
+
+    /**
+     * Determine packet direction based on event type and channel information
+     * @param eventType The event type (send_packet, recv_packet, etc.)
+     * @param sourceChannel Source channel ID
+     * @param destChannel Destination channel ID
+     * @returns true if outbound (from Babylon to other chain), false if inbound
+     */
+    private determinePacketDirection(eventType?: string, sourceChannel?: string, destChannel?: string): boolean {
+        // If no event type, default to outbound
+        if (!eventType) {
+            return true;
+        }
+
+        switch (eventType) {
+            case 'send_packet':
+                // Send packets are always outbound from our perspective
+                return true;
+            
+            case 'recv_packet':
+                // Receive packets are always inbound to our perspective
+                return false;
+            
+            case 'acknowledge_packet':
+            case 'timeout_packet':
+                // For ack/timeout, we need to determine direction based on channel pattern
+                // Our local channels typically have lower numbers (channel-0, channel-1, etc.)
+                // Remote channels often have higher numbers or different patterns
+                if (sourceChannel) {
+                    // If source channel matches our typical pattern, it's outbound
+                    const isSourceLocal = this.isLocalChannel(sourceChannel);
+                    return isSourceLocal;
+                }
+                
+                // If we can't determine from source, check destination
+                if (destChannel) {
+                    const isDestLocal = this.isLocalChannel(destChannel);
+                    return !isDestLocal; // If dest is local, then it's inbound (so return false)
+                }
+                
+                // Default to outbound if we can't determine
+                return true;
+            
+            default:
+                // For unknown event types, default to outbound
+                return true;
+        }
+    }
+
+    /**
+     * Check if a channel ID represents a local Babylon channel
+     * @param channelId Channel ID to check
+     * @returns true if it's likely a local channel
+     */
+    private isLocalChannel(channelId: string): boolean {
+        if (!channelId) return false;
+        
+        // Our local channels typically follow the pattern "channel-N" where N is a small number
+        const match = channelId.match(/^channel-(\d+)$/);
+        if (match) {
+            const channelNumber = parseInt(match[1]);
+            // Local channels typically have low numbers (0-99)
+            // This is a heuristic and may need adjustment based on actual data
+            return channelNumber < 100;
+        }
+        
+        // If it doesn't match the expected pattern, assume it's remote
+        return false;
     }
 }

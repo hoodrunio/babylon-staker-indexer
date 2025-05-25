@@ -153,7 +153,7 @@ export class IBCEventHandler {
         tokenDenom?: string
     ): Promise<void> {
         // Always process packet data
-        promises.push(this.services.packetService.processPacketEvent(event, hash, height, timestamp, network));
+        promises.push(this.services.packetService.processPacketEvent(event, hash, height, timestamp, network, signer));
         
         // Always process relayer tracking
         promises.push(this.services.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer));
