@@ -10,7 +10,6 @@ import { IBCTransferRepository } from '../../repository/IBCTransferRepository';
 import { IBCPacketRepository } from '../../repository/IBCPacketRepository';
 import { getTokenService } from '../domain/TokenServiceFactory';
 import { ITokenService } from '../domain/TokenService';
-import { IBCTransfer } from '../../../../database/models/ibc/IBCTransfer';
 import { IIBCChainResolverService } from '../../transfer/interfaces/IBCServices';
 
 /**
@@ -75,19 +74,27 @@ export class ChannelAnalyticsProvider implements IChannelAnalyticsProvider {
                 
                 // Combine incoming and outgoing volumes from channel data
                 if (channel.total_tokens_transferred) {
-                    // Process incoming volumes
+                    // Process incoming volumes (MongoDB Map to Object conversion)
                     if (channel.total_tokens_transferred.incoming) {
-                        Object.entries(channel.total_tokens_transferred.incoming).forEach(([denom, amount]) => {
+                        const incomingMap = channel.total_tokens_transferred.incoming instanceof Map 
+                            ? channel.total_tokens_transferred.incoming 
+                            : new Map(Object.entries(channel.total_tokens_transferred.incoming || {}));
+                        
+                        incomingMap.forEach((amount: number, denom: string) => {
                             const currentAmount = parseFloat(volumes_by_denom[denom] || '0');
-                            volumes_by_denom[denom] = (currentAmount + (amount as number)).toString();
+                            volumes_by_denom[denom] = (currentAmount + amount).toString();
                         });
                     }
                     
-                    // Process outgoing volumes  
+                    // Process outgoing volumes (MongoDB Map to Object conversion)
                     if (channel.total_tokens_transferred.outgoing) {
-                        Object.entries(channel.total_tokens_transferred.outgoing).forEach(([denom, amount]) => {
+                        const outgoingMap = channel.total_tokens_transferred.outgoing instanceof Map 
+                            ? channel.total_tokens_transferred.outgoing 
+                            : new Map(Object.entries(channel.total_tokens_transferred.outgoing || {}));
+                        
+                        outgoingMap.forEach((amount: number, denom: string) => {
                             const currentAmount = parseFloat(volumes_by_denom[denom] || '0');
-                            volumes_by_denom[denom] = (currentAmount + (amount as number)).toString();
+                            volumes_by_denom[denom] = (currentAmount + amount).toString();
                         });
                     }
                 }

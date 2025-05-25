@@ -7,27 +7,24 @@ import {
     RelayerTransactionCountResult
 } from '../../interfaces/IBCAnalyticsService';
 import { IBCRelayerRepository } from '../../repository/IBCRelayerRepository';
-import { getTokenService } from '../domain/TokenServiceFactory';
-import { ITokenService } from '../domain/TokenService';
 import { ChainConfigService } from '../config/ChainConfigService';
 import { getChainName } from '../../constants/chainMapping';
 import IBCRelayerModel from '../../../../database/models/ibc/IBCRelayer';
-import IBCPacketModel from '../../../../database/models/ibc/IBCPacket';
-import IBCTransferModel from '../../../../database/models/ibc/IBCTransfer';
+import { RelayerVolumeService } from '../../relayer/RelayerVolumeService';
 
 /**
  * Relayer Analytics Provider - follows SRP by handling only relayer-related analytics
  * Now uses SOLID-compliant TokenService for price and denomination handling
  */
 export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
-    private readonly tokenService: ITokenService;
     private readonly chainConfig: ChainConfigService;
+    private readonly volumeService: RelayerVolumeService;
 
     constructor(
         private readonly relayerRepository: IBCRelayerRepository
     ) {
-        this.tokenService = getTokenService();
         this.chainConfig = ChainConfigService.getInstance();
+        this.volumeService = new RelayerVolumeService();
     }
 
     /**
@@ -77,105 +74,54 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
     }
 
     /**
-     * Get volume statistics for each relayer
+     * Get volume statistics for each relayer - REFACTORED: Real-time USD calculation
      */
     async getRelayerVolumes(network: Network): Promise<RelayerVolumeResult[]> {
         try {
             logger.info(`[RelayerAnalyticsProvider] Getting relayer volumes for network: ${network}`);
 
-            // Get all packets with relayer information
-            const packets = await IBCPacketModel.find({
+            // Get all relayers with volume data (native amounts)
+            const relayers = await IBCRelayerModel.find({
                 network: network.toString(),
-                relayer_address: { $exists: true, $ne: null }
+                volumes_by_denom: { $exists: true, $ne: {} } // Only relayers with volume
             });
 
-            // Get associated transfers
-            const transfers = await IBCTransferModel.find({
-                packet_id: { $in: packets.map(p => p._id) },
-                network: network.toString(),
-                success: true
-            });
-
-            // Group by relayer address
-            const relayerVolumeMap = new Map<string, {
-                chains: Set<string>;
-                total_packets: number;
-                successful_packets: number;
-                volume_by_chain: Map<string, number>;
-            }>();
-
-            // Process each packet to get associated transfers
-            for (const packet of packets) {
-                const relayerAddress = packet.relayer_address;
-                if (!relayerAddress) continue;
-
-                const sourceChain = packet.source_chain_id;
-                const destChain = packet.destination_chain_id;
-                
-                if (!relayerVolumeMap.has(relayerAddress)) {
-                    relayerVolumeMap.set(relayerAddress, {
-                        chains: new Set(),
-                        total_packets: 0,
-                        successful_packets: 0,
-                        volume_by_chain: new Map()
-                    });
-                }
-
-                const relayerData = relayerVolumeMap.get(relayerAddress)!;
-                relayerData.chains.add(sourceChain);
-                relayerData.chains.add(destChain);
-                relayerData.total_packets++;
-
-                if (packet.status === 'ACKNOWLEDGED') {
-                    relayerData.successful_packets++;
-                }
-
-                // Get transfer value for this packet
-                const transfer = transfers.find(t => 
-                    t.packet_id?.toString() === (packet._id as any).toString()
-                );
-
-                if (transfer && transfer.success) {
-                    const amount = parseFloat(transfer.amount);
-                    const volumeUSD = await this.tokenService.convertToUsd(transfer.denom, amount);
-                    
-                    // Add to source chain volume
-                    const sourceVolume = relayerData.volume_by_chain.get(sourceChain) || 0;
-                    relayerData.volume_by_chain.set(sourceChain, sourceVolume + volumeUSD);
-                    
-                    // Add to destination chain volume
-                    const destVolume = relayerData.volume_by_chain.get(destChain) || 0;
-                    relayerData.volume_by_chain.set(destChain, destVolume + volumeUSD);
-                }
-            }
-
-            // Convert to result format
             const results: RelayerVolumeResult[] = [];
-            
-            for (const [relayerAddress, data] of relayerVolumeMap.entries()) {
-                const volumes_by_chain: Record<string, string> = {};
-                let total_volume_usd = 0;
 
-                for (const [chainId, volume] of data.volume_by_chain.entries()) {
-                    volumes_by_chain[chainId] = volume.toString();
-                    total_volume_usd += volume;
+            for (const relayer of relayers) {
+                // Calculate total USD volume from native amounts (real-time)
+                const totalVolumeUsd = await this.volumeService.calculateTotalUsdVolume(relayer.volumes_by_denom);
+                
+                // Skip relayers with zero USD volume
+                if (totalVolumeUsd === 0) continue;
+
+                // Convert chain volumes to USD (real-time)
+                const volumes_by_chain: Record<string, string> = {};
+                if (relayer.volumes_by_chain) {
+                    const chainVolumesUsd = await this.volumeService.convertChainVolumesToUsd(relayer.volumes_by_chain);
+                    for (const [chainId, usdVolume] of Object.entries(chainVolumesUsd)) {
+                        volumes_by_chain[chainId] = usdVolume.toString();
+                    }
                 }
 
-                const success_rate = data.total_packets > 0 ? 
-                    (data.successful_packets / data.total_packets) * 100 : 0;
+                // Calculate success rate
+                const success_rate = relayer.total_packets_relayed > 0 ? 
+                    (relayer.successful_packets / relayer.total_packets_relayed) * 100 : 0;
 
                 results.push({
-                    relayer_address: relayerAddress,
-                    total_volume_usd: total_volume_usd.toString(),
+                    relayer_address: relayer.address,
+                    total_volume_usd: totalVolumeUsd.toString(),
                     volumes_by_chain,
-                    total_packets_relayed: data.total_packets,
+                    total_packets_relayed: relayer.total_packets_relayed,
                     success_rate: Math.round(success_rate * 100) / 100
                 });
             }
 
-            return results.sort((a, b) => 
-                parseFloat(b.total_volume_usd) - parseFloat(a.total_volume_usd)
-            );
+            // Sort by USD volume (calculated real-time)
+            results.sort((a, b) => parseFloat(b.total_volume_usd) - parseFloat(a.total_volume_usd));
+
+            logger.info(`[RelayerAnalyticsProvider] Found ${results.length} relayers with volume data`);
+            return results;
         } catch (error) {
             logger.error('[RelayerAnalyticsProvider] Error getting relayer volumes:', error);
             throw error;
@@ -183,68 +129,35 @@ export class RelayerAnalyticsProvider implements IRelayerAnalyticsProvider {
     }
 
     /**
-     * Get transaction count statistics for each relayer
+     * Get transaction count statistics for each relayer - NOW USING DATABASE RELAYER DATA
      */
     async getRelayerTransactionCounts(network: Network): Promise<RelayerTransactionCountResult[]> {
         try {
             logger.info(`[RelayerAnalyticsProvider] Getting relayer transaction counts for network: ${network}`);
 
-            // Aggregate relayer statistics from packets
-            const pipeline = [
-                {
-                    $match: {
-                        network: network.toString(),
-                        relayer_address: { $exists: true, $ne: null }
-                    }
-                },
-                {
-                    $group: {
-                        _id: '$relayer_address',
-                        total_transactions: { $sum: 1 },
-                        successful_transactions: {
-                            $sum: { $cond: [{ $eq: ['$status', 'ACKNOWLEDGED'] }, 1, 0] }
-                        },
-                        completion_times: {
-                            $push: { $ifNull: ['$completion_time_ms', null] }
-                        }
-                    }
-                },
-                {
-                    $project: {
-                        relayer_address: '$_id',
-                        total_transactions: 1,
-                        successful_transactions: 1,
-                        failed_transactions: { $subtract: ['$total_transactions', '$successful_transactions'] },
-                        success_rate: {
-                            $multiply: [
-                                { $divide: ['$successful_transactions', '$total_transactions'] },
-                                100
-                            ]
-                        },
-                        avg_completion_time_ms: {
-                            $avg: {
-                                $filter: {
-                                    input: '$completion_times',
-                                    cond: { $ne: ['$$this', null] }
-                                }
-                            }
-                        }
-                    }
-                }
-            ];
+            // Get all relayers with transaction data directly from database
+            const relayers = await IBCRelayerModel.find({
+                network: network.toString(),
+                total_packets_relayed: { $gt: 0 } // Only relayers with transactions
+            }).sort({ total_packets_relayed: -1 }); // Sort by transaction count descending
 
-            const aggregationResult = await IBCPacketModel.aggregate(pipeline);
+            const results: RelayerTransactionCountResult[] = relayers.map(relayer => {
+                // Calculate success rate
+                const success_rate = relayer.total_packets_relayed > 0 ? 
+                    (relayer.successful_packets / relayer.total_packets_relayed) * 100 : 0;
 
-            const results: RelayerTransactionCountResult[] = aggregationResult.map(result => ({
-                relayer_address: result._id,
-                total_transactions: result.total_transactions,
-                successful_transactions: result.successful_transactions,
-                failed_transactions: result.failed_transactions,
-                success_rate: Math.round((result.success_rate || 0) * 100) / 100,
-                avg_completion_time_ms: Math.round(result.avg_completion_time_ms || 0)
-            }));
+                return {
+                    relayer_address: relayer.address,
+                    total_transactions: relayer.total_packets_relayed,
+                    successful_transactions: relayer.successful_packets,
+                    failed_transactions: relayer.failed_packets,
+                    success_rate: Math.round(success_rate * 100) / 100,
+                    avg_completion_time_ms: Math.round(relayer.avg_relay_time_ms || 0)
+                };
+            });
 
-            return results.sort((a, b) => b.total_transactions - a.total_transactions);
+            logger.info(`[RelayerAnalyticsProvider] Found ${results.length} relayers with transaction data`);
+            return results;
         } catch (error) {
             logger.error('[RelayerAnalyticsProvider] Error getting relayer transaction counts:', error);
             throw error;

@@ -59,7 +59,8 @@ export class IBCAnalyticsFactory {
         const chainProvider = new ChainAnalyticsProvider(
             channelRepository,
             connectionRepository,
-            transferRepository
+            transferRepository,
+            clientRepository
         );
 
         const transactionProvider = new TransactionAnalyticsProvider(

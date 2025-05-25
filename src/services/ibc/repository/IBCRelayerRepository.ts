@@ -1,13 +1,21 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import IBCRelayer from '../../../database/models/ibc/IBCRelayer';
+import { RelayerVolumeService } from '../relayer/RelayerVolumeService';
 
 /**
  * Repository for managing IBC relayer data
+ * Now includes volume tracking capabilities following SOLID principles
  */
 export class IBCRelayerRepository {
+    private readonly volumeService: RelayerVolumeService;
+
+    constructor() {
+        this.volumeService = new RelayerVolumeService();
+    }
     /**
      * Track relayer activity and update statistics
+     * Now includes volume tracking for successful transfers
      */
     public async trackRelayerActivity(relayerData: any, network: Network): Promise<any> {
         try {
@@ -69,6 +77,19 @@ export class IBCRelayerRepository {
                 await this.updateRelayerChains(
                     relayerData.address,
                     [relayerData.source_chain_id, relayerData.destination_chain_id],
+                    network
+                );
+            }
+
+            // NEW: Track volume for successful transfers
+            if (relayerData.success && relayerData.transfer_data) {
+                await this.updateRelayerVolume(
+                    relayerData.address,
+                    relayerData.transfer_data,
+                    relayerData.source_chain_id,
+                    relayerData.destination_chain_id,
+                    relayerData.channel_id,
+                    relayerData.port_id,
                     network
                 );
             }
@@ -167,6 +188,70 @@ export class IBCRelayerRepository {
     }
 
     /**
+     * Update volume data for a relayer - REFACTORED: Only native amounts
+     */
+    private async updateRelayerVolume(
+        address: string,
+        transferData: { denom: string; amount: string },
+        sourceChainId: string,
+        destChainId: string,
+        channelId: string,
+        portId: string,
+        network: Network
+    ): Promise<void> {
+        try {
+            logger.debug(`[IBCRelayerRepository] Updating volume for relayer ${address}: ${transferData.amount} ${transferData.denom}`);
+
+            // Prepare update operations for native amounts only
+            const updateOps = this.volumeService.prepareVolumeUpdateOperations(
+                transferData,
+                sourceChainId,
+                destChainId,
+                channelId,
+                portId
+            );
+
+            // Apply denomination volume update
+            await IBCRelayer.updateOne(
+                { address, network: network.toString() },
+                updateOps.denomVolumeUpdate
+            );
+
+            // Apply chain volume updates (separate operations for nested Maps)
+            for (const chainUpdate of updateOps.chainVolumeUpdates) {
+                await IBCRelayer.updateOne(
+                    { address, network: network.toString() },
+                    chainUpdate
+                );
+            }
+
+            // Update channel-specific volume if channel exists
+            const channelExists = await IBCRelayer.findOne({
+                address,
+                network: network.toString(),
+                'active_channels.channel_id': channelId,
+                'active_channels.port_id': portId
+            });
+
+            if (channelExists) {
+                await IBCRelayer.updateOne(
+                    {
+                        address,
+                        network: network.toString(),
+                        'active_channels.channel_id': channelId,
+                        'active_channels.port_id': portId
+                    },
+                    updateOps.channelVolumeUpdate
+                );
+            }
+
+            logger.debug(`[IBCRelayerRepository] Successfully updated native volume for relayer ${address}: +${transferData.amount} ${transferData.denom}`);
+        } catch (error) {
+            logger.error(`[IBCRelayerRepository] Error updating relayer volume: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
      * Get a relayer by address
      */
     public async getRelayer(address: string, network: Network): Promise<any> {
@@ -208,3 +293,4 @@ export class IBCRelayerRepository {
         }
     }
 }
+

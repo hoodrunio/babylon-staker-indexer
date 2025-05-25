@@ -3,6 +3,7 @@ import { logger } from '../../../utils/logger';
 import { IBCRelayerRepository } from '../repository/IBCRelayerRepository';
 import { IBCChainResolverService } from '../transfer/services/IBCChainResolverService';
 import { IBCEventUtils } from '../common/IBCEventUtils';
+import { IBCTokenService } from '../transfer/services/IBCTokenService';
 import { 
     IBCChannelRepositoryAdapter, 
     IBCConnectionRepositoryAdapter,
@@ -18,12 +19,14 @@ export class IBCRelayerService {
     private readonly serviceName = 'IBCRelayerService';
     private relayerRepository: IBCRelayerRepository;
     private chainResolverService: IBCChainResolverService;
+    private tokenService: IBCTokenService;
 
     constructor(
         relayerRepository?: IBCRelayerRepository,
         chainResolverService?: IBCChainResolverService
     ) {
         this.relayerRepository = relayerRepository || new IBCRelayerRepository();
+        this.tokenService = new IBCTokenService();
         
         if (chainResolverService) {
             this.chainResolverService = chainResolverService;
@@ -51,6 +54,7 @@ export class IBCRelayerService {
      * @param timestamp Block timestamp
      * @param network Network where the event occurred
      * @param txSigner Optional transaction signer
+     * @param allEvents All events in the transaction (for extracting transfer data)
      */
     public async processRelayerEvent(
         event: any, 
@@ -58,7 +62,8 @@ export class IBCRelayerService {
         height: number, 
         timestamp: Date,
         network: Network,
-        txSigner?: string
+        txSigner?: string,
+        allEvents?: any[]
     ): Promise<void> {
         try {
             IBCEventUtils.logEventStart(this.serviceName, event.type, txHash);
@@ -156,6 +161,12 @@ export class IBCRelayerService {
                 logger.debug(`[IBCRelayerService] Could not resolve chain info: ${error instanceof Error ? error.message : String(error)}`);
             }
             
+            // Extract transfer data for volume tracking (only for successful transfers)
+            let transferData: { denom: string; amount: string } | undefined;
+            if (success && allEvents) {
+                transferData = this.extractTransferDataFromEvents(allEvents, event);
+            }
+
             // Create relayer activity record with complete information
             const relayerData = {
                 address: signer,
@@ -174,7 +185,9 @@ export class IBCRelayerService {
                 channel_id: sourceChannel,
                 port_id: sourcePort,
                 source_chain_id: sourceChainId,
-                destination_chain_id: destChainId
+                destination_chain_id: destChainId,
+                // NEW: Transfer data for volume tracking
+                transfer_data: transferData
             };
             
             // Log success or failure for monitoring
@@ -201,6 +214,73 @@ export class IBCRelayerService {
         } catch (error) {
             logger.error(`[IBCRelayerService] Error getting relayer stats: ${error instanceof Error ? error.message : String(error)}`);
             return null;
+        }
+    }
+
+    /**
+     * Extract transfer data from transaction events for volume tracking
+     * @param allEvents All events in the transaction
+     * @param currentEvent Current relayer event being processed
+     * @returns Transfer data with amount and denomination
+     */
+    private extractTransferDataFromEvents(allEvents: any[], currentEvent: any): { denom: string; amount: string } | undefined {
+        try {
+            // Look for fungible_token_packet events which contain transfer data
+            const fungibleEvents = allEvents.filter(e => e.type === 'fungible_token_packet');
+            
+            if (fungibleEvents.length > 0) {
+                const attributes = IBCEventUtils.extractEventAttributes(fungibleEvents[0]);
+                if (attributes.amount && attributes.denom) {
+                    logger.debug(`[IBCRelayerService] Extracted transfer data from fungible_token_packet: ${attributes.amount} ${attributes.denom}`);
+                    return {
+                        amount: attributes.amount,
+                        denom: attributes.denom
+                    };
+                }
+            }
+
+            // Fallback: Look for packet_data in the current event
+            const currentAttributes = IBCEventUtils.extractEventAttributes(currentEvent);
+            if (currentAttributes.packet_data) {
+                try {
+                    const transferData = this.tokenService.parseTransferData(currentAttributes.packet_data);
+                    if (transferData.amount && transferData.denom) {
+                        logger.debug(`[IBCRelayerService] Extracted transfer data from packet_data: ${transferData.amount} ${transferData.denom}`);
+                        return {
+                            amount: transferData.amount,
+                            denom: transferData.denom
+                        };
+                    }
+                } catch (error) {
+                    logger.debug(`[IBCRelayerService] Could not parse packet_data: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+
+            // Additional fallback: Look for send_packet or recv_packet events in the same transaction
+            const transferEvents = allEvents.filter(e => e.type === 'send_packet' || e.type === 'recv_packet');
+            for (const transferEvent of transferEvents) {
+                const transferAttributes = IBCEventUtils.extractEventAttributes(transferEvent);
+                if (transferAttributes.packet_data) {
+                    try {
+                        const transferData = this.tokenService.parseTransferData(transferAttributes.packet_data);
+                        if (transferData.amount && transferData.denom) {
+                            logger.debug(`[IBCRelayerService] Extracted transfer data from ${transferEvent.type}: ${transferData.amount} ${transferData.denom}`);
+                            return {
+                                amount: transferData.amount,
+                                denom: transferData.denom
+                            };
+                        }
+                    } catch (error) {
+                        logger.debug(`[IBCRelayerService] Could not parse packet_data from ${transferEvent.type}: ${error instanceof Error ? error.message : String(error)}`);
+                    }
+                }
+            }
+
+            logger.debug(`[IBCRelayerService] No transfer data found in transaction events`);
+            return undefined;
+        } catch (error) {
+            logger.error(`[IBCRelayerService] Error extracting transfer data: ${error instanceof Error ? error.message : String(error)}`);
+            return undefined;
         }
     }
 }

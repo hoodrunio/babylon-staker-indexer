@@ -3,33 +3,10 @@ import { logger } from '../../../../utils/logger';
 
 /**
  * Chain Configuration Service
- * Manages chain-specific configurations in a maintainable way
+ * Provides chain-specific configuration and utilities
  */
-export interface ChainConfig {
-    chainId: string;
-    chainName: string;
-    isHomeChain: boolean;
-    network: Network;
-}
-
 export class ChainConfigService {
     private static instance: ChainConfigService | null = null;
-    
-    // Home chain configurations per network
-    private readonly homeChainConfigs: Record<string, ChainConfig> = {
-        [Network.MAINNET]: {
-            chainId: 'bbn-1',
-            chainName: 'Babylon Genesis',
-            isHomeChain: true,
-            network: Network.MAINNET
-        },
-        [Network.TESTNET]: {
-            chainId: 'bbn-test-5', 
-            chainName: 'Babylon Testnet',
-            isHomeChain: true,
-            network: Network.TESTNET
-        }
-    };
 
     private constructor() {}
 
@@ -41,30 +18,36 @@ export class ChainConfigService {
     }
 
     /**
-     * Get home chain configuration for the given network
-     */
-    public getHomeChainConfig(network: Network): ChainConfig {
-        const config = this.homeChainConfigs[network.toString()];
-        if (!config) {
-            logger.warn(`[ChainConfigService] No home chain config found for network: ${network}, using mainnet config`);
-            return this.homeChainConfigs[Network.MAINNET];
-        }
-        return config;
-    }
-
-    /**
      * Check if a chain ID is the home chain for the given network
      */
     public isHomeChain(chainId: string, network: Network): boolean {
-        const homeConfig = this.getHomeChainConfig(network);
-        return chainId === homeConfig.chainId;
+        const homeChains = {
+            [Network.MAINNET]: ['bbn-1', 'babylonchain'],
+            [Network.TESTNET]: ['bbn-test-5', 'babylon-testnet']
+        };
+
+        return homeChains[network]?.includes(chainId) || false;
+    }
+
+    /**
+     * Get the home chain ID for the given network
+     */
+    public getHomeChainId(network: Network): string {
+        return network === Network.MAINNET ? 'bbn-1' : 'bbn-test-5';
+    }
+
+    /**
+     * Get the home chain name for the given network
+     */
+    public getHomeChainName(network: Network): string {
+        return network === Network.MAINNET ? 'Babylon Genesis' : 'Babylon Testnet';
     }
 
     /**
      * Get external (non-home) chains from a list of chain IDs
      */
     public filterExternalChains(chainIds: string[], network: Network): string[] {
-        const homeChainId = this.getHomeChainConfig(network).chainId;
+        const homeChainId = this.getHomeChainId(network);
         return chainIds.filter(chainId => 
             chainId && 
             chainId !== 'unknown' && 
@@ -80,7 +63,7 @@ export class ChainConfigService {
         externalChain: string | null;
         isOutgoingFromHome: boolean;
     } {
-        const homeChainId = this.getHomeChainConfig(network).chainId;
+        const homeChainId = this.getHomeChainId(network);
         
         if (sourceChain === homeChainId && destChain !== homeChainId) {
             // Home -> External (outgoing)
@@ -110,7 +93,7 @@ export class ChainConfigService {
      * Get all supported networks
      */
     public getSupportedNetworks(): Network[] {
-        return Object.keys(this.homeChainConfigs).map(key => key as Network);
+        return [Network.MAINNET, Network.TESTNET];
     }
 
     /**

@@ -105,9 +105,9 @@ export class IBCEventHandler {
                 } else if (this.isAcknowledgmentEvent(event)) {
                     await this.processAcknowledgmentEvent(event, allEvents, hash, height, timestamp, network, signer, promises);
                 } else if (this.isTimeoutEvent(event)) {
-                    await this.processTimeoutEvent(event, hash, height, timestamp, network, signer, promises);
+                    await this.processTimeoutEvent(event, allEvents, hash, height, timestamp, network, signer, promises);
                 } else {
-                    await this.processOtherPacketEvent(event, hash, height, timestamp, network, signer, promises);
+                    await this.processOtherPacketEvent(event, allEvents, hash, height, timestamp, network, signer, promises);
                 }
             }
         } catch (error) {
@@ -132,7 +132,7 @@ export class IBCEventHandler {
         promises: Promise<void>[]
     ): Promise<void> {
         // Common packet processing
-        await this.processCommonPacketOperations(event, hash, height, timestamp, network, signer, promises);
+        await this.processCommonPacketOperations(event, allEvents, hash, height, timestamp, network, signer, promises);
         
         // Create transfer record for send_packet and recv_packet events
         promises.push(this.services.transferService.processTransferEvent(event, hash, height, timestamp, network));
@@ -143,6 +143,7 @@ export class IBCEventHandler {
      */
     private async processCommonPacketOperations(
         event: any, 
+        allEvents: any[],
         hash: string, 
         height: number, 
         timestamp: Date, 
@@ -155,8 +156,8 @@ export class IBCEventHandler {
         // Always process packet data
         promises.push(this.services.packetService.processPacketEvent(event, hash, height, timestamp, network, signer));
         
-        // Always process relayer tracking
-        promises.push(this.services.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer));
+        // Always process relayer tracking - NOW WITH ALL EVENTS FOR VOLUME TRACKING
+        promises.push(this.services.relayerService.processRelayerEvent(event, hash, height, timestamp, network, signer, allEvents));
         
         // Update channel statistics
         promises.push(this.services.channelService.processPacketStatistics(event, hash, height, timestamp, network, signer, tokenAmount, tokenDenom));
@@ -176,7 +177,7 @@ export class IBCEventHandler {
         const { tokenAmount, tokenDenom } = this.extractTokenInfoFromEvent(event);
         
         // Common packet processing with token information
-        await this.processCommonPacketOperations(event, hash, height, timestamp, network, signer, promises, tokenAmount, tokenDenom);
+        await this.processCommonPacketOperations(event, allEvents, hash, height, timestamp, network, signer, promises, tokenAmount, tokenDenom);
         
         // Only process transfer events if there's no acknowledgment in the same transaction
         // This handles supplementary data enrichment
@@ -200,7 +201,7 @@ export class IBCEventHandler {
         const { tokenAmount, tokenDenom } = this.extractTokenInfoFromTransaction(allEvents);
         
         // Common packet processing
-        await this.processCommonPacketOperations(event, hash, height, timestamp, network, signer, promises, tokenAmount, tokenDenom);
+        await this.processCommonPacketOperations(event, allEvents, hash, height, timestamp, network, signer, promises, tokenAmount, tokenDenom);
         
         // Process acknowledgment to update existing transfer
         promises.push(this.services.transferService.processAcknowledgmentEvent(event, hash, height, timestamp, network));
@@ -208,6 +209,7 @@ export class IBCEventHandler {
 
     private async processTimeoutEvent(
         event: any, 
+        allEvents: any[], 
         hash: string, 
         height: number, 
         timestamp: Date, 
@@ -216,7 +218,7 @@ export class IBCEventHandler {
         promises: Promise<void>[]
     ): Promise<void> {
         // Common packet processing
-        await this.processCommonPacketOperations(event, hash, height, timestamp, network, signer, promises);
+        await this.processCommonPacketOperations(event, allEvents, hash, height, timestamp, network, signer, promises);
         
         // Process timeout to update existing transfer
         promises.push(this.services.transferService.processTimeoutEvent(event, hash, height, timestamp, network));
@@ -224,6 +226,7 @@ export class IBCEventHandler {
 
     private async processOtherPacketEvent(
         event: any, 
+        allEvents: any[], 
         hash: string, 
         height: number, 
         timestamp: Date, 
@@ -232,7 +235,7 @@ export class IBCEventHandler {
         promises: Promise<void>[]
     ): Promise<void> {
         // Common packet processing
-        await this.processCommonPacketOperations(event, hash, height, timestamp, network, signer, promises);
+        await this.processCommonPacketOperations(event, allEvents, hash, height, timestamp, network, signer, promises);
         
         // Only process transfer events for specific event types
         if (this.isTransferEvent(event)) {
