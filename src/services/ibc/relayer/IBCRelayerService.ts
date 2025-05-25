@@ -225,22 +225,92 @@ export class IBCRelayerService {
      */
     private extractTransferDataFromEvents(allEvents: any[], currentEvent: any): { denom: string; amount: string } | undefined {
         try {
-            // Look for fungible_token_packet events which contain transfer data
+            const currentAttributes = IBCEventUtils.extractEventAttributes(currentEvent);
+            const currentMsgIndex = currentAttributes.msg_index;
+            
+            // Look for fungible_token_packet events that match the current event's msg_index
             const fungibleEvents = allEvents.filter(e => e.type === 'fungible_token_packet');
             
             if (fungibleEvents.length > 0) {
-                const attributes = IBCEventUtils.extractEventAttributes(fungibleEvents[0]);
-                if (attributes.amount && attributes.denom) {
-                    logger.debug(`[IBCRelayerService] Extracted transfer data from fungible_token_packet: ${attributes.amount} ${attributes.denom}`);
-                    return {
-                        amount: attributes.amount,
-                        denom: attributes.denom
-                    };
+                // Find the fungible_token_packet event that corresponds to the current relayer event
+                let matchingFungibleEvent = null;
+                
+                for (const fungibleEvent of fungibleEvents) {
+                    const fungibleAttributes = IBCEventUtils.extractEventAttributes(fungibleEvent);
+                    
+                    // Match by msg_index to ensure we get the correct transfer data
+                    if (fungibleAttributes.msg_index === currentMsgIndex) {
+                        matchingFungibleEvent = fungibleEvent;
+                        break;
+                    }
+                }
+                
+                // If we found a matching fungible event, extract transfer data from it
+                if (matchingFungibleEvent) {
+                    const attributes = IBCEventUtils.extractEventAttributes(matchingFungibleEvent);
+                    if (attributes.amount && attributes.denom) {
+                        logger.debug(`[IBCRelayerService] Extracted transfer data from matching fungible_token_packet (msg_index: ${currentMsgIndex}): ${attributes.amount} ${attributes.denom}`);
+                        return {
+                            amount: attributes.amount,
+                            denom: attributes.denom
+                        };
+                    }
+                }
+                
+                // If no matching msg_index found, try to match by packet details
+                const currentSourceChannel = currentAttributes.packet_src_channel;
+                const currentDestChannel = currentAttributes.packet_dst_channel;
+                const currentSequence = currentAttributes.packet_sequence;
+                
+                for (const fungibleEvent of fungibleEvents) {
+                    const fungibleAttributes = IBCEventUtils.extractEventAttributes(fungibleEvent);
+                    
+                    // For recv_packet events, look for fungible events that match the packet routing
+                    if (currentEvent.type === 'recv_packet') {
+                        // The fungible event should have the same routing as the recv_packet
+                        if (fungibleAttributes.packet_src_channel === currentSourceChannel &&
+                            fungibleAttributes.packet_dst_channel === currentDestChannel &&
+                            fungibleAttributes.packet_sequence === currentSequence) {
+                            
+                            if (fungibleAttributes.amount && fungibleAttributes.denom) {
+                                logger.debug(`[IBCRelayerService] Extracted transfer data from recv_packet matching fungible_token_packet: ${fungibleAttributes.amount} ${fungibleAttributes.denom}`);
+                                return {
+                                    amount: fungibleAttributes.amount,
+                                    denom: fungibleAttributes.denom
+                                };
+                            }
+                        }
+                    }
+                    // For acknowledge_packet events, we need to be more careful
+                    else if (currentEvent.type === 'acknowledge_packet') {
+                        // For acknowledgments, we should only track volume if we have the original transfer data
+                        // The fungible_token_packet in acknowledgment contains the original transfer being acknowledged
+                        // We should look for the acknowledgement attribute to confirm this is acknowledgment data
+                        if (fungibleAttributes.acknowledgement) {
+                            // This is acknowledgment metadata, not new transfer data
+                            // We should not count this as new volume
+                            logger.debug(`[IBCRelayerService] Skipping acknowledgment fungible_token_packet for volume tracking`);
+                            continue;
+                        }
+                        
+                        // If no acknowledgement attribute, this might be the original transfer data
+                        if (fungibleAttributes.packet_src_channel === currentSourceChannel &&
+                            fungibleAttributes.packet_dst_channel === currentDestChannel &&
+                            fungibleAttributes.packet_sequence === currentSequence) {
+                            
+                            if (fungibleAttributes.amount && fungibleAttributes.denom) {
+                                logger.debug(`[IBCRelayerService] Extracted transfer data from acknowledge_packet matching fungible_token_packet: ${fungibleAttributes.amount} ${fungibleAttributes.denom}`);
+                                return {
+                                    amount: fungibleAttributes.amount,
+                                    denom: fungibleAttributes.denom
+                                };
+                            }
+                        }
+                    }
                 }
             }
 
             // Fallback: Look for packet_data in the current event
-            const currentAttributes = IBCEventUtils.extractEventAttributes(currentEvent);
             if (currentAttributes.packet_data) {
                 try {
                     const transferData = this.tokenService.parseTransferData(currentAttributes.packet_data);
@@ -260,23 +330,27 @@ export class IBCRelayerService {
             const transferEvents = allEvents.filter(e => e.type === 'send_packet' || e.type === 'recv_packet');
             for (const transferEvent of transferEvents) {
                 const transferAttributes = IBCEventUtils.extractEventAttributes(transferEvent);
-                if (transferAttributes.packet_data) {
-                    try {
-                        const transferData = this.tokenService.parseTransferData(transferAttributes.packet_data);
-                        if (transferData.amount && transferData.denom) {
-                            logger.debug(`[IBCRelayerService] Extracted transfer data from ${transferEvent.type}: ${transferData.amount} ${transferData.denom}`);
-                            return {
-                                amount: transferData.amount,
-                                denom: transferData.denom
-                            };
+                
+                // Match by msg_index if available
+                if (currentMsgIndex && transferAttributes.msg_index === currentMsgIndex) {
+                    if (transferAttributes.packet_data) {
+                        try {
+                            const transferData = this.tokenService.parseTransferData(transferAttributes.packet_data);
+                            if (transferData.amount && transferData.denom) {
+                                logger.debug(`[IBCRelayerService] Extracted transfer data from matching ${transferEvent.type}: ${transferData.amount} ${transferData.denom}`);
+                                return {
+                                    amount: transferData.amount,
+                                    denom: transferData.denom
+                                };
+                            }
+                        } catch (error) {
+                            logger.debug(`[IBCRelayerService] Could not parse packet_data from ${transferEvent.type}: ${error instanceof Error ? error.message : String(error)}`);
                         }
-                    } catch (error) {
-                        logger.debug(`[IBCRelayerService] Could not parse packet_data from ${transferEvent.type}: ${error instanceof Error ? error.message : String(error)}`);
                     }
                 }
             }
 
-            logger.debug(`[IBCRelayerService] No transfer data found in transaction events`);
+            logger.debug(`[IBCRelayerService] No matching transfer data found for packet ${currentAttributes.packet_src_channel}/${currentAttributes.packet_sequence}`);
             return undefined;
         } catch (error) {
             logger.error(`[IBCRelayerService] Error extracting transfer data: ${error instanceof Error ? error.message : String(error)}`);

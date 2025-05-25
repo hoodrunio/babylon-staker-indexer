@@ -256,11 +256,31 @@ export class IBCEventHandler {
 
     /**
      * Extract token information from fungible_token_packet events in the transaction
+     * For acknowledgment events, we need to be careful not to use acknowledgment metadata
      */
     private extractTokenInfoFromTransaction(events: any[]): { tokenAmount: string; tokenDenom: string } {
         const fungibleEvents = events.filter(e => e.type === 'fungible_token_packet');
         
         if (fungibleEvents.length > 0) {
+            // For acknowledgment transactions, we should prioritize fungible events without acknowledgement attribute
+            // as those contain the original transfer data, not acknowledgment metadata
+            for (const fungibleEvent of fungibleEvents) {
+                const attributes = IBCEventUtils.extractEventAttributes(fungibleEvent);
+                
+                // Skip events that have acknowledgement attribute as they are acknowledgment metadata
+                if (attributes.acknowledgement) {
+                    continue;
+                }
+                
+                if (attributes.amount && attributes.denom) {
+                    return {
+                        tokenAmount: attributes.amount,
+                        tokenDenom: attributes.denom
+                    };
+                }
+            }
+            
+            // If no non-acknowledgment fungible event found, use the first one as fallback
             const attributes = IBCEventUtils.extractEventAttributes(fungibleEvents[0]);
             return {
                 tokenAmount: attributes.amount || '0',
