@@ -2,7 +2,7 @@ import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { WebSocketConnectionService } from './WebSocketConnectionService';
 import { WebSocketOrchestratorService } from './WebSocketOrchestratorService';
-import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
+import { WebsocketHealthTracker } from './WebsocketHealthTracker';
 import { WebSocketConfigService } from './WebSocketConfigService';
 import { BabylonClient } from '../../clients/BabylonClient';
 

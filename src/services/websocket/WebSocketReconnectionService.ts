@@ -1,6 +1,6 @@
 import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
-import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
+import { WebsocketHealthTracker } from './WebsocketHealthTracker';
 
 // WebSocket Reconnection Service
 export class WebSocketReconnectionService {

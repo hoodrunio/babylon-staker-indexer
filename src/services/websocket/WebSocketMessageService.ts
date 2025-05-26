@@ -2,7 +2,7 @@ import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { IMessageProcessor, ISubscription } from './interfaces';
 import { BTCDelegationEventHandler } from '../btc-delegations/BTCDelegationEventHandler';
-import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
+import { WebsocketHealthTracker } from './WebsocketHealthTracker';
 import { BLSCheckpointService } from '../checkpointing/BLSCheckpointService';
 import { CheckpointStatusHandler } from '../checkpointing/CheckpointStatusHandler';
 import { ValidatorSignatureService } from '../validator/ValidatorSignatureService';
@@ -127,40 +127,40 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
     }
 
     async process(message: any, network: Network): Promise<void> {
-        let blockHeight: number | undefined;
+        const messageResultData = message?.result?.data;
 
-        // Handle checkpoint status updates
-        if (message?.result?.data?.value?.result_finalize_block && 
-            message.id === 'new_block') {
-            await this.checkpointStatusHandler.handleNewBlock(message, network);
-        }
+        // Handle messages of type 'tendermint/event/NewBlock'
+        // This is the primary event for new block information including height.
+        if (messageResultData?.type === 'tendermint/event/NewBlock') {
+            const blockData = messageResultData.value; // Contains block header, transactions, etc.
 
-        // Handle validator signatures and extract block height
-        if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
-            const blockData = message.result.data.value;
-            
-            // Extract block height for health tracking
+            // Update health tracker with block height as soon as it's available
             if (blockData?.block?.header?.height) {
-                blockHeight = parseInt(blockData.block.header.height);
+                const blockHeight = parseInt(blockData.block.header.height);
+                await this.healthTracker.updateBlockHeight(network, blockHeight);
+            } else {
+                // Log a warning if height is unexpectedly missing from a NewBlock event
+                logger.warn(`[NewBlockMessageProcessor] Block height not found in 'tendermint/event/NewBlock' data. Message: ${JSON.stringify(message).substring(0, 250)}`);
             }
-            
-            await this.validatorSignatureService.handleNewBlock(blockData, network);
-        }
 
-        // Handle block transactions
-        if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
-            // Check block data and pass it correctly
-            const blockData = message.result.data.value;
-            if (blockData && blockData.block) {
+            // Process validator signatures using the same blockData
+            await this.validatorSignatureService.handleNewBlock(blockData, network);
+
+            // Process block transactions using the same blockData
+            if (blockData?.block) { // Ensure 'block' field exists for transaction handler
                 await this.blockTransactionHandler.handleNewBlock(blockData, network);
             } else {
-                logger.warn(`[BlockMessageProcessor] Block data structure is not as expected: ${JSON.stringify(blockData).substring(0, 200)}...`);
+                logger.warn(`[NewBlockMessageProcessor] Expected 'block' field missing in 'tendermint/event/NewBlock' data for transaction processing. Value: ${JSON.stringify(blockData).substring(0, 250)}`);
             }
         }
 
-        // Update health tracker with block height to maintain lastUpdateTime
-        if (blockHeight) {
-            await this.healthTracker.updateBlockHeight(network, blockHeight);
+        // Separately, handle checkpoint status updates if the message specifically indicates it.
+        // This condition comes from the `canProcess` logic:
+        // (message?.result?.data?.value?.result_finalize_block && message.id === 'new_block')
+        // This might overlap with the 'tendermint/event/NewBlock' type or handle a nuanced case.
+        if (messageResultData?.value?.result_finalize_block && message.id === 'new_block') {
+            // The checkpointStatusHandler.handleNewBlock expects the full message object.
+            await this.checkpointStatusHandler.handleNewBlock(message, network);
         }
     }
 }

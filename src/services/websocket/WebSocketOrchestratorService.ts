@@ -4,7 +4,7 @@ import { WebSocketConnectionService } from './WebSocketConnectionService';
 import { WebSocketConfigService } from './WebSocketConfigService';
 import { WebSocketMessageService } from './WebSocketMessageService';
 import { WebSocketReconnectionService } from './WebSocketReconnectionService';
-import { WebsocketHealthTracker } from '../btc-delegations/WebsocketHealthTracker';
+import { WebsocketHealthTracker } from './WebsocketHealthTracker';
 import { ValidatorHistoricalSyncService } from '../validator/ValidatorHistoricalSyncService';
 import { IWebSocketEventHandlers } from './interfaces';
 import { WebSocketHealthMonitor } from './WebSocketHealthMonitor';

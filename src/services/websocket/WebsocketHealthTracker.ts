@@ -1,5 +1,5 @@
 import { Network } from '../../types/finality';
-import { MissedBlocksProcessor } from './MissedBlocksProcessor';
+import { MissedBlocksProcessor } from '../btc-delegations/MissedBlocksProcessor';
 import { BabylonClient } from '../../clients/BabylonClient';
 import { Mutex } from 'async-mutex';
 import { CacheService } from '../CacheService';
