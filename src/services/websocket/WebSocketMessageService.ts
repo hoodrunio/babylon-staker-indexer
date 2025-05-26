@@ -35,7 +35,7 @@ export abstract class BaseMessageProcessor implements IMessageProcessor {
 
 // BTC Staking events processor
 export class BTCStakingMessageProcessor extends BaseMessageProcessor {
-    constructor(private eventHandler: BTCDelegationEventHandler, private healthTracker: WebsocketHealthTracker) {
+    constructor(private eventHandler: BTCDelegationEventHandler) {
         super();
     }
 
@@ -56,7 +56,6 @@ export class BTCStakingMessageProcessor extends BaseMessageProcessor {
         };
 
         if (txData.height && txData.hash && txData.events) {
-            await this.healthTracker.updateBlockHeight(network, height);
             await this.eventHandler.handleEvent(txData, network);
         }
     }
@@ -115,7 +114,8 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
     constructor(
         private checkpointStatusHandler: CheckpointStatusHandler,
         private validatorSignatureService: ValidatorSignatureService,
-        private blockTransactionHandler: BlockTransactionHandler
+        private blockTransactionHandler: BlockTransactionHandler,
+        private healthTracker: WebsocketHealthTracker
     ) {
         super();
     }
@@ -127,15 +127,23 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
     }
 
     async process(message: any, network: Network): Promise<void> {
+        let blockHeight: number | undefined;
+
         // Handle checkpoint status updates
         if (message?.result?.data?.value?.result_finalize_block && 
             message.id === 'new_block') {
             await this.checkpointStatusHandler.handleNewBlock(message, network);
         }
 
-        // Handle validator signatures
+        // Handle validator signatures and extract block height
         if (message?.result?.data?.type === 'tendermint/event/NewBlock') {
             const blockData = message.result.data.value;
+            
+            // Extract block height for health tracking
+            if (blockData?.block?.header?.height) {
+                blockHeight = parseInt(blockData.block.header.height);
+            }
+            
             await this.validatorSignatureService.handleNewBlock(blockData, network);
         }
 
@@ -148,6 +156,11 @@ export class NewBlockMessageProcessor extends BaseMessageProcessor {
             } else {
                 logger.warn(`[BlockMessageProcessor] Block data structure is not as expected: ${JSON.stringify(blockData).substring(0, 200)}...`);
             }
+        }
+
+        // Update health tracker with block height to maintain lastUpdateTime
+        if (blockHeight) {
+            await this.healthTracker.updateBlockHeight(network, blockHeight);
         }
     }
 }
@@ -223,10 +236,10 @@ export class WebSocketMessageService {
         logger.info('[WebSocketMessageService] Block processor system initialized successfully');
         
         this.messageProcessors = [
-            new BTCStakingMessageProcessor(eventHandler, healthTracker),
+            new BTCStakingMessageProcessor(eventHandler),
             new CovenantMessageProcessor(covenantEventHandler),
             new BLSCheckpointMessageProcessor(blsCheckpointService),
-            new NewBlockMessageProcessor(checkpointStatusHandler, validatorSignatureService, blockTransactionHandler),
+            new NewBlockMessageProcessor(checkpointStatusHandler, validatorSignatureService, blockTransactionHandler, healthTracker),
             new GovernanceMessageProcessor(governanceEventHandler),
             // Add block and transaction processors
             ...blockTxProcessors
