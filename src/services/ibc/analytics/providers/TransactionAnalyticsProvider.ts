@@ -27,16 +27,27 @@ export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvid
     /**
      * Get overall transaction count statistics
      */
-    async getTotalTransactionCount(network: Network): Promise<TransactionCountResult> {
+    async getTotalTransactionCount(network: Network, channelId?: string): Promise<TransactionCountResult> {
         try {
-            logger.info(`[TransactionAnalyticsProvider] Getting total transaction count for network: ${network}`);
+            logger.info(`[TransactionAnalyticsProvider] Getting total transaction count for network: ${network}${channelId ? ` and channel: ${channelId}` : ''}`);
 
-            const totalTransfers = await IBCTransferModel.countDocuments({
+            // Build query filter
+            const filter: any = {
                 network: network.toString()
-            });
+            };
+
+            // If channelId is provided, filter by channel (either source or destination)
+            if (channelId) {
+                filter.$or = [
+                    { source_channel: channelId },
+                    { destination_channel: channelId }
+                ];
+            }
+
+            const totalTransfers = await IBCTransferModel.countDocuments(filter);
 
             const successfulTransfers = await IBCTransferModel.countDocuments({
-                network: network.toString(),
+                ...filter,
                 success: true
             });
 
@@ -58,13 +69,24 @@ export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvid
     /**
      * Get latest transactions with details
      */
-    async getLatestTransactions(limit: number, network: Network): Promise<TransactionResult[]> {
+    async getLatestTransactions(limit: number, network: Network, channelId?: string): Promise<TransactionResult[]> {
         try {
-            logger.info(`[TransactionAnalyticsProvider] Getting latest ${limit} transactions for network: ${network}`);
+            logger.info(`[TransactionAnalyticsProvider] Getting latest ${limit} transactions for network: ${network}${channelId ? ` and channel: ${channelId}` : ''}`);
 
-            const transfers = await IBCTransferModel.find({
+            // Build query filter
+            const filter: any = {
                 network: network.toString()
-            })
+            };
+
+            // If channelId is provided, filter by channel (either source or destination)
+            if (channelId) {
+                filter.$or = [
+                    { source_channel: channelId },
+                    { destination_channel: channelId }
+                ];
+            }
+
+            const transfers = await IBCTransferModel.find(filter)
             .sort({ send_time: -1 })
             .limit(limit)
             .lean();
@@ -73,6 +95,8 @@ export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvid
                 tx_hash: transfer.tx_hash,
                 source_chain_id: transfer.source_chain_id,
                 destination_chain_id: transfer.destination_chain_id,
+                source_channel: transfer.source_channel,
+                destination_channel: transfer.destination_channel,
                 amount: transfer.amount,
                 denom: transfer.denom,
                 sender: transfer.sender,
@@ -91,16 +115,27 @@ export class TransactionAnalyticsProvider implements ITransactionAnalyticsProvid
     /**
      * Get transaction counts broken down by chain
      */
-    async getTransactionCountsByChain(network: Network): Promise<ChainTransactionCountResult[]> {
+    async getTransactionCountsByChain(network: Network, channelId?: string): Promise<ChainTransactionCountResult[]> {
         try {
-            logger.info(`[TransactionAnalyticsProvider] Getting transaction counts by chain for network: ${network}`);
+            logger.info(`[TransactionAnalyticsProvider] Getting transaction counts by chain for network: ${network}${channelId ? ` and channel: ${channelId}` : ''}`);
+
+            // Build match filter
+            const matchFilter: any = {
+                network: network.toString()
+            };
+
+            // If channelId is provided, filter by channel (either source or destination)
+            if (channelId) {
+                matchFilter.$or = [
+                    { source_channel: channelId },
+                    { destination_channel: channelId }
+                ];
+            }
 
             // Aggregate transactions by chain using MongoDB aggregation pipeline
             const pipeline = [
                 {
-                    $match: {
-                        network: network.toString()
-                    }
+                    $match: matchFilter
                 },
                 {
                     // Create documents for both source and destination chains

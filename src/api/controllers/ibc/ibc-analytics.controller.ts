@@ -89,10 +89,13 @@ export class IBCAnalyticsController {
             res.json({
                 success: true,
                 data: {
-                    // UI Requirements: Connected Chains
-                    chains_names: analytics.connected_chains.map(chain => ({
+                    // UI Requirements: Connected Chains (renamed from chains_names to chains)
+                    chains: analytics.connected_chains.map(chain => ({
                         chain_id: chain.chain_id,
-                        chain_name: chain.chain_name
+                        chain_name: chain.chain_name,
+                        connections: chain.connections,
+                        total_received: chain.total_received,
+                        total_sent: chain.total_sent
                     })),
                     chain_details: analytics.connected_chains,
                     chain_volumes_total: analytics.volumes,
@@ -119,15 +122,17 @@ export class IBCAnalyticsController {
     /**
      * GET /api/v1/ibc/analytics/transactions
      * Get transaction analytics including counts and latest transactions
+     * Optional query parameter: channel=channel_id to filter by specific channel
      */
     public static async getTransactionAnalytics(req: Request, res: Response) {
         try {
             const network = req.network || Network.MAINNET;
             const limit = parseInt(req.query.limit as string) || 50;
+            const channelId = req.query.channel as string;
             
-            logger.info(`[IBCAnalyticsController] Getting transaction analytics for network: ${network}`);
+            logger.info(`[IBCAnalyticsController] Getting transaction analytics for network: ${network}${channelId ? ` and channel: ${channelId}` : ''}`);
 
-            const analytics = await IBCAnalyticsController.analyticsService.getTransactionAnalytics(network);
+            const analytics = await IBCAnalyticsController.analyticsService.getTransactionAnalytics(network, channelId);
 
             res.json({
                 success: true,
@@ -138,7 +143,9 @@ export class IBCAnalyticsController {
                     total_failed_transactions: analytics.overall_stats.failed_transactions,
                     overall_success_rate: analytics.overall_stats.success_rate,
                     transaction_count_per_chain: analytics.by_chain,
-                    latest_transactions: analytics.latest_transactions.slice(0, limit)
+                    latest_transactions: analytics.latest_transactions.slice(0, limit),
+                    // Add channel filter info if provided
+                    ...(channelId && { channel_filter: channelId })
                 },
                 network: network.toString(),
                 timestamp: new Date().toISOString()

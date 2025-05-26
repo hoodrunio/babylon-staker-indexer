@@ -95,6 +95,8 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             const destChannel = packetInfo.destChannel;
             const destPort = packetInfo.destPort;
             
+
+            
             // Resolve chain information using our improved chain resolver service
             // Initialize chain information variables
             let sourceChainId = '';
@@ -176,6 +178,10 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
                         // Human-readable chain names
                         source_chain_name: sourceChainName,
                         destination_chain_name: destChainName,
+                        
+                        // Channel information for filtering
+                        source_channel: srcChannel,
+                        destination_channel: destChannel,
                         
                         // Network
                         network: network.toString()

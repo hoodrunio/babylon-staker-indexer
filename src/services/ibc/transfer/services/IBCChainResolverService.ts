@@ -90,15 +90,48 @@ export class IBCChainResolverService implements IIBCChainResolverService {
             const chainName = getChainName(chainId);
             logger.debug(`[IBCChainResolverService] Resolved channel ${channelId} to chain ${chainId} (${chainName})`);
             
-            return {
-                chain_id: chainId,
-                chain_name: chainName
-            };
-        } catch (error) {
-            logger.error(`[IBCChainResolverService] Error resolving chain from channel: ${error instanceof Error ? error.message : String(error)}`);
+                    return {
+            chain_id: chainId,
+            chain_name: chainName
+        };
+    } catch (error) {
+        logger.error(`[IBCChainResolverService] Error resolving chain from channel: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+    }
+}
+
+/**
+ * Get connection ID from channel information
+ * @param channelId The channel ID
+ * @param portId The port ID
+ * @param network Network context
+ * @returns Connection ID or null if not found
+ */
+public async getConnectionIdFromChannel(channelId: string, portId: string, network: Network): Promise<string | null> {
+    try {
+        logger.debug(`[IBCChainResolverService] Looking up connection_id for channel ${channelId} on port ${portId}`);
+        
+        // Get the channel
+        const channel = await this.channelRepository.getChannel(channelId, portId, network);
+        if (!channel) {
+            logger.warn(`[IBCChainResolverService] Channel not found: ${channelId} on port ${portId}`);
             return null;
         }
+        
+        // Return the connection_id from the channel
+        const connectionId = channel.connection_id;
+        if (!connectionId) {
+            logger.warn(`[IBCChainResolverService] No connection_id found for channel ${channelId}`);
+            return null;
+        }
+        
+        logger.debug(`[IBCChainResolverService] Found connection_id ${connectionId} for channel ${channelId}`);
+        return connectionId;
+    } catch (error) {
+        logger.error(`[IBCChainResolverService] Error getting connection_id from channel: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
     }
+}
     
     /**
      * Determines if we are processing an outbound transfer (from Babylon to another chain)

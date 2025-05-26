@@ -18,6 +18,10 @@ export interface IBCTransfer extends Document {
   source_chain_name?: string;      // Human-readable name for source chain
   destination_chain_name?: string; // Human-readable name for destination chain
   
+  // Channel information (for channel filtering)
+  source_channel?: string;         // Source channel ID
+  destination_channel?: string;    // Destination channel ID
+  
   // Timing information
   send_time: Date;
   complete_time?: Date;
@@ -47,6 +51,10 @@ const IBCTransferSchema = new Schema<IBCTransfer>({
   source_chain_name: { type: String },
   destination_chain_name: { type: String },
   
+  // Channel information (for channel filtering)
+  source_channel: { type: String },
+  destination_channel: { type: String },
+  
   // Timing information
   send_time: { type: Date, required: true },
   complete_time: { type: Date },
@@ -67,5 +75,6 @@ IBCTransferSchema.index({ send_time: -1 });
 IBCTransferSchema.index({ source_chain_id: 1, destination_chain_id: 1 });
 IBCTransferSchema.index({ denom: 1 });
 IBCTransferSchema.index({ success: 1 });
+IBCTransferSchema.index({ source_channel: 1, destination_channel: 1 });
 
 export default mongoose.model<IBCTransfer>('IBCTransfer', IBCTransferSchema);

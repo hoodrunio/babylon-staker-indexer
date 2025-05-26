@@ -16,9 +16,9 @@ export interface IChainAnalyticsProvider {
 }
 
 export interface ITransactionAnalyticsProvider {
-    getTotalTransactionCount(network: Network): Promise<TransactionCountResult>;
-    getLatestTransactions(limit: number, network: Network): Promise<TransactionResult[]>;
-    getTransactionCountsByChain(network: Network): Promise<ChainTransactionCountResult[]>;
+    getTotalTransactionCount(network: Network, channelId?: string): Promise<TransactionCountResult>;
+    getLatestTransactions(limit: number, network: Network, channelId?: string): Promise<TransactionResult[]>;
+    getTransactionCountsByChain(network: Network, channelId?: string): Promise<ChainTransactionCountResult[]>;
 }
 
 export interface IRelayerAnalyticsProvider {
@@ -33,7 +33,7 @@ export interface IRelayerAnalyticsProvider {
 export interface IBCAnalyticsService {
     getChannelAnalytics(network: Network): Promise<ChannelAnalyticsResult>;
     getChainAnalytics(network: Network): Promise<ChainAnalyticsResult>;
-    getTransactionAnalytics(network: Network): Promise<TransactionAnalyticsResult>;
+    getTransactionAnalytics(network: Network, channelId?: string): Promise<TransactionAnalyticsResult>;
     getRelayerAnalytics(network: Network): Promise<RelayerAnalyticsResult>;
     getOverallAnalytics(network: Network): Promise<OverallAnalyticsResult>;
 }
@@ -58,6 +58,13 @@ export interface ChannelVolumeResult {
     success_rate: number;
 }
 
+export interface ChainConnectionInfo {
+    babylon_channel_id: string;
+    counterparty_channel_id: string;
+    connection_id: string;
+    port_id: string;
+}
+
 export interface ChainInfoResult {
     chain_id: string;
     chain_name: string;
@@ -65,6 +72,9 @@ export interface ChainInfoResult {
     channel_count: number;
     first_connected: Date;
     last_activity: Date;
+    connections: ChainConnectionInfo[];
+    total_received: string;
+    total_sent: string;
 }
 
 export interface ChainVolumeResult {
@@ -87,6 +97,8 @@ export interface TransactionResult {
     tx_hash: string;
     source_chain_id: string;
     destination_chain_id: string;
+    source_channel?: string;
+    destination_channel?: string;
     amount: string;
     denom: string;
     sender: string;

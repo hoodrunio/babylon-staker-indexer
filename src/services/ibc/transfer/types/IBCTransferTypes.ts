@@ -66,6 +66,10 @@ export interface IBCTransferData {
     source_chain_name: string;
     destination_chain_name: string;
     
+    // Channel information (for channel filtering)
+    source_channel?: string;
+    destination_channel?: string;
+    
     // Completion information
     completion_tx_hash?: string;
     completion_height?: number;

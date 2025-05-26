@@ -89,14 +89,14 @@ export class IBCAnalyticsServiceImpl implements IBCAnalyticsService {
     /**
      * Get comprehensive transaction analytics
      */
-    async getTransactionAnalytics(network: Network): Promise<TransactionAnalyticsResult> {
+    async getTransactionAnalytics(network: Network, channelId?: string): Promise<TransactionAnalyticsResult> {
         try {
-            logger.info(`[IBCAnalyticsService] Getting transaction analytics for network: ${network}`);
+            logger.info(`[IBCAnalyticsService] Getting transaction analytics for network: ${network}${channelId ? ` and channel: ${channelId}` : ''}`);
 
             const [overall_stats, by_chain, latest_transactions] = await Promise.all([
-                this.transactionProvider.getTotalTransactionCount(network),
-                this.transactionProvider.getTransactionCountsByChain(network),
-                this.transactionProvider.getLatestTransactions(50, network) // Get latest 50 transactions
+                this.transactionProvider.getTotalTransactionCount(network, channelId),
+                this.transactionProvider.getTransactionCountsByChain(network, channelId),
+                this.transactionProvider.getLatestTransactions(50, network, channelId) // Get latest 50 transactions
             ]);
 
             return {

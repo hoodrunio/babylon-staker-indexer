@@ -17,6 +17,7 @@ export interface IIBCEventProcessorService {
 export interface IIBCChainResolverService {
     getChainInfoFromChannel(channelId: string, portId: string, network: Network): Promise<ChainInfo | null>;
     getTransferChainInfo(eventType: string, sourceChannel: string, sourcePort: string, destChannel: string, destPort: string, network: Network): Promise<TransferChainContext>;
+    getConnectionIdFromChannel(channelId: string, portId: string, network: Network): Promise<string | null>;
 }
 
 /**

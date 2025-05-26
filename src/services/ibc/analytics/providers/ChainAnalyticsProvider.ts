@@ -4,7 +4,8 @@ import {
     IChainAnalyticsProvider,
     ChainInfoResult,
     ChainVolumeResult,
-    ChainTransactionCountResult
+    ChainTransactionCountResult,
+    ChainConnectionInfo
 } from '../../interfaces/IBCAnalyticsService';
 import { IBCChannelRepository } from '../../repository/IBCChannelRepository';
 import { IBCConnectionRepository } from '../../repository/IBCConnectionRepository';
@@ -34,7 +35,7 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
     }
 
     /**
-     * Get information about all connected chains
+     * Get information about all connected chains with connection details and volumes
      */
     async getConnectedChains(network: Network): Promise<ChainInfoResult[]> {
         try {
@@ -44,15 +45,19 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
             const connections = await this.connectionRepository.getAllConnections(network);
 
             // Group by counterparty chain
-            const chainsMap = new Map<string, ChainInfoResult>();
+            const chainsMap = new Map<string, ChainInfoResult & {
+                incomingVolumes: Record<string, number>;
+                outgoingVolumes: Record<string, number>;
+            }>();
 
             // Process channels and resolve chain IDs from connections/clients
             for (const channel of channels) {
                 let chainId = '';
+                let connection = null;
                 
                 try {
                     // Get connection to find client
-                    const connection = await this.connectionRepository.getConnection(channel.connection_id, network);
+                    connection = await this.connectionRepository.getConnection(channel.connection_id, network);
                     if (connection && connection.client_id) {
                         // Get client to find chain_id
                         const client = await this.clientRepository.getClient(connection.client_id, network);
@@ -75,12 +80,51 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                         connection_count: 0,
                         channel_count: 0,
                         first_connected: channel.created_at,
-                        last_activity: channel.updated_at
+                        last_activity: channel.updated_at,
+                        connections: [],
+                        total_received: '0',
+                        total_sent: '0',
+                        incomingVolumes: {},
+                        outgoingVolumes: {}
                     });
                 }
 
                 const chainInfo = chainsMap.get(chainId)!;
                 chainInfo.channel_count++;
+                
+                // Add connection info
+                const connectionInfo: ChainConnectionInfo = {
+                    babylon_channel_id: channel.channel_id,
+                    counterparty_channel_id: channel.counterparty_channel_id || '',
+                    connection_id: channel.connection_id,
+                    port_id: channel.port_id
+                };
+                chainInfo.connections.push(connectionInfo);
+                
+                // Accumulate volumes by denomination for this chain
+                if (channel.total_tokens_transferred) {
+                    // Process incoming volumes (tokens coming to Babylon)
+                    if (channel.total_tokens_transferred.incoming) {
+                        const incomingMap = channel.total_tokens_transferred.incoming instanceof Map 
+                            ? channel.total_tokens_transferred.incoming 
+                            : new Map(Object.entries(channel.total_tokens_transferred.incoming || {}));
+                        
+                        incomingMap.forEach((amount: number, denom: string) => {
+                            chainInfo.incomingVolumes[denom] = (chainInfo.incomingVolumes[denom] || 0) + amount;
+                        });
+                    }
+                    
+                    // Process outgoing volumes (tokens going from Babylon)
+                    if (channel.total_tokens_transferred.outgoing) {
+                        const outgoingMap = channel.total_tokens_transferred.outgoing instanceof Map 
+                            ? channel.total_tokens_transferred.outgoing 
+                            : new Map(Object.entries(channel.total_tokens_transferred.outgoing || {}));
+                        
+                        outgoingMap.forEach((amount: number, denom: string) => {
+                            chainInfo.outgoingVolumes[denom] = (chainInfo.outgoingVolumes[denom] || 0) + amount;
+                        });
+                    }
+                }
                 
                 // Update first/last activity times
                 if (channel.created_at < chainInfo.first_connected) {
@@ -110,9 +154,39 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
                 }
             }
 
-            return Array.from(chainsMap.values()).sort((a, b) => 
-                b.channel_count - a.channel_count
-            );
+            // Convert accumulated volumes to USD for each chain
+            const result: ChainInfoResult[] = [];
+            for (const [chainId, chainInfo] of chainsMap.entries()) {
+                // Prepare denomination amounts for batch conversion
+                const incomingAmounts = Object.entries(chainInfo.incomingVolumes).map(([denom, amount]) => ({
+                    denom,
+                    amount
+                }));
+                const outgoingAmounts = Object.entries(chainInfo.outgoingVolumes).map(([denom, amount]) => ({
+                    denom,
+                    amount
+                }));
+
+                // Convert to USD using TokenService
+                const [incomingUsd, outgoingUsd] = await Promise.all([
+                    this.tokenService.convertBatchToUsd(incomingAmounts),
+                    this.tokenService.convertBatchToUsd(outgoingAmounts)
+                ]);
+
+                result.push({
+                    chain_id: chainInfo.chain_id,
+                    chain_name: chainInfo.chain_name,
+                    connection_count: chainInfo.connection_count,
+                    channel_count: chainInfo.channel_count,
+                    first_connected: chainInfo.first_connected,
+                    last_activity: chainInfo.last_activity,
+                    connections: chainInfo.connections,
+                    total_received: incomingUsd.total.toString(),
+                    total_sent: outgoingUsd.total.toString()
+                });
+            }
+
+            return result.sort((a, b) => b.channel_count - a.channel_count);
         } catch (error) {
             logger.error('[ChainAnalyticsProvider] Error getting connected chains:', error);
             throw error;
