@@ -6,7 +6,7 @@ import { WebSocketMessageService } from '../../websocket/WebSocketMessageService
 // Service implementations
 import { IBCEventHandler } from '../events/IBCEventHandler';
 import { IBCMessageProcessor } from '../processors/IBCMessageProcessor';
-import { IBCEventDispatcher } from '../event/IBCEventDispatcher';
+import { IBCEventDispatcher } from '../events/IBCEventDispatcher';
 
 /**
  * Central service manager for the IBC module

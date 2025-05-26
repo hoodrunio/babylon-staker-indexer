@@ -1,7 +1,7 @@
 import { BabylonClient } from '../../../clients/BabylonClient';
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
-import { IBCEventDispatcher } from '../event/IBCEventDispatcher';
+import { IBCEventDispatcher } from '../events/IBCEventDispatcher';
 import { EventContext } from '../interfaces/IBCEventProcessor';
 
 /**

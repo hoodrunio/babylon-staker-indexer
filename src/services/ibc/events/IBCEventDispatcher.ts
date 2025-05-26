@@ -1,6 +1,6 @@
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
-import { IBCEventHandler, TransactionData } from '../events/IBCEventHandler';
+import { IBCEventHandler, TransactionData } from './IBCEventHandler';
 import { EventContext } from '../interfaces/IBCEventProcessor';
 
 /**
