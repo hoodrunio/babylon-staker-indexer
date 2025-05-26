@@ -6,6 +6,7 @@ import connectionsRouter from './connections';
 import clientsRouter from './clients';
 import relayersRouter from './relayers';
 import analyticsRouter from './analytics.routes';
+import packetCleanerRouter from './packet-cleaner';
 
 const router = Router();
 
@@ -17,5 +18,8 @@ router.use('/connections', connectionsRouter);
 router.use('/clients', clientsRouter);
 router.use('/relayers', relayersRouter);
 router.use('/analytics', analyticsRouter);
+
+// Mount packet cleaner routes
+router.use('/', packetCleanerRouter);
 
 export default router; 
