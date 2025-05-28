@@ -275,7 +275,7 @@ export class IBCPacketService {
         const localChainName = getChainName(localChainId);
         
         // Determine packet direction based on event type
-        const isOutbound = this.determinePacketDirection(eventType, packetData.source_channel, packetData.destination_channel);
+        const isOutbound = this.determinePacketDirection(eventType);
         
         // Resolve chain information using chain resolver
         const channelToResolve = isOutbound ? packetData.source_channel : packetData.destination_channel;
@@ -389,7 +389,7 @@ export class IBCPacketService {
      * @param destChannel Destination channel ID
      * @returns true if outbound (from Babylon to other chain), false if inbound
      */
-    private determinePacketDirection(eventType?: string, sourceChannel?: string, destChannel?: string): boolean {
+    private determinePacketDirection(eventType?: string): boolean {
         // If no event type, default to outbound
         if (!eventType) {
             return true;
@@ -397,57 +397,17 @@ export class IBCPacketService {
 
         switch (eventType) {
             case 'send_packet':
-                // Send packets are always outbound from our perspective
+            case 'acknowledge_packet':
+            case 'timeout_packet':
+                // Send / acknowledge / timeout packets are always outbound from our perspective
                 return true;
             
             case 'recv_packet':
                 // Receive packets are always inbound to our perspective
                 return false;
-            
-            case 'acknowledge_packet':
-            case 'timeout_packet':
-                // For ack/timeout, we need to determine direction based on channel pattern
-                // Our local channels typically have lower numbers (channel-0, channel-1, etc.)
-                // Remote channels often have higher numbers or different patterns
-                if (sourceChannel) {
-                    // If source channel matches our typical pattern, it's outbound
-                    const isSourceLocal = this.isLocalChannel(sourceChannel);
-                    return isSourceLocal;
-                }
-                
-                // If we can't determine from source, check destination
-                if (destChannel) {
-                    const isDestLocal = this.isLocalChannel(destChannel);
-                    return !isDestLocal; // If dest is local, then it's inbound (so return false)
-                }
-                
-                // Default to outbound if we can't determine
-                return true;
-            
-            default:
-                // For unknown event types, default to outbound
-                return true;
-        }
-    }
 
-    /**
-     * Check if a channel ID represents a local Babylon channel
-     * @param channelId Channel ID to check
-     * @returns true if it's likely a local channel
-     */
-    private isLocalChannel(channelId: string): boolean {
-        if (!channelId) return false;
-        
-        // Our local channels typically follow the pattern "channel-N" where N is a small number
-        const match = channelId.match(/^channel-(\d+)$/);
-        if (match) {
-            const channelNumber = parseInt(match[1]);
-            // Local channels typically have low numbers (0-99)
-            // This is a heuristic and may need adjustment based on actual data
-            return channelNumber < 100;
+            default:
+                return true;
         }
-        
-        // If it doesn't match the expected pattern, assume it's remote
-        return false;
     }
 }
