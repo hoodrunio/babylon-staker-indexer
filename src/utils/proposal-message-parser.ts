@@ -57,6 +57,15 @@ export class ProposalMessageParser {
         '/cosmwasm.wasm.v1.MsgAddCodeUploadParamsAddresses': (msg: any) => ({
             authority: msg.authority,
             addresses: msg.addresses
+        }),
+
+        '/ratelimit.v1.MsgAddRateLimit': (msg: any) => ({
+            authority: msg.authority,
+            denom: msg.denom,
+            channel_id: msg.channel_id,
+            max_percent_send: msg.max_percent_send,
+            max_percent_recv: msg.max_percent_recv,
+            duration_hours: msg.duration_hours
         })
     };
 
