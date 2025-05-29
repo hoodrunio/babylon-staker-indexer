@@ -234,9 +234,74 @@ export class IBCReconciliationService {
                 }
             }
             
+            // Update channel counterparty information
+            await this.updateChannelCounterpartyInfo(network);
+            
             logger.debug(`[IBCReconciliationService] Successfully reconciled ${apiChannels.length} channels for network: ${network}`);
         } catch (error) {
             logger.error(`[IBCReconciliationService] Error reconciling channels: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Update channel counterparty chain information
+     * @param network Network to update
+     */
+    private async updateChannelCounterpartyInfo(network: Network): Promise<void> {
+        logger.debug(`[IBCReconciliationService] Updating channel counterparty info for ${network} network`);
+        
+        try {
+            // Get all channels
+            const channels = await this.channelRepository.getAllChannels(network);
+            logger.debug(`[IBCReconciliationService] Found ${channels.length} channels to update counterparty info`);
+            
+            for (const channel of channels) {
+                try {
+                    // Skip channels without connection_id
+                    if (!channel.connection_id) {
+                        logger.debug(`[IBCReconciliationService] No connection_id for channel ${channel.channel_id}, skipping`);
+                        continue;
+                    }
+                    
+                    // Get connection using connection_id
+                    const connection = await this.connectionRepository.getConnection(channel.connection_id, network);
+                    
+                    if (!connection || !connection.client_id) {
+                        logger.debug(`[IBCReconciliationService] No connection or client_id found for connection ${channel.connection_id}`);
+                        continue;
+                    }
+                    
+                    // Get client using client_id
+                    const client = await this.clientRepository.getClient(connection.client_id, network);
+                    
+                    if (!client || !client.chain_id) {
+                        logger.debug(`[IBCReconciliationService] No client or chain_id found for client ${connection.client_id}`);
+                        continue;
+                    }
+                    
+                    // Skip if the counterparty chain info is already correct
+                    if (channel.counterparty_chain_id === client.chain_id) {
+                        continue;
+                    }
+                    
+                    // Update channel with counterparty chain info
+                    const counterpartyChainId = client.chain_id;
+                    
+                    await this.channelRepository.saveChannel({
+                        ...channel,
+                        counterparty_chain_id: counterpartyChainId,
+                        updated_at: new Date()
+                    }, network);
+                    
+                    logger.info(`[IBCReconciliationService] Updated channel ${channel.channel_id} with counterparty chain ${counterpartyChainId}`);
+                } catch (error) {
+                    logger.error(`[IBCReconciliationService] Error updating counterparty info for channel ${channel.channel_id}: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+            
+            logger.debug(`[IBCReconciliationService] Finished updating channel counterparty info for ${network} network`);
+        } catch (error) {
+            logger.error(`[IBCReconciliationService] Error updating channel counterparty info: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
