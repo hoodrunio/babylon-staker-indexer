@@ -120,22 +120,27 @@ export class IBCPacketController {
             // Calculate date range based on period
             const now = new Date();
             let startDate = new Date();
-            
+                        
             switch (period) {
                 case '1h':
-                    startDate.setHours(now.getHours() - 1);
+                    startDate = new Date(now);
+                    startDate.setUTCHours(now.getUTCHours() - 1);
                     break;
                 case '24h':
-                    startDate.setDate(now.getDate() - 1);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 1);
                     break;
                 case '7d':
-                    startDate.setDate(now.getDate() - 7);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 7);
                     break;
                 case '30d':
-                    startDate.setDate(now.getDate() - 30);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 30);
                     break;
                 default:
-                    startDate.setDate(now.getDate() - 1);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 1);
             }
 
             // Get all packets within date range
@@ -196,13 +201,46 @@ export class IBCPacketController {
             packetsInPeriod.forEach((packet: IBCPacket) => {
                 if (packet.send_time) {
                     const sendTime = new Date(packet.send_time);
-                    const hourIndex = period === '1h'
-                        ? sendTime.getMinutes() % 12 // For 1h period, group by 5-minute intervals
-                        : sendTime.getHours();
-                    
-                    hourlyDistribution[hourIndex]++;
+                    if (period === '1h') {
+                        const minuteIndex = Math.floor(sendTime.getUTCMinutes() / 5); // For 1h period, group by 5-minute intervals
+                        if (minuteIndex >= 0 && minuteIndex < 12) {
+                            hourlyDistribution[minuteIndex]++;
+                        }
+                    } else {
+                        const hourIndex = sendTime.getUTCHours(); // Use UTC hours for consistency
+                        if (hourIndex >= 0 && hourIndex < 24) {
+                            hourlyDistribution[hourIndex]++;
+                        }
+                    }
                 }
             });
+            
+            // Format hourly distribution with time labels
+            const formattedHourlyDistribution = [];
+            
+            if (period === '1h') {
+                // For 1h, create 5-minute interval labels
+                for (let i = 0; i < 12; i++) {
+                    const startMinute = i * 5;
+                    const endMinute = startMinute + 4;
+                    const timeLabel = `${startMinute.toString().padStart(2, '0')}:00-${endMinute.toString().padStart(2, '0')}:59`;
+                    
+                    formattedHourlyDistribution.push({
+                        time_label: timeLabel,
+                        count: hourlyDistribution[i]
+                    });
+                }
+            } else {
+                // For other periods, create hourly labels
+                for (let i = 0; i < 24; i++) {
+                    const hourLabel = `${i.toString().padStart(2, '0')}:00-${i.toString().padStart(2, '0')}:59 UTC`;
+                    
+                    formattedHourlyDistribution.push({
+                        time_label: hourLabel,
+                        count: hourlyDistribution[i]
+                    });
+                }
+            }
             
             // Calculate top relayers
             const relayerCounts = packetsInPeriod.reduce((acc: Record<string, number>, packet: IBCPacket) => {
@@ -234,7 +272,7 @@ export class IBCPacketController {
                 packets_by_channel: packetsByChannel,
                 avg_completion_time_ms: avgCompletionTimeMs,
                 success_rate: successRate,
-                hourly_distribution: hourlyDistribution,
+                hourly_distribution: formattedHourlyDistribution,
                 top_relayers: topRelayers
             });
         } catch (error) {

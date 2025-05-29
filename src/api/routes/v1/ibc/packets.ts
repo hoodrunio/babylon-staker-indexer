@@ -13,7 +13,4 @@ router.get('/channel/:channelId/:portId', networkSelector, IBCPacketController.g
 // Get packets by relayer
 router.get('/relayer/:relayerAddress', networkSelector, IBCPacketController.getPacketsByRelayer);
 
-// Get packet by source channel, port and sequence
-router.get('/:sourcePort/:sourceChannel/:sequence', networkSelector, IBCPacketController.getPacket);
-
 export default router; 

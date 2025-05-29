@@ -22,8 +22,8 @@ export class ChainConfigService {
      */
     public isHomeChain(chainId: string, network: Network): boolean {
         const homeChains = {
-            [Network.MAINNET]: ['bbn-1', 'babylonchain'],
-            [Network.TESTNET]: ['bbn-test-5', 'babylon-testnet']
+            [Network.MAINNET]: ['bbn-1', 'Babylon Genesis'],
+            [Network.TESTNET]: ['bbn-test-5', 'Babylon Genesis Testnet']
         };
 
         return homeChains[network]?.includes(chainId) || false;

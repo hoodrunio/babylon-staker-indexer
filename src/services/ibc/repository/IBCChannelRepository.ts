@@ -92,7 +92,11 @@ export class IBCChannelRepository {
             if (!channel) return null;
             
             // Add human-readable chain information
-            const sourceChainId = 'babylonchain'; // Default for this chain
+            let sourceChainId = 'bbn-1'; // Default to mainnet
+            if (network === Network.TESTNET) {
+                sourceChainId = 'bbn-test-5';
+            }
+            
             const destChainId = channel.counterparty_chain_id;
             
             return {

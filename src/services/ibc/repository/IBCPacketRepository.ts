@@ -222,10 +222,12 @@ export class IBCPacketRepository {
      */
     async getPacketsInPeriod(startDate: Date, endDate: Date, network: Network): Promise<any[]> {
         try {
-            const packets = await IBCPacket.find({
+            const query = {
                 network: network.toString(),
                 send_time: { $gte: startDate, $lte: endDate }
-            }).lean();
+            };
+            
+            const packets = await IBCPacket.find(query).lean();
             
             return packets;
         } catch (error) {

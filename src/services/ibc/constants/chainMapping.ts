@@ -12,7 +12,7 @@ export const ChainIdToName: Record<string, string> = {
     'osmosis-test-5': 'Osmosis Testnet',
     
     // Babylon
-    'bbn-test-5': 'Babylon Testnet',
+    'bbn-test-5': 'Babylon Genesis Testnet',
     'bbn-1': 'Babylon Genesis',
     
     // Celestia
