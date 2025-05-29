@@ -273,7 +273,7 @@ export class IBCChannelRepository {
             
             // Enhance the channel data with human-readable chain information
             return channels.map(channel => {
-                const sourceChainId = 'Babylon Genesis'; // Default for this chain
+                const sourceChainId = network === Network.MAINNET ? 'bbn-1' : 'bbn-test-5';
                 const destChainId = channel.counterparty_chain_id;
                 
                 const sourceName = getChainName(sourceChainId);
