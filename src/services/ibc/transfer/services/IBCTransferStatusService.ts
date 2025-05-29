@@ -60,6 +60,7 @@ export class IBCTransferStatusService implements IIBCTransferStatusService {
             completion_tx_hash: txHash,
             completion_height: height,
             completion_timestamp: timestamp,
+            complete_time: timestamp,
             error: error,
             updated_at: timestamp
         };

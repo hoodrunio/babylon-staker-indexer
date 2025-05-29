@@ -68,6 +68,22 @@ export class IBCPacketRepository {
         network: Network
     ): Promise<any> {
         try {
+            // Get the current packet to calculate completion time
+            const existingPacket = await IBCPacket.findOne({
+                source_port: sourcePort,
+                source_channel: sourceChannel,
+                sequence: sequence,
+                network: network.toString()
+            });
+
+            // Calculate completion time if send_time exists
+            let completionTimeMs: number | undefined = undefined;
+            if (existingPacket?.send_time && ackData.timestamp) {
+                const sendTime = new Date(existingPacket.send_time).getTime();
+                const ackTime = new Date(ackData.timestamp).getTime();
+                completionTimeMs = ackTime - sendTime;
+            }
+
             return await IBCPacket.findOneAndUpdate(
                 {
                     source_port: sourcePort,
@@ -80,7 +96,7 @@ export class IBCPacketRepository {
                         status: 'ACKNOWLEDGED',
                         ack_tx_hash: ackData.tx_hash,
                         ack_time: ackData.timestamp,
-                        completion_time_ms: ackData.timestamp - ackData.send_time,
+                        completion_time_ms: completionTimeMs,
                         relayer_address: ackData.relayer_address
                     }
                 },
@@ -193,6 +209,27 @@ export class IBCPacketRepository {
             }).sort({ send_time: -1 });
         } catch (error) {
             logger.error(`[IBCPacketRepository] Error getting packets by relayer: ${error instanceof Error ? error.message : String(error)}`);
+            return [];
+        }
+    }
+
+    /**
+     * Get packets within a specific time period
+     * @param startDate Period start date
+     * @param endDate Period end date
+     * @param network Network to query
+     * @returns Array of IBC packets within the specified period
+     */
+    async getPacketsInPeriod(startDate: Date, endDate: Date, network: Network): Promise<any[]> {
+        try {
+            const packets = await IBCPacket.find({
+                network: network.toString(),
+                send_time: { $gte: startDate, $lte: endDate }
+            }).lean();
+            
+            return packets;
+        } catch (error) {
+            logger.error(`[IBCPacketRepository] Error getting packets in period: ${error instanceof Error ? error.message : String(error)}`);
             return [];
         }
     }

@@ -218,12 +218,15 @@ export class IBCTransferRepository {
      */
     public async markTransferComplete(packetId: mongoose.Types.ObjectId, network: Network): Promise<any> {
         try {
+            // Always set complete_time to the current time when marking as complete
+            const completeTime = new Date();
+            
             return await IBCTransfer.findOneAndUpdate(
                 { packet_id: packetId, network: network.toString() },
                 { 
                     $set: { 
                         success: true, 
-                        complete_time: new Date() 
+                        complete_time: completeTime
                     } 
                 },
                 { new: true }
@@ -231,6 +234,27 @@ export class IBCTransferRepository {
         } catch (error) {
             logger.error(`[IBCTransferRepository] Error marking transfer complete: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
+        }
+    }
+
+    /**
+     * Get transfers within a specific time period
+     * @param startDate Period start date
+     * @param endDate Period end date
+     * @param network Network to query
+     * @returns Array of IBC transfers within the specified period
+     */
+    async getTransfersInPeriod(startDate: Date, endDate: Date, network: Network): Promise<any[]> {
+        try {
+            const transfers = await IBCTransfer.find({
+                network: network.toString(),
+                send_time: { $gte: startDate, $lte: endDate }
+            }).lean();
+            
+            return transfers;
+        } catch (error) {
+            logger.error(`[IBCTransferRepository] Error getting transfers in period: ${error instanceof Error ? error.message : String(error)}`);
+            return [];
         }
     }
 }

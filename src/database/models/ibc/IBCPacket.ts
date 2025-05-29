@@ -14,7 +14,7 @@ export interface IBCPacket extends Document {
   timeout_timestamp: number;
   
   // Packet status
-  status: 'SENT' | 'RECEIVED' | 'ACKNOWLEDGED' | 'TIMEOUT';
+  status: 'SENT' | 'RECEIVED' | 'ACKNOWLEDGED' | 'COMPLETED' | 'TIMEOUT';
   
   // Transaction info
   send_tx_hash?: string;

@@ -4,8 +4,8 @@ import { networkSelector } from '../../../middleware/network-selector';
 
 const router = Router();
 
-// Get transfer by packet ID
-router.get('/:id', networkSelector, IBCTransferController.getTransferById);
+// Get transfer statistics - Özel route'ları önce tanımlayalım
+router.get('/stats', networkSelector, IBCTransferController.getTransferStats);
 
 // Get transfer by transaction hash
 router.get('/tx/:txHash', networkSelector, IBCTransferController.getTransferByTxHash);
@@ -19,7 +19,7 @@ router.get('/receiver/:address', networkSelector, IBCTransferController.getTrans
 // Get transfers between specific chains
 router.get('/chains/:sourceChain/:destChain', networkSelector, IBCTransferController.getTransfersByChains);
 
-// Get transfer statistics
-router.get('/stats', networkSelector, IBCTransferController.getTransferStats);
+// Get transfer by packet ID - Bu genel route'u en sona bırakalım
+router.get('/:id', networkSelector, IBCTransferController.getTransferById);
 
 export default router; 

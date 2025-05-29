@@ -74,6 +74,7 @@ export interface IBCTransferData {
     completion_tx_hash?: string;
     completion_height?: number;
     completion_timestamp?: Date;
+    complete_time?: Date;
     
     // Timeout information
     timeout_tx_hash?: string;
