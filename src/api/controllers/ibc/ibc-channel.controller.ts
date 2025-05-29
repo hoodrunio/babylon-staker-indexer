@@ -156,6 +156,7 @@ export class IBCChannelController {
                 total_value_sent: channel.total_value_sent || '0',
                 total_value_received: channel.total_value_received || '0',
                 active_relayers: channel.active_relayers || 0,
+                total_tokens_transferred: channel.total_tokens_transferred || { incoming: {}, outgoing: {} },
                 last_packet_time: channel.last_packet_time,
                 created_at: channel.created_at,
                 updated_at: channel.updated_at

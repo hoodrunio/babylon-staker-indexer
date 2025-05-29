@@ -87,7 +87,7 @@ export class IBCChannelRepository {
                 channel_id: channelId,
                 port_id: portId,
                 network: network.toString()
-            });
+            }).lean();
             
             if (!channel) return null;
             
@@ -100,7 +100,7 @@ export class IBCChannelRepository {
             const destChainId = channel.counterparty_chain_id;
             
             return {
-                ...channel.toObject(),
+                ...channel,
                 source_chain_name: getChainName(sourceChainId),
                 counterparty_chain_name: getChainName(destChainId),
                 display_name: formatChannelIdentifier(
@@ -269,7 +269,7 @@ export class IBCChannelRepository {
         try {
             const channels = await IBCChannelModel.find({
                 network: network.toString()
-            });
+            }).lean();
             
             // Enhance the channel data with human-readable chain information
             return channels.map(channel => {
@@ -281,7 +281,7 @@ export class IBCChannelRepository {
                 
                 // Create a new object with both the original data and enhanced fields
                 return {
-                    ...channel.toObject(),
+                    ...channel,
                     // Add human-readable fields
                     source_chain_name: sourceName,
                     counterparty_chain_name: destName,
