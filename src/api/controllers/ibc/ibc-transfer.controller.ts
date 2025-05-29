@@ -165,22 +165,32 @@ export class IBCTransferController {
             const now = new Date();
             let startDate = new Date();
             
+            logger.debug(`[IBCTransferController] Current time: ${now.toISOString()} (UTC Hours: ${now.getUTCHours()})`);
+            
             switch (period) {
                 case '1h':
-                    startDate.setHours(now.getHours() - 1);
+                    startDate = new Date(now);
+                    startDate.setUTCHours(now.getUTCHours() - 1);
                     break;
                 case '24h':
-                    startDate.setDate(now.getDate() - 1);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 1);
                     break;
                 case '7d':
-                    startDate.setDate(now.getDate() - 7);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 7);
                     break;
                 case '30d':
-                    startDate.setDate(now.getDate() - 30);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 30);
                     break;
                 default:
-                    startDate.setDate(now.getDate() - 1);
+                    startDate = new Date(now);
+                    startDate.setUTCDate(now.getUTCDate() - 1);
             }
+            
+            logger.debug(`[IBCTransferController] Date range: ${startDate.toISOString()} to ${now.toISOString()}`);
+            logger.debug(`[IBCTransferController] Period: ${period}, Network: ${network}`);
 
             // Get transfers within date range
             const transfers = await IBCTransferController.transferRepository.getTransfersInPeriod(
@@ -262,7 +272,7 @@ export class IBCTransferController {
                 .slice(0, 10);
             
             // Calculate time-series data (transfers per day/hour)
-            const timeSeriesData: number[] = [];
+            const timeSeriesData: Array<{time_label: string, count: number}> = [];
             
             if (period === '1h') {
                 // For 1h, group by minutes (12 5-minute intervals)
@@ -272,11 +282,23 @@ export class IBCTransferController {
                     if (transfer.send_time) {
                         const sendTime = new Date(transfer.send_time);
                         const minuteIndex = Math.floor(sendTime.getMinutes() / 5);
-                        minuteGroups[minuteIndex]++;
+                        if (minuteIndex >= 0 && minuteIndex < 12) {
+                            minuteGroups[minuteIndex]++;
+                        }
                     }
                 });
                 
-                timeSeriesData.push(...minuteGroups);
+                // Create labeled time series data
+                for (let i = 0; i < 12; i++) {
+                    const startMinute = i * 5;
+                    const endMinute = startMinute + 4;
+                    const timeLabel = `${startMinute.toString().padStart(2, '0')}:00-${endMinute.toString().padStart(2, '0')}:59`;
+                    
+                    timeSeriesData.push({
+                        time_label: timeLabel,
+                        count: minuteGroups[i]
+                    });
+                }
             } else if (period === '24h') {
                 // For 24h, group by hour
                 const hourGroups = Array(24).fill(0);
@@ -284,14 +306,26 @@ export class IBCTransferController {
                 transfers.forEach((transfer: IBCTransfer) => {
                     if (transfer.send_time) {
                         const sendTime = new Date(transfer.send_time);
-                        hourGroups[sendTime.getHours()]++;
+                        const hourIndex = sendTime.getUTCHours(); // Use UTC hours to avoid timezone issues
+                        if (hourIndex >= 0 && hourIndex < 24) {
+                            hourGroups[hourIndex]++;
+                        }
                     }
                 });
                 
-                timeSeriesData.push(...hourGroups);
+                // Create labeled time series data
+                for (let i = 0; i < 24; i++) {
+                    const hourLabel = `${i.toString().padStart(2, '0')}:00-${i.toString().padStart(2, '0')}:59 UTC`;
+                    
+                    timeSeriesData.push({
+                        time_label: hourLabel,
+                        count: hourGroups[i]
+                    });
+                }
             } else if (period === '7d') {
                 // For 7d, group by day
                 const dayGroups = Array(7).fill(0);
+                const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
                 
                 transfers.forEach((transfer: IBCTransfer) => {
                     if (transfer.send_time) {
@@ -303,7 +337,18 @@ export class IBCTransferController {
                     }
                 });
                 
-                timeSeriesData.push(...dayGroups);
+                // Create labeled time series data with day names
+                for (let i = 0; i < 7; i++) {
+                    const day = new Date(startDate);
+                    day.setDate(startDate.getDate() + i);
+                    const dayName = dayNames[day.getDay()];
+                    const dateStr = day.toISOString().split('T')[0]; // YYYY-MM-DD format
+                    
+                    timeSeriesData.push({
+                        time_label: `${dayName} (${dateStr})`,
+                        count: dayGroups[i]
+                    });
+                }
             } else if (period === '30d') {
                 // For 30d, group by 3-day periods (10 groups)
                 const monthGroups = Array(10).fill(0);
@@ -319,7 +364,22 @@ export class IBCTransferController {
                     }
                 });
                 
-                timeSeriesData.push(...monthGroups);
+                // Create labeled time series data
+                for (let i = 0; i < 10; i++) {
+                    const periodStart = new Date(startDate);
+                    periodStart.setDate(startDate.getDate() + (i * 3));
+                    
+                    const periodEnd = new Date(periodStart);
+                    periodEnd.setDate(periodStart.getDate() + 2);
+                    
+                    const startStr = periodStart.toISOString().split('T')[0]; // YYYY-MM-DD format
+                    const endStr = periodEnd.toISOString().split('T')[0]; // YYYY-MM-DD format
+                    
+                    timeSeriesData.push({
+                        time_label: `${startStr} - ${endStr}`,
+                        count: monthGroups[i]
+                    });
+                }
             }
 
             // Calculate completion time statistics where complete_time exists

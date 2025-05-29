@@ -245,12 +245,12 @@ export class IBCTransferRepository {
      * @returns Array of IBC transfers within the specified period
      */
     async getTransfersInPeriod(startDate: Date, endDate: Date, network: Network): Promise<any[]> {
-        try {
-            const transfers = await IBCTransfer.find({
+        try {            
+            const query = {
                 network: network.toString(),
                 send_time: { $gte: startDate, $lte: endDate }
-            }).lean();
-            
+            };            
+            const transfers = await IBCTransfer.find(query).lean();            
             return transfers;
         } catch (error) {
             logger.error(`[IBCTransferRepository] Error getting transfers in period: ${error instanceof Error ? error.message : String(error)}`);
