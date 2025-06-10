@@ -22,7 +22,7 @@ export class BlockMessageProcessor extends BaseMessageProcessor {
         super();
     }
 
-    canProcess(message: any): boolean {
+    canProcess(): boolean {
         try {
             // These types of messages are now handled by NewBlockMessageProcessor
             // Therefore, we return false here

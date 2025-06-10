@@ -155,7 +155,7 @@ export class GovernanceEventHandler {
             }
 
             // Fetch full proposal details and update database
-            const proposal = await this.fetchProposalDetails(parseInt(proposalId), network);
+            const proposal = await this.fetchProposalDetails(parseInt(proposalId));
             if (proposal) {
                 await this.updateProposal(proposal, network);
                 logger.info(`[Governance] Recorded new proposal ${proposalId}`);
@@ -200,7 +200,7 @@ export class GovernanceEventHandler {
         return attribute ? attribute.value : null;
     }
 
-    private async fetchProposalDetails(proposalId: number, network: Network): Promise<any> {
+    private async fetchProposalDetails(proposalId: number): Promise<any> {
         try {
             // Get the single BabylonClient instance without specifying a network
             const client = BabylonClient.getInstance();

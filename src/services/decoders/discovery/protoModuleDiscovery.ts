@@ -108,6 +108,7 @@ export class ProtoModuleDiscovery {
             ? importPath 
             : `${basePath}/${namespace}/${module}/tx`;
           
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
           protoModule = require(relativePath);
         } catch (e) {
           // If that fails, try using the path aliases
@@ -115,6 +116,7 @@ export class ProtoModuleDiscovery {
             if (basePath.includes('generated/proto')) {
               // Try with the new path alias approach
               const aliasPath = `@protos/${namespace}/${module}/tx`;
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
               protoModule = require(aliasPath);
             } else if (basePath === 'cosmjs-types') {
               // For cosmjs types, just continue with the original approach
@@ -123,6 +125,7 @@ export class ProtoModuleDiscovery {
             } else {
               // For any other paths, try an absolute path as fallback
               const absolutePath = path.join(process.cwd(), `src/generated/proto/${namespace}/${module}/tx`);
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
               protoModule = require(absolutePath);
             }
           } catch (aliasError) {
@@ -195,6 +198,7 @@ export class ProtoModuleDiscovery {
       // Try importing via relative path first
       try {
         const importPath = `@protos/${currentPath.replace(/\\/g, '/').replace(/\.js$/, '')}`;
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const protoModule = require(importPath);
         
         // Get namespace from path (convert path segments to dot notation for typeUrl)
@@ -208,6 +212,7 @@ export class ProtoModuleDiscovery {
           currentPath.replace(/\\/g, '/').replace(/\.js$/, ''));
           
         try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
           const protoModule = require(absolutePath);
           
           // Get namespace from path (convert path segments to dot notation for typeUrl)

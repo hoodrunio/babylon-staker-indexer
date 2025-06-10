@@ -82,6 +82,7 @@ export class MessageProcessor {
     // Try all possible paths
     for (const attempt of attemptPaths) {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const protoModule = require(attempt.path);
         
         if (protoModule && protoModule[attempt.msgType]) {

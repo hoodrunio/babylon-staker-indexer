@@ -3,10 +3,8 @@ import {
     BlockSignatureInfo, 
     SignatureStats, 
     SignatureStatsParams,
-    EpochStats
 } from '../../types';
 import { Response } from 'express';
-import { Network } from '../../types/finality';
 import { FinalityHistoricalService } from './FinalityHistoricalService';
 import { FinalityEpochService } from './FinalityEpochService';
 import { FinalitySSEManager } from './FinalitySSEManager';
@@ -58,7 +56,7 @@ export class FinalitySignatureService {
         return FinalitySignatureService.instance;
     }
 
-    private getNetworkConfig(network?: Network) {
+    private getNetworkConfig() {
         // Always use our initialized client regardless of the network parameter
         return {
             nodeUrl: this.babylonClient.getBaseUrl(),
@@ -183,14 +181,13 @@ export class FinalitySignatureService {
     }
 
     public async getSignatureStats(params: SignatureStatsParams): Promise<SignatureStats> {
-        const { nodeUrl, rpcUrl } = this.getNetworkConfig(params.network);
         const { fpBtcPkHex, startHeight, endHeight, lastNBlocks = this.DEFAULT_LAST_N_BLOCKS } = params;
         
         const currentHeight = await this.babylonClient.getCurrentHeight();
         // Last processed block (2 blocks behind current height)
         const safeHeight = currentHeight - 2;
 
-        let actualEndHeight = endHeight 
+        const actualEndHeight = endHeight 
             ? Math.min(endHeight, safeHeight)
             : safeHeight;
             

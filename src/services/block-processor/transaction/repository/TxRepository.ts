@@ -204,7 +204,7 @@ export class TxRepository implements ITxRepository {
       const totalPromise = this.getTxCount(network);
       
       // Prepare query
-      let query: any = { network };
+      const query: any = { network };
       
       // If we have a cursor, decode it and use it as a reference point
       if (cursor) {

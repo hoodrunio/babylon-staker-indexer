@@ -140,7 +140,7 @@ export class CheckpointStatusFetcher {
             const response = await axios.get(`${baseUrl}/babylon/epoching/v1/current_epoch`);
             return parseInt(response.data.epoch_number);
         } catch (error) {
-            logger.error(`[CheckpointStatus] Error getting current epoch:`, error);
+            logger.error(`[CheckpointStatus] Error getting current epoch on ${network}:`, error);
             throw error;
         }
     }

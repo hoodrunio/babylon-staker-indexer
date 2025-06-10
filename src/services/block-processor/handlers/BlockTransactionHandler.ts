@@ -330,9 +330,9 @@ export class BlockTransactionHandler {
      * Processes transactions for a block
      */
     private async processBlockTransactions(height: number, blockData: any, network: Network): Promise<void> {
-        let processedTxCount = 0;
-        let savedTxCount = 0;
-        let errorTxCount = 0;
+        const processedTxCount = 0;
+        const savedTxCount = 0;
+        const errorTxCount = 0;
         
         try {
             // Try to get transactions using getTxSearch

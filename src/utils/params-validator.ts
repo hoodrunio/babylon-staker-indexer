@@ -1,6 +1,6 @@
 import { Database } from '../database';
 import { logger } from './logger';
-
+import params from '../../global-params.json';
 
 export interface VersionParams {
   version: number;
@@ -26,7 +26,6 @@ interface GlobalParams {
 }
 
 let cachedParams: GlobalParams | null = null;
-const dbInstance = Database.getInstance();
 
 async function loadParams(): Promise<GlobalParams> {
   if (cachedParams) {
@@ -34,19 +33,17 @@ async function loadParams(): Promise<GlobalParams> {
   }
   
   try {
-    const params = require('../../global-params.json');
-    
     // Add phase numbers to versions
     params.versions = params.versions.map((v: any) => ({
       ...v,
       phase: v.version + 1 // Convert version to phase number
     }));
     
-    cachedParams = params;
+    cachedParams = params as GlobalParams;
 
     // Log phase parameters
     logger.info('\n=== Phase Parameters ===');
-    params.versions.forEach((version: VersionParams) => {
+    params.versions.forEach((version: any) => {
       logger.info(`\nPhase ${version.phase}:`);
       logger.info(`  Version: ${version.version}`);
       logger.info(`  Activation Height: ${version.activation_height}`);
@@ -60,14 +57,14 @@ async function loadParams(): Promise<GlobalParams> {
     });
     logger.info('\n===================\n');
 
-    return params;
+    return params as GlobalParams;
   } catch (e) {
     logger.error('Error loading parameters:', e);
     throw e;
   }
 }
 
-async function findApplicableVersion(height: number, versions: VersionParams[], dbInstance: Database): Promise<VersionParams | null> {
+async function findApplicableVersion(height: number, versions: any[], dbInstance: Database): Promise<any | null> {
   // Consider it reindexing if INDEX_SPECIFIC_PHASE is true
   const isReindexing = process.env.INDEX_SPECIFIC_PHASE === 'true';
 
@@ -139,7 +136,7 @@ async function checkPhase1End(currentStake: number): Promise<boolean> {
   return currentStake >= targetStake;
 }
 
-export async function getParamsForHeight(height: number): Promise<VersionParams | null> {
+export async function getParamsForHeight(height: number): Promise<any | null> {
   try {
     const params = await loadParams();
     const dbInstance = Database.getInstance();

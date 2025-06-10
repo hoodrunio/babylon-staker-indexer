@@ -1,4 +1,4 @@
-import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, TopFinalityProviderStats, FinalityProvider, GlobalStakerStats } from '../types';
+import { StakeTransaction, FinalityProviderStats, StakerStats, VersionStats, TimeRange, GlobalStakerStats } from '../types';
 import { BitcoinRPC } from '../utils/bitcoin-rpc';
 import { Database } from '../database';
 import { parseOpReturn } from '../utils/op-return-parser';
@@ -249,7 +249,7 @@ export class BabylonIndexer {
            (type === 'witness_v1_taproot'); // RPC format
   }
 
-  private findStakingAmount(tx: any, validationResult: any): number {
+  private findStakingAmount(tx: any): number {
     // Get input addresses from vin
     const inputAddresses = tx.vin?.map((input: any) => {
         // For RPC format, we need to look at the witness_v1_taproot address
@@ -375,7 +375,7 @@ export class BabylonIndexer {
         // Phase 1: Check against staking cap
         if (params.staking_cap !== undefined) {
           const stakingCapSats = BigInt(Math.floor(params.staking_cap));
-          const currentStakeSats = BigInt(Math.floor(this.findStakingAmount(tx, { isValid: true })));
+          const currentStakeSats = BigInt(Math.floor(this.findStakingAmount(tx)));
           isOverflow = currentStakeSats > stakingCapSats;
         }
         break;
@@ -432,7 +432,7 @@ export class BabylonIndexer {
         continue;
       }
 
-      const stakeAmountSatoshi = this.findStakingAmount(tx, validationResult);
+      const stakeAmountSatoshi = this.findStakingAmount(tx);
       validTransactions.push({ tx, amount: stakeAmountSatoshi, timestamp: block.time });
     }
 

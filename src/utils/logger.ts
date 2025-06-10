@@ -140,7 +140,7 @@ const enhancedPrintFormat = (info: any) => {
     let log = `${safeTimestamp} ${safeLevel}: ${formatMessage(safeMessage, metadata)}`;
     
     // Metadata exists, clean and add
-    const { service, environment, ...restMetadata } = metadata || {};
+    const { ...restMetadata } = metadata || {};
     const cleanedMetadata = cleanMetadata(restMetadata, new WeakSet());
     if (cleanedMetadata && Object.keys(cleanedMetadata).length > 0) {
         log += `\n${JSON.stringify(cleanedMetadata, null, 2)}`;
@@ -155,9 +155,9 @@ const enhancedPrintFormat = (info: any) => {
 };
 
 // Create a simple format override to help debug the logger
-const debugFormat = winston.format.printf(info => {
-    return `DEBUGFORMAT ${new Date().toISOString()} [${info.level.toUpperCase()}]: ${info.message}`;
-});
+// const debugFormat = winston.format.printf(info => {
+//     return `DEBUGFORMAT ${new Date().toISOString()} [${info.level.toUpperCase()}]: ${info.message}`;
+// });
 
 // Create custom format with enhanced error handling
 const customFormat = winston.format.combine(
@@ -170,15 +170,15 @@ const customFormat = winston.format.combine(
 );
 
 // Colored console format for development with enhanced error handling
-const consoleFormat = winston.format.combine(
-    winston.format.timestamp({
-        format: 'YYYY-MM-DD HH:mm:ss.SSS'
-    }),
-    winston.format.errors({ stack: true }),
-    winston.format.splat(),
-    winston.format.colorize({ all: true }),
-    winston.format.printf(enhancedPrintFormat)
-);
+// const consoleFormat = winston.format.combine(
+//     winston.format.timestamp({
+//         format: 'YYYY-MM-DD HH:mm:ss.SSS'
+//     }),
+//     winston.format.errors({ stack: true }),
+//     winston.format.splat(),
+//     winston.format.colorize({ all: true }),
+//     winston.format.printf(enhancedPrintFormat)
+// );
 
 // Define custom levels and colors
 const levels = {

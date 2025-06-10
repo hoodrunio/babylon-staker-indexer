@@ -1,5 +1,5 @@
 import { BlockchainTransaction } from '../../database/models/blockchain/Transaction';
-import { WasmState, Code, Contract } from '../../database/models/cosmwasm';
+import { WasmState, Contract, Code } from '../../database/models/cosmwasm';
 import { logger } from '../../utils/logger';
 import { CosmWasmClient } from '../../clients/CosmWasmClient';
 import { BabylonClient } from '../../clients/BabylonClient';
@@ -44,10 +44,9 @@ export class CosmWasmStateService {
   public async getState(network = 'mainnet'): Promise<any> {
     try {
       // Get the existing state document or create it if it doesn't exist
-      let state = await WasmState.getOrCreate(network);
+      const state = await WasmState.getOrCreate(network);
       
       // Get real counts from the database
-      const { Code, Contract } = await import('../../database/models/cosmwasm');
       const totalCodes = await Code.countDocuments();
       const totalContracts = await Contract.countDocuments();
       

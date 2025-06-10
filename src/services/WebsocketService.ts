@@ -1,4 +1,3 @@
-import { Network } from '../types/finality';
 import { WebSocketOrchestratorService } from './websocket/WebSocketOrchestratorService';
 
 /**

@@ -1,4 +1,3 @@
-import { ValidationConfig, ValidationError } from '../types/validation';
 import { parseOpReturn } from './op-return-parser';
 import { VersionParams } from './params-validator';
 
@@ -43,9 +42,9 @@ function validateOpReturnFormat(hexData: string, params: VersionParams): string[
     try {
         // 3. Parse components
         const tag = hexData.slice(4, 12);
-        const version = hexData.slice(12, 14);
-        const stakerPk = hexData.slice(14, 78);
-        const fpPk = hexData.slice(78, 142);
+        // const version = hexData.slice(12, 14);
+        // const stakerPk = hexData.slice(14, 78);
+        // const fpPk = hexData.slice(78, 142);
         const stakingTime = hexData.slice(142, 146);
 
         // 4. Tag validation
@@ -98,8 +97,8 @@ function findBabylonTaprootOutput(tx: any): { output: any, index: number } | nul
 export async function validateStakeTransaction(
     tx: any,
     params: VersionParams,
-    height: number,
-    currentActiveStake: number
+    _height: number,
+    _currentActiveStake: number
 ): Promise<StakeValidationResult> {
     const result: StakeValidationResult = {
         isValid: false,

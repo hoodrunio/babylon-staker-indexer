@@ -2,8 +2,6 @@
  * Type definitions for message decoders
  */
 
-import { Any } from '@generated/proto/google/protobuf/any';
-
 /**
  * Function that decodes a raw binary message into a typed object
  */

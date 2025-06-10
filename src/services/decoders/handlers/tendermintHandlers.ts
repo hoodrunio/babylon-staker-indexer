@@ -5,7 +5,7 @@
 import { logger } from '../../../utils/logger';
 import { SpecialCaseHandler } from '../types';
 import { convertBuffersToHex } from '../utils/bufferUtils';
-
+import { Header } from '../../../generated/proto/ibc/lightclients/tendermint/v1/tendermint';
 /**
  * Utilities for processing Tendermint data
  */
@@ -42,8 +42,6 @@ export function createTendermintClientHandler(): SpecialCaseHandler {
   return (decoded: any) => {
     try {
       if (decoded.clientMessage && decoded.clientMessage.typeUrl === '/ibc.lightclients.tendermint.v1.Header') {
-        const { Header } = require('../../../generated/proto/ibc/lightclients/tendermint/v1/tendermint');
-        
         if (decoded.clientMessage.value) {
           const headerDecoded = Header.decode(decoded.clientMessage.value);
           

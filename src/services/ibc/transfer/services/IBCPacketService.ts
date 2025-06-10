@@ -47,6 +47,7 @@ export class IBCPacketService implements IIBCPacketService {
         let hash = '';
         try {
             // Create a hash using Node.js crypto module
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const crypto = require('crypto');
             // Use MD5 which produces a 32 character hex string
             hash = crypto.createHash('md5').update(packetKey).digest('hex').substring(0, 24);
@@ -155,7 +156,7 @@ export class IBCPacketService implements IIBCPacketService {
             case 'send_packet':
             case 'recv_packet':
             case 'acknowledge_packet':
-            case 'timeout_packet':
+            case 'timeout_packet': {
                 // Standard packet events with all required attributes
                 const packetInfo = this.extractPacketInfo(attributes);
                 
@@ -167,8 +168,9 @@ export class IBCPacketService implements IIBCPacketService {
                 }
                 
                 return packetInfo;
+            }
                 
-            case 'fungible_token_packet':
+            case 'fungible_token_packet': {
                 // Special handling for fungible token packets
                 logger.debug(`[IBCPacketService] Processing fungible_token_packet with attributes: ${JSON.stringify(attributes)}`);
                 
@@ -189,6 +191,7 @@ export class IBCPacketService implements IIBCPacketService {
                 // If we still don't have info, log and return null
                 logger.debug(`[IBCPacketService] No packet context available for fungible_token_packet in tx ${txHash}`);
                 return null;
+            }
                 
             default:
                 logger.debug(`[IBCPacketService] Unhandled packet event type: ${eventType}`);

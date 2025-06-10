@@ -1,6 +1,5 @@
 import { Response } from 'express';
 import { BlockSignatureInfo, SignatureStatsParams } from '../../types';
-import { Network } from '../../types/finality';
 import { logger } from '../../utils/logger';
 import { BabylonClient } from '../../clients/BabylonClient';
 

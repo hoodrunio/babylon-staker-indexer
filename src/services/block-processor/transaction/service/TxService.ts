@@ -433,16 +433,11 @@ export class TxService implements ITxService {
           delete txToSave.meta;
         }
       }
-      try {
-        // Save to database with isLite flag if needed
-        await this.txRepository.saveTx({
-          ...txToSave,
-          isLite: shouldStoreLite && !txToSave.meta
-        }, network, firstMessageType);
-      } catch (dbError) {
-        // Handle database errors
-        throw dbError;
-      }
+      // Save to database with isLite flag if needed
+      await this.txRepository.saveTx({
+        ...txToSave,
+        isLite: shouldStoreLite && !txToSave.meta
+      }, network, firstMessageType);
     } catch (error) {
       logger.error(`[TxService] Error saving transaction: ${this.formatError(error)}`);
       throw error;

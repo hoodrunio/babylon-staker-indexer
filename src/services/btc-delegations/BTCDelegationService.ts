@@ -231,7 +231,7 @@ export class BTCDelegationService {
                     });
 
                     if (!existingDel) {
-                        const result = await this.createDelegationFromChainData(chainDel, network);
+                        await this.createDelegationFromChainData(chainDel, network);
                         return { type: 'created', id: chainDel.transaction_id_hex };
                     } else if (existingDel.state !== chainDel.status) {
                         await this.updateDelegationState(chainDel.transaction_id_hex, chainDel.status, network);
@@ -372,7 +372,6 @@ export class BTCDelegationService {
     }
 
     private async createDelegationFromChainData(chainDel: DelegationResponse, network: Network) {
-        try {
             if (!chainDel?.transaction_id_hex) {
                 throw new Error('Missing transaction_id_hex in delegation data');
             }
@@ -422,10 +421,7 @@ export class BTCDelegationService {
                 paramsVersion: chainDel.params_version
             });
 
-            return await delegation.save();
-        } catch (error) {
-            throw error;
-        }
+        return await delegation.save();
     }
 
     private mapStatusToEnum(status: string): 'PENDING' | 'VERIFIED' | 'ACTIVE' | 'UNBONDED' | 'EXPIRED' {

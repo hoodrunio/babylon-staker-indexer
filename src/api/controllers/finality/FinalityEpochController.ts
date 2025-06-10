@@ -41,8 +41,7 @@ export class FinalityEpochController {
      */
     public async getCurrentEpoch(req: Request, res: Response): Promise<Response> {
         try {
-            const network = req.network || Network.MAINNET;
-            const epoch = await this.finalityEpochService.getCurrentEpochInfo(network);
+            const epoch = await this.finalityEpochService.getCurrentEpochInfo();
             
             return res.json(epoch);
         } catch (error) {
@@ -59,8 +58,7 @@ export class FinalityEpochController {
      */
     public async getCurrentEpochStats(req: Request, res: Response): Promise<Response> {
         try {
-            const network = req.network || Network.MAINNET;
-            const stats = await this.finalityEpochService.getCurrentEpochStats(network);
+            const stats = await this.finalityEpochService.getCurrentEpochStats();
             
             return res.json(stats);
         } catch (error) {

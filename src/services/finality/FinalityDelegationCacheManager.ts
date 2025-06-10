@@ -95,7 +95,7 @@ export class FinalityDelegationCacheManager {
         pagination_keys: string[];
     }> {
         let allDelegations: DelegationResponse[] = [];
-        let paginationKeys: string[] = [];
+        const paginationKeys: string[] = [];
         let nextKey: string | undefined;
         let isFirstFetch = true;
 

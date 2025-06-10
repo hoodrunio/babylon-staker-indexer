@@ -1,6 +1,8 @@
 import { Network } from '../../types/finality';
 import { NewBTCDelegationService } from './NewBTCDelegationService';
 import { logger } from '../../utils/logger';
+import fs from 'fs';
+import path from 'path';
 
 export class BTCDelegationEventHandler {
     private static instance: BTCDelegationEventHandler | null = null;
@@ -25,9 +27,6 @@ export class BTCDelegationEventHandler {
             }
 
             // Log incoming event data to file
-            const fs = require('fs');
-            const path = require('path');
-            
             const logDir = path.join(__dirname, '../../../logs');
             if (!fs.existsSync(logDir)){
                 fs.mkdirSync(logDir, { recursive: true });
@@ -144,14 +143,6 @@ export class BTCDelegationEventHandler {
         return this.parseAttributeValue(attr);
     }
 
-    private logEventData(eventName: string, event: any, parsedData: any) {
-        /* logger.info(`Raw ${eventName} event data:`, {
-            event: JSON.stringify(event, null, 2)
-        }); */
-
-       // logger.info(`Parsed ${eventName} event data:`, parsedData.stakingTxHash, 'network:', parsedData.network);
-    }
-
     private async handleDelegationEvent(txData: any, network: Network) {
         try {
             logger.info('Handling delegation event with data');
@@ -181,7 +172,7 @@ export class BTCDelegationEventHandler {
                 logger.error('Unknown event data structure:', txData);
                 return;
             }
-            let tx_hash = eventDataWithHashAndSender.hash;
+            const tx_hash = eventDataWithHashAndSender.hash;
             logger.info('Processed event data:', tx_hash);
 
             await this.delegationService.handleNewDelegationFromWebsocket(eventDataWithHashAndSender, network);
@@ -209,8 +200,6 @@ export class BTCDelegationEventHandler {
                 newState,
                 network
             };
-
-            this.logEventData('state update', event, parsedData);
 
             if (!stakingTxHash || !newState) {
                 logger.error('Missing required attributes in state update event:', {
@@ -258,7 +247,7 @@ export class BTCDelegationEventHandler {
             }
 
             const stakingTxHash = this.getAttributeValue(event, 'staking_tx_hash');
-            const covenantBtcPkHex = this.getAttributeValue(event, 'covenant_btc_pk_hex');
+            // const covenantBtcPkHex = this.getAttributeValue(event, 'covenant_btc_pk_hex');
             
             /* logger.info('Received covenant signature:', {
                 stakingTxHash,
@@ -306,8 +295,6 @@ export class BTCDelegationEventHandler {
                 network,
                 rawEventType: event.type
             };
-
-            this.logEventData('covenant quorum', event, parsedData);
 
             if (!stakingTxHash || !newState) {
                 logger.error('Missing required attributes in covenant quorum event:', {
@@ -374,8 +361,6 @@ export class BTCDelegationEventHandler {
                 network
             };
 
-            this.logEventData('inclusion proof', event, parsedData);
-
             if (!stakingTxIdHex || !newState || !startHeight || !endHeight) {
                 logger.error('Missing required attributes in inclusion proof event:', {
                     hasStakingTxIdHex: !!stakingTxIdHex,
@@ -438,8 +423,6 @@ export class BTCDelegationEventHandler {
                 network
             };
 
-            this.logEventData('early unbonding', event, parsedData);
-
             if (!stakingTxHash || !newState) {
                 logger.error('Missing required attributes in early unbonding event:', {
                     hasStakingTxHash: !!stakingTxHash,
@@ -491,8 +474,6 @@ export class BTCDelegationEventHandler {
                 newState,
                 network
             };
-
-            this.logEventData('delegation expired', event, parsedData);
 
             if (!stakingTxHash || !newState) {
                 logger.error('Missing required attributes in delegation expired event:', {

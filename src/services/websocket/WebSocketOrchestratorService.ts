@@ -135,7 +135,6 @@ export class WebSocketOrchestratorService {
         logger.info(`${network} websocket connection closed`);
         this.healthTracker.markDisconnected(network);
         
-        const config = this.configService.getNetworkConfig();
         await this.reconnectionService.handleReconnect(
             network, 
             () => this.reconnect(network)

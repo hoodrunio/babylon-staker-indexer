@@ -52,7 +52,7 @@ export class FinalityProviderService {
         return FinalityProviderService.instance;
     }
 
-    private getNetworkConfig(network: Network) {
+    private getNetworkConfig() {
         // Always use our initialized client
         return {
             nodeUrl: this.babylonClient.getBaseUrl(),
@@ -139,7 +139,7 @@ export class FinalityProviderService {
             cacheKey,
             this.CACHE_TTL.PROVIDERS_LIST,
             async () => {
-                const { nodeUrl } = this.getNetworkConfig(network);
+                const { nodeUrl } = this.getNetworkConfig();
                 
                 // 1. First, get the latest block height
                 const currentHeight = await this.babylonClient.getCurrentHeight();
@@ -199,7 +199,7 @@ export class FinalityProviderService {
                 let nextKey = '';
                 
                 do {
-                    const { nodeUrl } = this.getNetworkConfig(network);
+                    const { nodeUrl } = this.getNetworkConfig();
                     const url = new URL(`${nodeUrl}/babylon/btcstaking/v1/finality_providers`);
                     
                     // Add pagination parameters if we have a next key
@@ -236,7 +236,7 @@ export class FinalityProviderService {
             this.CACHE_TTL.PROVIDER_DETAILS,
             async () => {
                 const [providerResponse, activeProviders] = await Promise.all([
-                    fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/finality_provider`),
+                    fetch(`${this.getNetworkConfig().nodeUrl}/babylon/btcstaking/v1/finality_providers/${fpBtcPkHex}/finality_provider`),
                     this.getActiveFinalityProviders(network)
                 ]);
 
@@ -261,7 +261,7 @@ export class FinalityProviderService {
             this.CACHE_TTL.POWER,
             async () => {
                 const [powerResponse, totalPower] = await Promise.all([
-                    fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/finality/v1/finality_providers/${fpBtcPkHex}/power`),
+                    fetch(`${this.getNetworkConfig().nodeUrl}/babylon/finality/v1/finality_providers/${fpBtcPkHex}/power`),
                     this.getTotalVotingPower(network)
                 ]);
 
@@ -291,7 +291,7 @@ export class FinalityProviderService {
             this.CACHE_TTL.TOTAL_POWER,
             async () => {
                 const currentHeight = await this.babylonClient.getCurrentHeight();
-                const response = await fetch(`${this.getNetworkConfig(network).nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
+                const response = await fetch(`${this.getNetworkConfig().nodeUrl}/babylon/finality/v1/finality_providers/${currentHeight}`);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);

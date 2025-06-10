@@ -4,7 +4,6 @@
  */
 
 import { PaginatedBlocksResponse } from '../../types/common';
-import { logger } from '../../../../utils/logger';
 
 export class BlockCacheManager {
   private static instance: BlockCacheManager | null = null;

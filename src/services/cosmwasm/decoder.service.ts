@@ -342,7 +342,7 @@ export class CosmWasmDecoderService {
       
       // Try to determine the likely denomination
       // CW20 tokens in Cosmos often use 6 decimal places
-      let denominationFactor = BigInt(10 ** 6);
+      const denominationFactor = BigInt(10 ** 6);
       
       // For very large numbers, might use different scales
       if (amountBigInt < BigInt(100)) {

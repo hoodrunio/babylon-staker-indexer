@@ -237,7 +237,7 @@ export class StakerRecalculationService {
             
             // Update phase stats with finality providers
             for (const [phase, fpMap] of phaseFPMap.entries()) {
-                let phaseStat = staker.phaseStats.find((p: any) => p.phase === phase);
+                const phaseStat = staker.phaseStats.find((p: any) => p.phase === phase);
                 if (phaseStat) {
                     phaseStat.finalityProviders = Array.from(fpMap.values());
                 }

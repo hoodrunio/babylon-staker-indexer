@@ -44,7 +44,7 @@ export class FinalityEpochService {
         return FinalityEpochService.instance;
     }
 
-    public async getCurrentEpochInfo(network?: Network): Promise<{ epochNumber: number; boundary: number }> {
+    public async getCurrentEpochInfo(): Promise<{ epochNumber: number; boundary: number }> {
         // Use the network parameter if provided, or fall back to this.network
         // This preserves the Network enum usage as per the simplified network approach
         
@@ -221,7 +221,7 @@ export class FinalityEpochService {
         }
     }
 
-    public async getCurrentEpochStats(network?: Network): Promise<EpochStats> {
+    public async getCurrentEpochStats(): Promise<EpochStats> {
         // Use the network parameter if provided, or fall back to this.network
         // This preserves the Network enum usage as per the simplified network approach
         
@@ -251,7 +251,7 @@ export class FinalityEpochService {
             const useNetwork = network || this.network;
             
             // Use the initialized BabylonClient
-            const currentEpoch = await this.getCurrentEpochInfo(useNetwork);
+            const currentEpoch = await this.getCurrentEpochInfo();
             const currentHeight = await this.babylonClient.getCurrentHeight();
             const epochStartHeight = currentEpoch.boundary - 360;
             const epochEndHeight = currentEpoch.boundary;

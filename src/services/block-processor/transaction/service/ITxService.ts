@@ -3,7 +3,7 @@
  * Defines business logic operations for transactions
  */
 
-import { BaseTx, PaginatedTxsResponse, SimpleTx } from '../../types/common';
+import { BaseTx, PaginatedTxsResponse } from '../../types/common';
 import { Network } from '../../../../types/finality';
 
 export interface ITxService {

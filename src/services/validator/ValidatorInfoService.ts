@@ -8,7 +8,7 @@ import { logger } from '../../utils/logger';
 import { bech32 } from 'bech32';
 import { getKeybaseLogo } from '../../utils/keybase';
 import mongoose from 'mongoose';
-
+import crypto from 'crypto';
 export class ValidatorInfoService {
     private static instance: ValidatorInfoService | null = null;
     private readonly babylonClient: BabylonClient;
@@ -134,7 +134,7 @@ export class ValidatorInfoService {
                 try {
                     // Get consensus key and convert to hex address and valcons address
                     const consensusHexAddress = this.getConsensusHexAddress(validator.consensus_pubkey.key);
-                    const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key, network);
+                    const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key);
                     const accountAddress = this.getAccountAddressFromValoper(validator.operator_address);
 
                     // Check if this validator exists in tendermint validators
@@ -200,7 +200,6 @@ export class ValidatorInfoService {
             const pubkeyBytes = Buffer.from(consensusPubkey, 'base64');
             
             // Take SHA256 of the pubkey and then first 20 bytes
-            const crypto = require('crypto');
             const hash = crypto.createHash('sha256').update(pubkeyBytes).digest();
             const hexAddress = hash.slice(0, 20).toString('hex').toUpperCase();
 
@@ -216,7 +215,7 @@ export class ValidatorInfoService {
         }
     }
 
-    private getValconsAddress(consensusPubkey: string, network: Network): string {
+    private getValconsAddress(consensusPubkey: string): string {
         try {
             const hexAddress = this.getConsensusHexAddress(consensusPubkey);
             const prefix = 'bbnvalcons';
@@ -238,7 +237,7 @@ export class ValidatorInfoService {
     public async updateValidatorInfo(validatorData: any, network: Network): Promise<void> {
         try {
             const consensusHexAddress = this.getConsensusHexAddress(validatorData.consensus_pubkey);
-            const valconsAddress = this.getValconsAddress(validatorData.consensus_pubkey, network);
+            const valconsAddress = this.getValconsAddress(validatorData.consensus_pubkey);
             const logoUrl = await getKeybaseLogo(validatorData.description.identity);
 
             await ValidatorInfo.findOneAndUpdate(
@@ -368,7 +367,7 @@ export class ValidatorInfoService {
                 }
             }
 
-            const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key, network);
+            const valconsAddress = this.getValconsAddress(validator.consensus_pubkey.key);
 
             // Update validator info with match results
             await ValidatorInfo.findOneAndUpdate(

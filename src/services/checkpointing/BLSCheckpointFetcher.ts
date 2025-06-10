@@ -24,7 +24,7 @@ export class BLSCheckpointFetcher {
 
     private async calculateBlockHeightForEpoch(epochNum: number, network: Network): Promise<number> {
         try {
-            const client = this.validatorInfoService.getBabylonClient();
+            // const client = this.validatorInfoService.getBabylonClient();
             // Network parameter is still preserved as per the simplified network approach
 
             // Each epoch is 100 blocks
@@ -34,7 +34,7 @@ export class BLSCheckpointFetcher {
             // We want the block right after the epoch boundary
             const targetHeight = epochBoundary + 1;
             
-            logger.info(`[BLSCheckpoint] Calculated block height ${targetHeight} for epoch ${epochNum}`);
+            logger.info(`[BLSCheckpoint] Calculated block height ${targetHeight} for epoch ${epochNum} on ${network}`);
             return targetHeight;
         } catch (error) {
             logger.error(`[BLSCheckpoint] Error calculating block height for epoch ${epochNum}:`, error);
@@ -342,7 +342,7 @@ export class BLSCheckpointFetcher {
 
                 if (isNaN(currentEpoch)) {
                     logger.error('[BLSCheckpoint] Failed to get current epoch from node:', response.data);
-                    throw new Error('Invalid current epoch from node');
+                    throw new Error(`Invalid current epoch from node on ${network}`);
                 }
 
                 return currentEpoch;
@@ -372,10 +372,10 @@ export class BLSCheckpointFetcher {
             // Remove nanoseconds part and parse ISO timestamp
             const cleanTimeStr = timeStr.split('.')[0] + 'Z';
             const timestamp = new Date(cleanTimeStr).getTime();
-            
+
             if (isNaN(timestamp)) {
                 logger.error(`[BLSCheckpoint] Invalid timestamp format received:`, timeStr);
-                throw new Error('Invalid timestamp from node');
+                throw new Error(`Invalid timestamp from node on ${network}`);
             }
             
             // Convert to seconds

@@ -6,6 +6,7 @@ import { StakerStatsService } from './StakerStatsService';
 import { StakerQueryService } from './StakerQueryService';
 import { StakerRecalculationService } from './StakerRecalculationService';
 import { RecentDelegation } from './interfaces/StakerInterfaces';
+import { NewStaker } from '../../database/models/NewStaker';
 
 export class NewStakerService {
     private static instance: NewStakerService | null = null;
@@ -72,7 +73,6 @@ export class NewStakerService {
                     }
                 } else {
                     // On retry attempts, fetch the fresh document directly by ID to avoid version conflicts
-                    const NewStaker = require('../../database/models/NewStaker').NewStaker;
                     staker = await NewStaker.findById(stakerId);
                     
                     if (!staker) {
