@@ -87,11 +87,7 @@ export class IBCChannelService {
                 logger.warn('[IBCChannelService] Missing required attributes for channel_open_init event');
                 return;
             }
-            
-            // Get connection details to determine counterparty chain
-            const connection = await this.channelRepository.getConnection(connectionId, network);
-            const counterpartyChainId = connection?.counterparty_chain_id || 'unknown';
-            
+                        
             // Create new channel
             const newChannel = {
                 channel_id: channelId,
@@ -430,7 +426,7 @@ export class IBCChannelService {
 
             let success = false;
             let timeout = false;
-            let completionTimeMs = 0;
+            const completionTimeMs = 0;
             let direction: 'incoming' | 'outgoing' | undefined;
 
             // Determine packet outcome and direction based on event type

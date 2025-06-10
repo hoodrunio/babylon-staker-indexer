@@ -1,5 +1,4 @@
 import mongoose, { Document, Model } from 'mongoose';
-import { Network } from '../../types/finality';
 
 // Signature details for each block
 export interface BlockSignatureDetail {

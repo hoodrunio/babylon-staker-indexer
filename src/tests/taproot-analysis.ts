@@ -35,14 +35,14 @@ interface Transaction {
   vout: TaprootOutput[];
 }
 
-interface OpReturnOutput {
+/* interface OpReturnOutput {
   scriptPubKey: {
     hex: string;
     type: string;
     asm: string;
   };
 }
-
+*/
 interface BabylonStakingTx {
   output_index: number;
   start_height: number;
@@ -236,13 +236,13 @@ async function analyzeTaprootOutput(
 }
 
 // Singleton RPC instance
-let rpcInstance: BitcoinRPC | null = null;
+/* let rpcInstance: BitcoinRPC | null = null;
 function getRPC(): BitcoinRPC {
   if (!rpcInstance) {
     rpcInstance = new BitcoinRPC(process.env.BTC_RPC_URL!);
   }
   return rpcInstance;
-}
+} */
 
 /* async function main() {
   logger.info('Starting Taproot transaction analysis...');

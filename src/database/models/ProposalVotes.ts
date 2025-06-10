@@ -143,20 +143,13 @@ proposalVotesSchema.methods.updateVoteCounts = function() {
         abstain: "0",
         no_with_veto: "0"
     };
-    
-    let validatorVotingPower = BigInt(0);
-    
+        
     for (const vote of votes.values()) {
         const optionKey = vote.option.toLowerCase() as keyof VoteCounts;
         const votePower = BigInt(vote.voting_power.split('.')[0]);
         
         // Add to vote counts based on voting power
         voteCounts[optionKey] = (BigInt(voteCounts[optionKey]) + votePower).toString();
-        
-        // Track validator voting power separately
-        if (vote.is_validator) {
-            validatorVotingPower += votePower;
-        }
     }
     
     this.vote_counts = voteCounts;

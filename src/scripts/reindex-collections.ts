@@ -31,12 +31,10 @@ async function reindexCollections() {
     // Reindex Block model
     // First remove existing indexes
     try {
-      // @ts-ignore
       Block.schema.indexes().forEach(indexSpec => {
         const indexKeys = indexSpec[0];
         // Check for indexes containing height and network
         if (indexKeys.height !== undefined && indexKeys.network !== undefined) {
-          // @ts-ignore
           Block.schema.index(indexKeys, {
             ...indexSpec[1], // preserve existing properties
             collation: { locale: 'en_US', numericOrdering: true } // add collation
@@ -50,12 +48,10 @@ async function reindexCollections() {
     
     // Reindex Transaction model
     try {
-      // @ts-ignore
       BlockchainTransaction.schema.indexes().forEach(indexSpec => {
         const indexKeys = indexSpec[0];
         // Check for indexes containing height and network
         if (indexKeys.height !== undefined && indexKeys.network !== undefined) {
-          // @ts-ignore
           BlockchainTransaction.schema.index(indexKeys, {
             ...indexSpec[1],
             collation: { locale: 'en_US', numericOrdering: true }
@@ -65,7 +61,6 @@ async function reindexCollections() {
         
         // Also check for aggregation index
         if (indexKeys.network !== undefined && indexKeys.height !== undefined && indexKeys.time !== undefined) {
-          // @ts-ignore
           BlockchainTransaction.schema.index(indexKeys, {
             ...indexSpec[1], 
             collation: { locale: 'en_US', numericOrdering: true }
@@ -79,9 +74,7 @@ async function reindexCollections() {
 
     // Apply all indexes to the DB
     await Promise.all([
-      // @ts-ignore
       Block.ensureIndexes(),
-      // @ts-ignore
       BlockchainTransaction.ensureIndexes()
     ]);
     

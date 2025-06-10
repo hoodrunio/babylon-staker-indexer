@@ -77,10 +77,10 @@ export class IBCPacketService implements IIBCPacketService {
             // Different event types may have attributes in different formats
             // First look for the standard naming convention
             let sourcePort = attributes.packet_src_port || attributes.source_port;
-            let sourceChannel = attributes.packet_src_channel || attributes.source_channel;
+            const sourceChannel = attributes.packet_src_channel || attributes.source_channel;
             let sequence = attributes.packet_sequence || attributes.sequence;
             let destPort = attributes.packet_dst_port || attributes.destination_port;
-            let destChannel = attributes.packet_dst_channel || attributes.destination_channel;
+            const destChannel = attributes.packet_dst_channel || attributes.destination_channel;
             
             // Check if we have the minimum required info
             if (!sourcePort || !sourceChannel || !sequence) {
@@ -150,7 +150,7 @@ export class IBCPacketService implements IIBCPacketService {
      */
     public handlePacketEvent(eventType: string, attributes: Record<string, string>, txHash: string): IBCPacketInfo | null {
         // Get or create transaction context
-        let txContext = this.getTransactionContext(txHash);
+        const txContext = this.getTransactionContext(txHash);
         
         switch (eventType) {
             case 'send_packet':

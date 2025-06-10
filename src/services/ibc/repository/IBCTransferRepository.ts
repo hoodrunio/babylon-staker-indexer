@@ -40,7 +40,7 @@ export class IBCTransferRepository {
             }
             
             // Create merged data preserving required fields from existing document
-            let mergedData = { ...transferData };
+            const mergedData = { ...transferData };
             
             // If we're updating an existing record, preserve required fields
             if (existingTransfer) {

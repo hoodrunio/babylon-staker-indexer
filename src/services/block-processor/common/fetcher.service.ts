@@ -50,7 +50,7 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Transaction details
    */
-  public async fetchTxDetails(txHash: string, network?: Network): Promise<any> {
+  public async fetchTxDetails(txHash: string, _network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
       //logger.debug(`[FetcherService] Fetching transaction details for ${txHash} on ${actualNetwork}`);
@@ -83,7 +83,7 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Array of transactions
    */
-  public async fetchTxsByHeight(height: number | string, network?: Network): Promise<any[]> {
+  public async fetchTxsByHeight(height: number | string, _network?: Network): Promise<any[]> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
       logger.debug(`[FetcherService] Fetching transactions for height ${height} on ${actualNetwork}`);
@@ -110,7 +110,7 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Block details
    */
-  public async fetchBlockByHeight(height: number | string, network?: Network): Promise<any> {
+  public async fetchBlockByHeight(height: number | string, _network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
       //logger.debug(`[FetcherService] Fetching block at height ${height} on ${actualNetwork}`);
@@ -162,7 +162,7 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Block details or null
    */
-  public async fetchBlockByHash(blockHash: string, network?: Network): Promise<any> {
+  public async fetchBlockByHash(blockHash: string, _network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
       //logger.debug(`[FetcherService] Fetching block with hash ${blockHash} on ${actualNetwork}`);
@@ -187,7 +187,7 @@ export class FetcherService implements IFetcherService {
    * @param network Network type
    * @returns Latest block details
    */
-  public async fetchLatestBlock(network?: Network): Promise<any> {
+  public async fetchLatestBlock(_network?: Network): Promise<any> {
     const actualNetwork = this.babylonClient.getNetwork();
     try {
       //logger.debug(`[FetcherService] Fetching latest block on ${actualNetwork}`);

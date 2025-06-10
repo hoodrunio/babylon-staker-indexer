@@ -130,7 +130,7 @@ if (cluster.isPrimary) {
 
       // Parse retention parameter
       const retention = parseRetentionParam(process.argv[2]);
-      let query: any = { network };
+      const query: any = { network };
       let heightThreshold: string | null = null;
       
       // Build query based on retention type
@@ -242,7 +242,7 @@ if (cluster.isPrimary) {
       }, 10000); // Every 10 seconds
       
       // Listen for worker exits
-      cluster.on('exit', (worker, code, signal) => {
+      cluster.on('exit', (worker, code) => {
         completedRanges++;
         logger.info(`Worker ${worker.process.pid} finished with code ${code}`);
         
@@ -278,7 +278,6 @@ if (cluster.isPrimary) {
       const retentionType = process.env.RETENTION_TYPE || '';
       const heightThreshold = process.env.HEIGHT_THRESHOLD || '';
       const timeThreshold = process.env.TIME_THRESHOLD || '';
-      const totalToDelete = parseInt(process.env.TOTAL_TO_DELETE || '0');
       
       await connectDB();
       
@@ -311,6 +310,7 @@ if (cluster.isPrimary) {
       const startTimestamp = Date.now();
       
       // Process in batches
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         // Find oldest batch in this range
         const batch = await Block.find(query)

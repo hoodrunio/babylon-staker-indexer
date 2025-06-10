@@ -1,11 +1,9 @@
-import { Router, Request, Response } from 'express';
-import { FinalityProviderService } from '../../services/finality/FinalityProviderService';
+import { Router } from 'express';
 import { FinalitySignatureService } from '../../services/finality/FinalitySignatureService';
 import { logger } from '../../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
-const finalityProviderService = FinalityProviderService.getInstance();
 const finalitySignatureService = FinalitySignatureService.getInstance();
 
 // Get signature stats for a finality provider

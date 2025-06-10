@@ -1,4 +1,3 @@
-import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import { getTokenService } from '../analytics/domain/TokenServiceFactory';
 import { ITokenService } from '../analytics/domain/TokenService';
@@ -30,8 +29,8 @@ export class RelayerVolumeService {
         },
         sourceChainId: string,
         destChainId: string,
-        channelId: string,
-        portId: string
+        _channelId: string,
+        _portId: string
     ): {
         denomVolumeUpdate: any;
         chainVolumeUpdates: any[];

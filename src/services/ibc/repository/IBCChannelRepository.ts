@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import { Network } from '../../../types/finality';
 import { logger } from '../../../utils/logger';
 import IBCChannelModel from '../../../database/models/ibc/IBCChannel';

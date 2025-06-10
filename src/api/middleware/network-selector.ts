@@ -3,6 +3,7 @@ import { Network } from '../../types/finality';
 
 // Extend Express Request type to include network
 declare global {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
     namespace Express {
         interface Request {
             network?: Network;

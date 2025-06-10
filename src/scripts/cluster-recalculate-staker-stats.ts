@@ -124,7 +124,7 @@ if (cluster.isPrimary) {
         
         // Listen for worker exits
         let exitedWorkers = 0;
-        cluster.on('exit', (worker, code, signal) => {
+        cluster.on('exit', (worker, code) => {
             exitedWorkers++;
             logger.info(`Worker ${worker.process.pid} finished with code ${code}`);
             
@@ -379,7 +379,7 @@ async function processStaker(
         
         // Update phase stats with finality providers
         for (const [phase, fpMap] of phaseFPMap.entries()) {
-            let phaseStat = staker.phaseStats.find((p: any) => p.phase === phase);
+            const phaseStat = staker.phaseStats.find((p: any) => p.phase === phase);
             if (phaseStat) {
                 phaseStat.finalityProviders = Array.from(fpMap.values());
             }

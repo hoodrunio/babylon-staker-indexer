@@ -1,4 +1,3 @@
-import { Request } from 'express';
 
 export interface PaginationQuery {
   page?: number;
@@ -9,6 +8,7 @@ export interface PaginationQuery {
 }
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       pagination?: PaginationQuery;

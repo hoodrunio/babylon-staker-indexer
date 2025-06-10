@@ -380,13 +380,13 @@ export class BabylonIndexer {
         }
         break;
 
-      case 2:
-      case 3:
-        // Phase 2 & 3: Transaction is overflow if outside valid block height range
-        const range = phaseRanges[phase];
-        isOverflow = blockHeight < range.start || blockHeight > range.end;
-        break;
-
+        case 2:
+        case 3: {
+          // Phase 2 & 3: Transaction is overflow if outside valid block height range
+          const range = phaseRanges[phase];
+          isOverflow = blockHeight < range.start || blockHeight > range.end;
+          break;
+        }
       default:
         // If block is not in any phase range, mark as overflow
         isOverflow = true;

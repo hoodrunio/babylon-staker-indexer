@@ -281,7 +281,7 @@ export class BlockTransactionHandler {
     /**
      * Fetches and processes a block at a specific height
      */
-    private async fetchAndProcessBlock(height: number, network: Network): Promise<{ blockData: any }> {
+    private async fetchAndProcessBlock(height: number, _network: Network): Promise<{ blockData: any }> {
         // Get block
         const blockData = await this.rpcClient!.getBlockByHeight(height);
         
@@ -427,7 +427,7 @@ export class BlockTransactionHandler {
     /**
      * Processes a batch of transactions
      */
-    private async processTxBatch(txs: any[], network: Network): Promise<{ processed: number, saved: number, errors: number }> {
+    private async processTxBatch(txs: any[], _network: Network): Promise<{ processed: number, saved: number, errors: number }> {
         let processed = 0;
         let saved = 0;
         let errors = 0;

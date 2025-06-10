@@ -1,6 +1,6 @@
 import { Staker } from '../models/Staker';
 import { Transaction } from '../models/Transaction';
-import { StakerStats, TimeRange, TransactionInfo, StakerDocument, GlobalStakerStats } from '../../types';
+import { StakerStats, TimeRange, TransactionInfo, GlobalStakerStats } from '../../types';
 import { PipelineStage } from 'mongoose';
 import { CacheService } from '../../services/CacheService';
 import { logger } from '../../utils/logger';

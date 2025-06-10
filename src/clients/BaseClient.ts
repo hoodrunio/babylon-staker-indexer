@@ -202,13 +202,10 @@ export abstract class BaseClient {
         fallback: T,
         operationName: string
     ): Promise<T> {
-        let lastError: any = null;
-
         for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
             try {
                 return await operation();
             } catch (error) {
-                lastError = error;
 
                 if (attempt === this.MAX_RETRIES) {
                     logger.error(`[${this.constructor.name}] ${operationName} failed after ${this.MAX_RETRIES} attempts:`, error);

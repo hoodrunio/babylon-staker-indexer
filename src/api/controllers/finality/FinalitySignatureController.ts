@@ -130,7 +130,6 @@ export class FinalitySignatureController {
     public async getSignatureStream(req: Request, res: Response): Promise<void> {
         try {
             const { fpBtcPkHex } = req.params;
-            const network = req.network || Network.MAINNET;
             const clientId = uuidv4();
 
             logger.info(`[SSE] New client connected: ${clientId} for FP: ${fpBtcPkHex}`);

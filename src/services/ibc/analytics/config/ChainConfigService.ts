@@ -1,5 +1,4 @@
 import { Network } from '../../../../types/finality';
-import { logger } from '../../../../utils/logger';
 
 /**
  * Chain Configuration Service

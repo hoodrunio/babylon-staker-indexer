@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { SourceCode, SourceFile, Code, Contract, Verification } from '../../../database/models/cosmwasm';
+import { SourceCode, SourceFile, Code, Contract } from '../../../database/models/cosmwasm';
 import { logger } from '../../../utils/logger';
 
 /**
@@ -63,10 +63,10 @@ export class SourceCodeController {
         return;
       }
       
-      // Get verification details
-      const verification = await Verification.findOne({ 
-        id: sourceCode.verification_id 
-      });
+      // Get verification details if needed in the future
+      // const verification = await Verification.findOne({ 
+      //   id: sourceCode.verification_id 
+      // });
       
       // Return the source code tree
       res.status(200).json({

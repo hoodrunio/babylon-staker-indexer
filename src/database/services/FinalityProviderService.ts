@@ -5,14 +5,6 @@ import { PipelineStage } from 'mongoose';
 import { CacheService } from '../../services/CacheService';
 import { logger } from '../../utils/logger';
 
-interface QueryWithTimestamp {
-  address: string;
-  timestamp?: {
-    $gte: number;
-    $lte: number;
-  };
-}
-
 export class FinalityProviderService {
   private cache: CacheService;
   private readonly CACHE_TTL = 300; // 5 minutes
@@ -196,7 +188,7 @@ export class FinalityProviderService {
       const phaseStakersResult = await Transaction.aggregate(pipeline);
 
       phaseStakes = phaseStakersResult.map(phaseData => {
-        let stakers = phaseData.stakers;
+        const stakers = phaseData.stakers;
 
         // Apply sorting
         stakers.sort((a: any, b: any) => {

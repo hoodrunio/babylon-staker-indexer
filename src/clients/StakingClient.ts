@@ -24,7 +24,7 @@ export class StakingClient extends BaseClient {
      * Gets the unbonding period
      * @param validatorAddress Validator address (optional)
      */
-    public async getUnbondingPeriod(validatorAddress?: string): Promise<number> {
+    public async getUnbondingPeriod(_validatorAddress?: string): Promise<number> {
         try {
             logger.debug(`[StakingClient] Getting unbonding period for ${this.network}`);
             

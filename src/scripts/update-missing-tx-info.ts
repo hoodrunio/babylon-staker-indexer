@@ -146,7 +146,7 @@ async function updateMissingTxInfo(specificStakerAddress?: string): Promise<void
     const stakersCollection = db.collection(STAKERS_COLLECTION);
 
     // Create query based on whether a specific staker address was provided
-    let query: any = {
+    const query: any = {
       $or: [
         { txHash: { $exists: false } },
         { txHash: null },

@@ -156,7 +156,8 @@ export class ChainAnalyticsProvider implements IChainAnalyticsProvider {
 
             // Convert accumulated volumes to USD for each chain
             const result: ChainInfoResult[] = [];
-            for (const [chainId, chainInfo] of chainsMap.entries()) {
+            for (const [, chainInfo] of chainsMap.entries()) {
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 // Prepare denomination amounts for batch conversion
                 const incomingAmounts = Object.entries(chainInfo.incomingVolumes).map(([denom, amount]) => ({
                     denom,

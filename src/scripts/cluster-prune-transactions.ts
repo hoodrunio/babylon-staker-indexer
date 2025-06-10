@@ -130,7 +130,7 @@ if (cluster.isPrimary) {
 
       // Parse retention parameter
       const retention = parseRetentionParam(process.argv[2]);
-      let query: any = { network };
+      const query: any = { network };
       let timeThreshold: string | null = null;
       
       // Build query based on retention type
@@ -318,7 +318,7 @@ if (cluster.isPrimary) {
       }, 10000); // Every 10 seconds
       
       // Listen for worker exits
-      cluster.on('exit', (worker, code, signal) => {
+      cluster.on('exit', (worker, code) => {
         completedRanges++;
         logger.info(`Worker ${worker.process.pid} finished with code ${code}`);
         
@@ -353,14 +353,13 @@ if (cluster.isPrimary) {
       const endTime = process.env.END_TIME || '';
       const retentionType = process.env.RETENTION_TYPE || '';
       const timeThreshold = process.env.TIME_THRESHOLD || '';
-      const totalToDelete = parseInt(process.env.TOTAL_TO_DELETE || '0');
       
       await connectDB();
       
       logger.info(`Worker ${workerId} (PID: ${process.pid}) processing time range ${startTime} to ${endTime}`);
       
       // Build query based on range
-      let query: any = { network };
+      const query: any = { network };
       
       if (retentionType === 'days') {
         // For day-based retention, use the worker's assigned time range
@@ -379,6 +378,7 @@ if (cluster.isPrimary) {
       const startTimestamp = Date.now();
       
       // Process in batches
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         // Find oldest batch in this range
         const batch = await BlockchainTransaction.find(query)

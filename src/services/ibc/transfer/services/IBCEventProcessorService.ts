@@ -60,7 +60,7 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             
             // For transfer events, we need to extract data from the packet data
             // Different event types may have packet data in different attributes
-            let packetData = attributes.packet_data || attributes.data;
+            const packetData = attributes.packet_data || attributes.data;
             let transferData: any = {};
             
             // Handle the cases where packet data might be missing
@@ -381,7 +381,7 @@ export class IBCEventProcessorService implements IIBCEventProcessorService {
             
             // First, try to find a transfer associated with the current transaction
             // This handles cases where fungible_token_packet comes in the same transaction as send_packet or recv_packet
-            let transferDoc = await this.transferRepository.getTransferByTxHash(txHash, network);
+            const transferDoc = await this.transferRepository.getTransferByTxHash(txHash, network);
             
             if (transferDoc) {
                 // Found transfer in the same transaction - this is likely a send/recv transaction
