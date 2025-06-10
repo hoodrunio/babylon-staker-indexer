@@ -167,12 +167,6 @@ export class GovernanceIndexerService {
         // Process messages using the ProposalMessageParser
         const messages = proposal.messages?.map((msg: any) => ProposalMessageParser.parseMessage(msg)) || [];
 
-        // Get existing proposal to check if status has changed
-        const existingProposal = await Proposal.findOne({
-            network,
-            proposal_id: proposal.id
-        });
-
         // Update or create proposal
         await Proposal.findOneAndUpdate(
             {

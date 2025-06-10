@@ -20,7 +20,8 @@
     "fix-finality-provider-stats": "ts-node src/scripts/fix-finality-provider-stats.ts",
     "test:decoder": "ts-node src/test-decoder.ts",
     "test:protobuf-decoder": "ts-node src/test-protobuf-decoder.ts",
-    "get-tx": "ts-node src/scripts/get-transactions.ts"
+    "get-tx": "ts-node src/scripts/get-transactions.ts",
+    "test:ibc-endpoints": "ts-node src/scripts/test-ibc-endpoints.ts"
   },
   "dependencies": {
     "@cosmjs/crypto": "^0.33.0",

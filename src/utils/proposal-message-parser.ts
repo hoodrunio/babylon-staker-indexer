@@ -66,6 +66,14 @@ export class ProposalMessageParser {
             max_percent_send: msg.max_percent_send,
             max_percent_recv: msg.max_percent_recv,
             duration_hours: msg.duration_hours
+        }),
+
+        '/osmosis.tokenfactory.v1beta1.MsgUpdateParams': (msg: any) => ({
+            authority: msg.authority,
+            params: {
+                denom_creation_fee: msg.params.denom_creation_fee,
+                denom_creation_gas_consume: msg.params.denom_creation_gas_consume
+            }
         })
     };
 
